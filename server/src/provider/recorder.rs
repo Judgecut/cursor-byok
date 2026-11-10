@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     model::{NewLlmCall, Usage},
-    store::{BufferedLlmChunk, Store},
+    store::{BufferedLlmChunk, CallFinish, Store},
     Result,
 };
 
@@ -82,6 +82,10 @@ struct AttemptState {
     chunks: ChunkBuffer,
     first_text_recorded: AtomicBool,
     first_valid_response_recorded: AtomicBool,
+    first_output_recorded: AtomicBool,
+    /// Elapsed milliseconds when the first actual output arrived, or -1 while unknown.
+    first_output_elapsed_ms: AtomicI64,
+    thinking_observed: AtomicBool,
 }
 
 impl AttemptState {
@@ -93,6 +97,9 @@ impl AttemptState {
             chunks: ChunkBuffer::default(),
             first_text_recorded: AtomicBool::new(false),
             first_valid_response_recorded: AtomicBool::new(false),
+            first_output_recorded: AtomicBool::new(false),
+            first_output_elapsed_ms: AtomicI64::new(-1),
+            thinking_observed: AtomicBool::new(false),
         }
     }
 }
@@ -229,6 +236,10 @@ impl CallRecorder {
         }
         drop(attempt);
 
+        if is_output_event(event) {
+            self.note_output(is_thinking_event(event)).await?;
+        }
+
         match event {
             ModelEvent::TextDelta(delta) if !delta.trim().is_empty() => {
                 let attempt = self.inner.attempt.lock().await;
@@ -253,6 +264,59 @@ impl CallRecorder {
             _ => {}
         }
         Ok(())
+    }
+
+    /// Records the first actual output and any observed thinking content.
+    /// Another protocol layer, such as the native forwarder, calls this too so
+    /// the timing rules stay identical across every provider path.
+    pub async fn note_output(&self, thinking: bool) -> Result<()> {
+        let attempt = self.inner.attempt.lock().await;
+        if self.is_finished() {
+            return Ok(());
+        }
+        let record_first = attempt
+            .first_output_recorded
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok();
+        let record_thinking = thinking
+            && attempt
+                .thinking_observed
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok();
+        if !record_first && !record_thinking {
+            return Ok(());
+        }
+        let elapsed = elapsed_ms(attempt.started);
+        match self
+            .inner
+            .store
+            .record_llm_output(
+                &attempt.call_id,
+                record_first.then_some(elapsed),
+                record_thinking,
+            )
+            .await
+        {
+            Ok(()) => {
+                if record_first {
+                    attempt
+                        .first_output_elapsed_ms
+                        .store(elapsed, Ordering::Release);
+                }
+                Ok(())
+            }
+            Err(error) => {
+                if record_first {
+                    attempt
+                        .first_output_recorded
+                        .store(false, Ordering::Release);
+                }
+                if record_thinking {
+                    attempt.thinking_observed.store(false, Ordering::Release);
+                }
+                Err(error)
+            }
+        }
     }
 
     pub async fn usage(&self, usage: Usage) -> Result<()> {
@@ -297,15 +361,22 @@ impl CallRecorder {
             return Ok(());
         }
         self.flush_locked(&mut attempt).await?;
+        let elapsed_ms = elapsed_ms(attempt.started);
+        let first_output_elapsed_ms = attempt.first_output_elapsed_ms.load(Ordering::Acquire);
+        let generation_ms =
+            (first_output_elapsed_ms >= 0).then(|| (elapsed_ms - first_output_elapsed_ms).max(0));
         self.inner
             .store
             .finish_llm_call(
                 &attempt.call_id,
-                status,
-                reason,
-                elapsed_ms(attempt.started),
-                error_kind,
-                error_message,
+                CallFinish {
+                    status,
+                    finish_reason: reason,
+                    elapsed_ms,
+                    generation_ms,
+                    error_kind,
+                    error_message,
+                },
             )
             .await?;
         self.inner.finished.store(true, Ordering::Release);
@@ -355,6 +426,27 @@ fn elapsed_ms(started: Instant) -> i64 {
     started.elapsed().as_millis().min(i64::MAX as u128) as i64
 }
 
+/// Returns whether an event carries actual model output: non-empty text,
+/// reasoning content, or a tool name/argument. Transport markers, heartbeats,
+/// empty deltas, usage, and completion events do not start the generation clock.
+fn is_output_event(event: &ModelEvent) -> bool {
+    match event {
+        ModelEvent::TextDelta(delta) => !delta.trim().is_empty(),
+        ModelEvent::ThinkingDelta(delta) => !delta.trim().is_empty(),
+        ModelEvent::RedactedThinking(_) => true,
+        ModelEvent::ToolCallStart { name, .. } => !name.trim().is_empty(),
+        ModelEvent::ToolCallArgumentsDelta { delta, .. } => !delta.trim().is_empty(),
+        _ => false,
+    }
+}
+
+fn is_thinking_event(event: &ModelEvent) -> bool {
+    matches!(
+        event,
+        ModelEvent::ThinkingStart | ModelEvent::ThinkingDelta(_) | ModelEvent::RedactedThinking(_)
+    )
+}
+
 fn finish_reason(reason: FinishReason) -> &'static str {
     match reason {
         FinishReason::Stop => "stop",
@@ -375,7 +467,7 @@ fn error_kind(error: &crate::Error) -> &'static str {
 #[cfg(test)]
 mod tests {
     use crate::model::{
-        ModelConfigInput, ModelType, NewLlmCall, ProviderType, OPENAI_CHAT_ENDPOINT,
+        CallOrigin, ModelConfigInput, ModelType, NewLlmCall, ProviderType, OPENAI_CHAT_ENDPOINT,
     };
 
     use super::*;
@@ -435,6 +527,8 @@ mod tests {
                 message_count: 1,
                 tool_count: 0,
                 detailed: false,
+                origin: CallOrigin::Run,
+                streaming: true,
             },
         )
         .await

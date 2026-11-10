@@ -223,6 +223,8 @@ async fn start_recorder(
             message_count: invocation.request.history.len(),
             tool_count: invocation.request.prompt.tools.len(),
             detailed: false,
+            origin: invocation.origin,
+            streaming: true,
         },
     )
     .await

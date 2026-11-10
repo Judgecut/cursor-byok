@@ -100,9 +100,36 @@ mod usage {
 pub use usage::*;
 
 mod llm_call {
-    use serde::Serialize;
+    use serde::{Deserialize, Serialize};
 
     use super::ProviderType;
+    use crate::model::CallPerformance;
+
+    /// Separates business calls from connectivity tests so test traffic never
+    /// contributes to the per-model speed samples.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    pub enum CallOrigin {
+        Run,
+        ModelTest,
+    }
+
+    impl CallOrigin {
+        pub fn as_str(self) -> &'static str {
+            match self {
+                Self::Run => "run",
+                Self::ModelTest => "model_test",
+            }
+        }
+
+        pub fn parse(raw: &str) -> Self {
+            if raw == Self::ModelTest.as_str() {
+                Self::ModelTest
+            } else {
+                Self::Run
+            }
+        }
+    }
 
     #[derive(Clone, Debug)]
     pub struct NewLlmCall {
@@ -122,6 +149,9 @@ mod llm_call {
         pub message_count: usize,
         pub tool_count: usize,
         pub detailed: bool,
+        pub origin: CallOrigin,
+        /// Whether the response arrived as a stream, which generation time requires.
+        pub streaming: bool,
     }
 
     #[derive(Clone, Debug, Serialize)]
@@ -149,12 +179,19 @@ mod llm_call {
         pub first_event_at_ms: Option<i64>,
         pub first_text_at_ms: Option<i64>,
         pub first_valid_response_at_ms: Option<i64>,
+        pub first_output_at_ms: Option<i64>,
         pub finished_at_ms: Option<i64>,
         pub queue_ms: Option<i64>,
         pub ttfb_ms: Option<i64>,
         pub ttft_ms: Option<i64>,
         pub ttfr_ms: Option<i64>,
+        pub ttfo_ms: Option<i64>,
         pub duration_ms: Option<i64>,
+        pub generation_ms: Option<i64>,
+        pub streaming: Option<bool>,
+        pub call_origin: String,
+        pub observed_thinking: bool,
+        pub performance: CallPerformance,
         pub input_tokens: Option<i64>,
         pub billed_input_tokens: Option<i64>,
         pub output_tokens: Option<i64>,
@@ -243,6 +280,8 @@ mod overview {
     //! Read-only usage and cost aggregates rendered by the desktop overview page.
 
     use serde::Serialize;
+
+    use crate::model::{SpeedSampleTotals, SpeedStatus};
 
     #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
     pub struct OverviewMetrics {
@@ -346,7 +385,46 @@ mod overview {
         }
     }
 
-    #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+    /// Accumulated numerator and denominator behind a rate, so several calls
+    /// divide total output by total generation time instead of averaging rates.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+    pub struct SpeedSampleCounts {
+        pub output_tokens: i64,
+        pub generation_ms: i64,
+        pub samples: i64,
+    }
+
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
+    pub struct SpeedAggregate {
+        pub average_tokens_per_second: Option<f64>,
+        pub status: SpeedStatus,
+        pub measured: SpeedSampleCounts,
+        pub estimated: SpeedSampleCounts,
+        /// Median first-output wait across successful streamed calls.
+        pub first_output_median_ms: Option<i64>,
+    }
+
+    impl SpeedAggregate {
+        pub fn from_totals(totals: SpeedSampleTotals, first_output_median_ms: Option<i64>) -> Self {
+            Self {
+                average_tokens_per_second: totals.average(),
+                status: totals.status(),
+                measured: SpeedSampleCounts {
+                    output_tokens: totals.measured_output_tokens,
+                    generation_ms: totals.measured_generation_ms,
+                    samples: totals.measured_samples,
+                },
+                estimated: SpeedSampleCounts {
+                    output_tokens: totals.estimated_output_tokens,
+                    generation_ms: totals.estimated_generation_ms,
+                    samples: totals.estimated_samples,
+                },
+                first_output_median_ms,
+            }
+        }
+    }
+
+    #[derive(Clone, Debug, PartialEq, Serialize)]
     pub struct OverviewSupplierSummary {
         pub supplier_key: String,
         pub source_kind: String,
@@ -374,9 +452,10 @@ mod overview {
         pub priced_calls: i64,
         pub unpriced_calls: i64,
         pub incomplete_usage_calls: i64,
+        pub speed: SpeedAggregate,
     }
 
-    #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+    #[derive(Clone, Debug, PartialEq, Serialize)]
     pub struct OverviewModelSummary {
         pub model_id: String,
         pub llm_calls: i64,
@@ -397,6 +476,7 @@ mod overview {
         pub priced_calls: i64,
         pub unpriced_calls: i64,
         pub incomplete_usage_calls: i64,
+        pub speed: SpeedAggregate,
         pub providers: Vec<OverviewSupplierSummary>,
     }
 
@@ -413,7 +493,7 @@ mod overview {
         pub active: bool,
     }
 
-    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Serialize)]
     pub struct Overview {
         pub metrics: OverviewMetrics,
         pub token_usage_granularity: TokenUsageGranularity,

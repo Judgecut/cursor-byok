@@ -1,7 +1,7 @@
 //! Defines provider-independent model requests and streaming responses.
 use serde::{Deserialize, Serialize};
 
-use super::{ModelSpec, ProjectedContent, ProjectedMessage, ToolDefinition};
+use super::{CallOrigin, ModelSpec, ProjectedContent, ProjectedMessage, ToolDefinition};
 
 const PROVIDER_TOOL_CALL_ID_MAX_CHARS: usize = 64;
 
@@ -24,6 +24,8 @@ pub struct ModelInvocation {
     pub run_id: String,
     pub conversation_id: String,
     pub provider_call_index: u64,
+    /// Why this call exists, so connectivity tests stay out of speed statistics.
+    pub origin: CallOrigin,
     pub request: ModelRequest,
 }
 

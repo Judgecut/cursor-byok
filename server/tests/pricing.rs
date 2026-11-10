@@ -18,14 +18,14 @@ use cursor_server::{
     api::byok,
     control,
     model::{
-        ModelConfigInput, ModelType, NewLlmCall, ProviderType, Usage, OPENAI_CHAT_ENDPOINT,
-        OPENAI_RESPONSES_ENDPOINT,
+        CallOrigin, ModelConfigInput, ModelType, NewLlmCall, ProviderType, Usage,
+        OPENAI_CHAT_ENDPOINT, OPENAI_RESPONSES_ENDPOINT,
     },
     network::NetworkClients,
     plugin::{PluginRegistry, PluginRuntime},
     pricing::{canonical_supplier_identity, BindingMode, PricingRates, PricingService, SourceKind},
     provider::ProviderRouter,
-    store::{ExternalApiSettings, SaveSupplierPricingInput},
+    store::{CallFinish, ExternalApiSettings, SaveSupplierPricingInput},
 };
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
@@ -215,6 +215,8 @@ async fn same_model_across_suppliers_aggregates_cleanly_and_shares_identity_acro
             message_count: 1,
             tool_count: 0,
             detailed: false,
+            origin: CallOrigin::Run,
+            streaming: true,
         })
         .await
         .unwrap();
@@ -232,7 +234,17 @@ async fn same_model_across_suppliers_aggregates_cleanly_and_shares_identity_acro
         .await
         .unwrap();
     store
-        .finish_llm_call("c-openai-1", "completed", Some("stop"), 100, None, None)
+        .finish_llm_call(
+            "c-openai-1",
+            CallFinish {
+                status: "completed",
+                finish_reason: Some("stop"),
+                elapsed_ms: 100,
+                generation_ms: None,
+                error_kind: None,
+                error_message: None,
+            },
+        )
         .await
         .unwrap();
 
@@ -271,6 +283,8 @@ async fn same_model_across_suppliers_aggregates_cleanly_and_shares_identity_acro
             message_count: 1,
             tool_count: 0,
             detailed: false,
+            origin: CallOrigin::Run,
+            streaming: true,
         })
         .await
         .unwrap();
@@ -286,7 +300,17 @@ async fn same_model_across_suppliers_aggregates_cleanly_and_shares_identity_acro
         .await
         .unwrap();
     store
-        .finish_llm_call("c-openai-2", "completed", Some("stop"), 80, None, None)
+        .finish_llm_call(
+            "c-openai-2",
+            CallFinish {
+                status: "completed",
+                finish_reason: Some("stop"),
+                elapsed_ms: 80,
+                generation_ms: None,
+                error_kind: None,
+                error_message: None,
+            },
+        )
         .await
         .unwrap();
 
@@ -309,6 +333,8 @@ async fn same_model_across_suppliers_aggregates_cleanly_and_shares_identity_acro
             message_count: 1,
             tool_count: 0,
             detailed: false,
+            origin: CallOrigin::Run,
+            streaming: true,
         })
         .await
         .unwrap();
@@ -326,7 +352,17 @@ async fn same_model_across_suppliers_aggregates_cleanly_and_shares_identity_acro
         .await
         .unwrap();
     store
-        .finish_llm_call("c-or-1", "completed", Some("stop"), 90, None, None)
+        .finish_llm_call(
+            "c-or-1",
+            CallFinish {
+                status: "completed",
+                finish_reason: Some("stop"),
+                elapsed_ms: 90,
+                generation_ms: None,
+                error_kind: None,
+                error_message: None,
+            },
+        )
         .await
         .unwrap();
 
@@ -615,6 +651,8 @@ async fn running_call_keeps_frozen_snapshot_while_excluded_from_overview() {
             message_count: 1,
             tool_count: 0,
             detailed: false,
+            origin: CallOrigin::Run,
+            streaming: true,
         })
         .await
         .unwrap();
@@ -655,7 +693,17 @@ async fn running_call_keeps_frozen_snapshot_while_excluded_from_overview() {
 
     // Finish first call, and start+finish a second call using the $50 rate.
     store
-        .finish_llm_call("running-1", "completed", Some("stop"), 100, None, None)
+        .finish_llm_call(
+            "running-1",
+            CallFinish {
+                status: "completed",
+                finish_reason: Some("stop"),
+                elapsed_ms: 100,
+                generation_ms: None,
+                error_kind: None,
+                error_message: None,
+            },
+        )
         .await
         .unwrap();
     store
@@ -676,6 +724,8 @@ async fn running_call_keeps_frozen_snapshot_while_excluded_from_overview() {
             message_count: 1,
             tool_count: 0,
             detailed: false,
+            origin: CallOrigin::Run,
+            streaming: true,
         })
         .await
         .unwrap();
@@ -691,7 +741,17 @@ async fn running_call_keeps_frozen_snapshot_while_excluded_from_overview() {
         .await
         .unwrap();
     store
-        .finish_llm_call("done-2", "completed", Some("stop"), 100, None, None)
+        .finish_llm_call(
+            "done-2",
+            CallFinish {
+                status: "completed",
+                finish_reason: Some("stop"),
+                elapsed_ms: 100,
+                generation_ms: None,
+                error_kind: None,
+                error_message: None,
+            },
+        )
         .await
         .unwrap();
 
@@ -798,6 +858,8 @@ async fn failed_cancelled_zero_incomplete_and_unpriced_states_plus_retry_compact
                 message_count: 1,
                 tool_count: 0,
                 detailed: false,
+                origin: CallOrigin::Run,
+                streaming: true,
             })
             .await
             .unwrap();
@@ -813,7 +875,17 @@ async fn failed_cancelled_zero_incomplete_and_unpriced_states_plus_retry_compact
             .await
             .unwrap();
         store
-            .finish_llm_call(id, status, finish_reason, 50, None, None)
+            .finish_llm_call(
+                id,
+                CallFinish {
+                    status,
+                    finish_reason,
+                    elapsed_ms: 50,
+                    generation_ms: None,
+                    error_kind: None,
+                    error_message: None,
+                },
+            )
             .await
             .unwrap();
     }
@@ -837,6 +909,8 @@ async fn failed_cancelled_zero_incomplete_and_unpriced_states_plus_retry_compact
             message_count: 1,
             tool_count: 0,
             detailed: false,
+            origin: CallOrigin::Run,
+            streaming: true,
         })
         .await
         .unwrap();
@@ -852,7 +926,17 @@ async fn failed_cancelled_zero_incomplete_and_unpriced_states_plus_retry_compact
         .await
         .unwrap();
     store
-        .finish_llm_call("zero-cost", "completed", Some("stop"), 10, None, None)
+        .finish_llm_call(
+            "zero-cost",
+            CallFinish {
+                status: "completed",
+                finish_reason: Some("stop"),
+                elapsed_ms: 10,
+                generation_ms: None,
+                error_kind: None,
+                error_message: None,
+            },
+        )
         .await
         .unwrap();
 
@@ -875,6 +959,8 @@ async fn failed_cancelled_zero_incomplete_and_unpriced_states_plus_retry_compact
             message_count: 1,
             tool_count: 0,
             detailed: false,
+            origin: CallOrigin::Run,
+            streaming: true,
         })
         .await
         .unwrap();
@@ -893,11 +979,14 @@ async fn failed_cancelled_zero_incomplete_and_unpriced_states_plus_retry_compact
     store
         .finish_llm_call(
             "missing-cache-price",
-            "completed",
-            Some("stop"),
-            10,
-            None,
-            None,
+            CallFinish {
+                status: "completed",
+                finish_reason: Some("stop"),
+                elapsed_ms: 10,
+                generation_ms: None,
+                error_kind: None,
+                error_message: None,
+            },
         )
         .await
         .unwrap();
@@ -921,17 +1010,22 @@ async fn failed_cancelled_zero_incomplete_and_unpriced_states_plus_retry_compact
             message_count: 1,
             tool_count: 0,
             detailed: false,
+            origin: CallOrigin::Run,
+            streaming: true,
         })
         .await
         .unwrap();
     store
         .finish_llm_call(
             "missing-output",
-            "error",
-            None,
-            20,
-            Some("net"),
-            Some("dropped"),
+            CallFinish {
+                status: "error",
+                finish_reason: None,
+                elapsed_ms: 20,
+                generation_ms: None,
+                error_kind: Some("net"),
+                error_message: Some("dropped"),
+            },
         )
         .await
         .unwrap();
@@ -1216,6 +1310,8 @@ async fn backfill_is_idempotent_and_clear_storage_preserves_costs_on_details_onl
             message_count: 1,
             tool_count: 0,
             detailed: true,
+            origin: CallOrigin::Run,
+            streaming: true,
         })
         .await
         .unwrap();
@@ -1231,7 +1327,17 @@ async fn backfill_is_idempotent_and_clear_storage_preserves_costs_on_details_onl
         .await
         .unwrap();
     store
-        .finish_llm_call("already-priced", "completed", Some("stop"), 10, None, None)
+        .finish_llm_call(
+            "already-priced",
+            CallFinish {
+                status: "completed",
+                finish_reason: Some("stop"),
+                elapsed_ms: 10,
+                generation_ms: None,
+                error_kind: None,
+                error_message: None,
+            },
+        )
         .await
         .unwrap();
 
@@ -1420,6 +1526,8 @@ async fn partial_custom_rates_fallback_to_catalog_across_views_calls_and_backfil
             message_count: 1,
             tool_count: 0,
             detailed: false,
+            origin: CallOrigin::Run,
+            streaming: true,
         })
         .await
         .unwrap();
@@ -1437,7 +1545,17 @@ async fn partial_custom_rates_fallback_to_catalog_across_views_calls_and_backfil
         .await
         .unwrap();
     store
-        .finish_llm_call("partial-live", "completed", Some("stop"), 50, None, None)
+        .finish_llm_call(
+            "partial-live",
+            CallFinish {
+                status: "completed",
+                finish_reason: Some("stop"),
+                elapsed_ms: 50,
+                generation_ms: None,
+                error_kind: None,
+                error_message: None,
+            },
+        )
         .await
         .unwrap();
 
@@ -1535,6 +1653,8 @@ async fn relay_calls_backfill_automatically_from_default_public_catalog() {
             message_count: 1,
             tool_count: 0,
             detailed: false,
+            origin: CallOrigin::Run,
+            streaming: true,
         })
         .await
         .unwrap();
@@ -1552,11 +1672,14 @@ async fn relay_calls_backfill_automatically_from_default_public_catalog() {
     store
         .finish_llm_call(
             "relay-before-sync",
-            "completed",
-            Some("end_turn"),
-            40,
-            None,
-            None,
+            CallFinish {
+                status: "completed",
+                finish_reason: Some("end_turn"),
+                elapsed_ms: 40,
+                generation_ms: None,
+                error_kind: None,
+                error_message: None,
+            },
         )
         .await
         .unwrap();
@@ -1625,15 +1748,24 @@ async fn default_creator_prices_preserve_cache_and_free_costs_in_live_calls_and_
                     message_count: 1,
                     tool_count: 0,
                     detailed: false,
+                    origin: CallOrigin::Run,
+                    streaming: true,
                 })
                 .await
                 .unwrap();
+            store.record_llm_usage(&call_id, usage).await.unwrap();
             store
-                .record_llm_usage(&call_id, usage.clone())
-                .await
-                .unwrap();
-            store
-                .finish_llm_call(&call_id, "completed", Some("stop"), 10, None, None)
+                .finish_llm_call(
+                    &call_id,
+                    CallFinish {
+                        status: "completed",
+                        finish_reason: Some("stop"),
+                        elapsed_ms: 10,
+                        generation_ms: None,
+                        error_kind: None,
+                        error_message: None,
+                    },
+                )
                 .await
                 .unwrap();
         }

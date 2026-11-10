@@ -196,7 +196,7 @@ fn parse_decimal_inner(raw: &str, max_scale: u32) -> Result<DecimalPerMillion> {
         - i64::from(exponent);
 
     // Strip trailing zeros first cleanly by adjusting raw_scale downward.
-    while digits.ends_with('0') && raw_scale > 0 {
+    if digits.ends_with('0') && raw_scale > 0 {
         digits.pop();
         return normalize_mantissa_and_scale(digits, raw_scale - 1, raw, max_scale);
     }

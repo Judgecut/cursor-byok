@@ -12,7 +12,8 @@ use sqlx::Row;
 use crate::{
     model::{
         Overview, OverviewFilterModel, OverviewMetrics, OverviewModelSummary,
-        OverviewSupplierSummary, ProviderType, TokenUsageBucket, TokenUsageGranularity,
+        OverviewSupplierSummary, ProviderType, SpeedAggregate, SpeedSampleTotals, TokenUsageBucket,
+        TokenUsageGranularity, MIN_SPEED_GENERATION_MS, MIN_SPEED_OUTPUT_TOKENS,
     },
     plugin::PluginModelDescriptor,
     pricing::{
@@ -221,6 +222,123 @@ impl Store {
         })
     }
 
+    /// Sums eligible speed samples per supplier model, keeping measured and
+    /// estimated samples apart so a rate always divides real totals.
+    async fn load_speed_totals(
+        &self,
+        start_ms: Option<i64>,
+        end_ms: Option<i64>,
+        supplier_keys_json: Option<&str>,
+    ) -> Result<HashMap<(String, String), SpeedSampleTotals>> {
+        let eligible = speed_eligible_sql();
+        let hidden = hidden_reasoning_sql();
+        let rows = sqlx::query(&format!(
+            "SELECT supplier_key, model_id,
+                COALESCE(SUM(CASE WHEN {eligible} AND NOT ({hidden}) THEN output_tokens ELSE 0 END), 0) AS measured_output_tokens,
+                COALESCE(SUM(CASE WHEN {eligible} AND NOT ({hidden}) THEN generation_ms ELSE 0 END), 0) AS measured_generation_ms,
+                COALESCE(SUM(CASE WHEN {eligible} AND NOT ({hidden}) THEN 1 ELSE 0 END), 0) AS measured_samples,
+                COALESCE(SUM(CASE WHEN {eligible} AND ({hidden}) THEN output_tokens ELSE 0 END), 0) AS estimated_output_tokens,
+                COALESCE(SUM(CASE WHEN {eligible} AND ({hidden}) THEN generation_ms ELSE 0 END), 0) AS estimated_generation_ms,
+                COALESCE(SUM(CASE WHEN {eligible} AND ({hidden}) THEN 1 ELSE 0 END), 0) AS estimated_samples
+             FROM llm_calls
+             WHERE (? IS NULL OR created_at_ms >= ?)
+               AND (? IS NULL OR created_at_ms < ?)
+               AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
+             GROUP BY supplier_key, model_id"
+        ))
+        .bind(start_ms)
+        .bind(start_ms)
+        .bind(end_ms)
+        .bind(end_ms)
+        .bind(supplier_keys_json)
+        .bind(supplier_keys_json)
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter()
+            .map(|row| {
+                let key = (
+                    row.try_get::<String, _>("supplier_key")?,
+                    row.try_get::<String, _>("model_id")?,
+                );
+                Ok((
+                    key,
+                    SpeedSampleTotals {
+                        measured_output_tokens: non_negative(
+                            row.try_get("measured_output_tokens")?,
+                        ),
+                        measured_generation_ms: non_negative(
+                            row.try_get("measured_generation_ms")?,
+                        ),
+                        measured_samples: non_negative(row.try_get("measured_samples")?),
+                        estimated_output_tokens: non_negative(
+                            row.try_get("estimated_output_tokens")?,
+                        ),
+                        estimated_generation_ms: non_negative(
+                            row.try_get("estimated_generation_ms")?,
+                        ),
+                        estimated_samples: non_negative(row.try_get("estimated_samples")?),
+                    },
+                ))
+            })
+            .collect()
+    }
+
+    /// Median first-output wait of successful streamed calls, grouped by either
+    /// `supplier_key, model_id` or `model_id` alone. The median ignores the speed
+    /// sample minimum because it measures the wait, not the rate.
+    async fn load_first_output_medians(
+        &self,
+        start_ms: Option<i64>,
+        end_ms: Option<i64>,
+        supplier_keys_json: Option<&str>,
+        group_by: &str,
+        include_supplier_key: bool,
+    ) -> Result<HashMap<(String, String), i64>> {
+        let supplier_select = if include_supplier_key {
+            "supplier_key"
+        } else {
+            "'' AS supplier_key"
+        };
+        let rows = sqlx::query(&format!(
+            "SELECT {supplier_select}, model_id, CAST(AVG(ttfo_ms) AS INTEGER) AS median_ms
+             FROM (
+               SELECT supplier_key, model_id, ttfo_ms,
+                 ROW_NUMBER() OVER (PARTITION BY {group_by} ORDER BY ttfo_ms) AS rn,
+                 COUNT(*) OVER (PARTITION BY {group_by}) AS cnt
+               FROM llm_calls
+               WHERE {eligible}
+                 AND ttfo_ms IS NOT NULL
+                 AND (? IS NULL OR created_at_ms >= ?)
+                 AND (? IS NULL OR created_at_ms < ?)
+                 AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
+             )
+             WHERE rn IN ((cnt + 1) / 2, (cnt + 2) / 2)
+             GROUP BY {group_by}",
+            eligible = first_output_eligible_sql(),
+        ))
+        .bind(start_ms)
+        .bind(start_ms)
+        .bind(end_ms)
+        .bind(end_ms)
+        .bind(supplier_keys_json)
+        .bind(supplier_keys_json)
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter()
+            .map(|row| {
+                Ok((
+                    (
+                        row.try_get::<String, _>("supplier_key")?,
+                        row.try_get::<String, _>("model_id")?,
+                    ),
+                    row.try_get::<Option<i64>, _>("median_ms")?.unwrap_or(0),
+                ))
+            })
+            .collect()
+    }
+
     async fn load_supplier_metadata(
         &self,
         plugin_models: &[PluginModelDescriptor],
@@ -373,6 +491,8 @@ impl Store {
             priced_calls: i64,
             unpriced_calls: i64,
             incomplete_usage_calls: i64,
+            speed: SpeedSampleTotals,
+            first_output_median_ms: Option<i64>,
         }
 
         let mut by_model: BTreeMap<String, BTreeMap<String, SupplierAccum>> = BTreeMap::new();
@@ -465,6 +585,34 @@ impl Store {
             acc.incomplete_usage_calls += non_negative(row.try_get("incomplete_usage_calls")?);
         }
 
+        let speed_totals = self
+            .load_speed_totals(start_ms, end_ms, supplier_keys_json)
+            .await?;
+        let supplier_medians = self
+            .load_first_output_medians(
+                start_ms,
+                end_ms,
+                supplier_keys_json,
+                "supplier_key, model_id",
+                true,
+            )
+            .await?;
+        let model_medians = self
+            .load_first_output_medians(start_ms, end_ms, supplier_keys_json, "model_id", false)
+            .await?;
+        for suppliers in by_model.values_mut() {
+            for (supplier_key, acc) in suppliers {
+                if let Some(totals) =
+                    speed_totals.get(&(supplier_key.clone(), acc.model_id.clone()))
+                {
+                    acc.speed = *totals;
+                }
+                acc.first_output_median_ms = supplier_medians
+                    .get(&(supplier_key.clone(), acc.model_id.clone()))
+                    .copied();
+            }
+        }
+
         let mut models_with_sort: Vec<(i64, OverviewModelSummary)> = by_model
             .into_iter()
             .map(|(model_id, suppliers)| {
@@ -483,6 +631,7 @@ impl Store {
                 let mut parent_priced_calls = 0_i64;
                 let mut parent_unpriced_calls = 0_i64;
                 let mut parent_incomplete_calls = 0_i64;
+                let mut parent_speed = SpeedSampleTotals::default();
 
                 let mut provider_entries: Vec<(i64, OverviewSupplierSummary)> = suppliers
                     .into_iter()
@@ -510,6 +659,7 @@ impl Store {
                         parent_priced_calls += acc.priced_calls;
                         parent_unpriced_calls += acc.unpriced_calls;
                         parent_incomplete_calls += acc.incomplete_usage_calls;
+                        parent_speed += acc.speed;
 
                         let prompt_tokens = saturating_sum(&[
                             acc.input_tokens,
@@ -549,6 +699,10 @@ impl Store {
                                 priced_calls: acc.priced_calls,
                                 unpriced_calls: acc.unpriced_calls,
                                 incomplete_usage_calls: acc.incomplete_usage_calls,
+                                speed: SpeedAggregate::from_totals(
+                                    acc.speed,
+                                    acc.first_output_median_ms,
+                                ),
                             },
                         )
                     })
@@ -572,6 +726,9 @@ impl Store {
                     parent_cache_read_tokens,
                     parent_cache_write_tokens,
                 ]);
+                let parent_first_output_median_ms = model_medians
+                    .get(&(String::new(), model_id.clone()))
+                    .copied();
                 (
                     parent_total_cost_nano,
                     OverviewModelSummary {
@@ -598,6 +755,10 @@ impl Store {
                         priced_calls: parent_priced_calls,
                         unpriced_calls: parent_unpriced_calls,
                         incomplete_usage_calls: parent_incomplete_calls,
+                        speed: SpeedAggregate::from_totals(
+                            parent_speed,
+                            parent_first_output_median_ms,
+                        ),
                         providers,
                     },
                 )
@@ -695,6 +856,26 @@ fn token_usage_buckets(
     )
 }
 
+/// A call contributes a rate only when it succeeded, streamed, and produced enough
+/// output over a long enough generation window.
+fn speed_eligible_sql() -> String {
+    format!(
+        "status = 'completed' AND COALESCE(streaming, 0) = 1 AND call_origin = 'run' \
+         AND COALESCE(output_tokens, 0) >= {MIN_SPEED_OUTPUT_TOKENS} \
+         AND COALESCE(generation_ms, 0) >= {MIN_SPEED_GENERATION_MS}"
+    )
+}
+
+/// Billed reasoning tokens that no output event ever showed hide part of the
+/// generation window, so such samples are aggregated as estimates.
+fn hidden_reasoning_sql() -> &'static str {
+    "(COALESCE(reasoning_tokens, 0) > 0 AND observed_thinking = 0)"
+}
+
+fn first_output_eligible_sql() -> &'static str {
+    "status = 'completed' AND COALESCE(streaming, 0) = 1 AND call_origin = 'run'"
+}
+
 fn fresh_input_sql() -> &'static str {
     "CASE
         WHEN request_type = 'anthropic' THEN MAX(0, COALESCE(input_tokens, 0))
@@ -712,4 +893,161 @@ fn saturating_sum(values: &[i64]) -> i64 {
     values
         .iter()
         .fold(0_i64, |total, value| total.saturating_add(*value))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        model::{CallOrigin, NewLlmCall, ProviderType, SpeedStatus, Usage},
+        store::CallFinish,
+    };
+
+    use super::*;
+
+    struct Sample<'a> {
+        call_id: &'a str,
+        origin: CallOrigin,
+        output_tokens: u64,
+        reasoning_tokens: u64,
+        first_output_ms: i64,
+        generation_ms: i64,
+    }
+
+    async fn record(store: &Store, sample: Sample<'_>) {
+        store
+            .start_llm_call(&NewLlmCall {
+                call_id: sample.call_id.into(),
+                run_id: "run".into(),
+                conversation_id: "conversation".into(),
+                provider_call_index: 0,
+                model_hash: "mh".into(),
+                provider_type: ProviderType::OpenAiChat,
+                provider_url: "https://example.com/v1".into(),
+                request_type: ProviderType::OpenAiChat,
+                request_url: "https://example.com/v1/chat/completions".into(),
+                model_id: "glm-4.6".into(),
+                display_name: "GLM 4.6".into(),
+                reasoning_effort: None,
+                fast: false,
+                message_count: 1,
+                tool_count: 0,
+                detailed: false,
+                origin: sample.origin,
+                streaming: true,
+            })
+            .await
+            .unwrap();
+        store
+            .record_llm_output(sample.call_id, Some(sample.first_output_ms), false)
+            .await
+            .unwrap();
+        store
+            .record_llm_usage(
+                sample.call_id,
+                Usage {
+                    input_tokens: Some(10),
+                    output_tokens: Some(sample.output_tokens),
+                    reasoning_tokens: Some(sample.reasoning_tokens),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        store
+            .finish_llm_call(
+                sample.call_id,
+                CallFinish {
+                    status: "completed",
+                    finish_reason: Some("stop"),
+                    elapsed_ms: sample.first_output_ms + sample.generation_ms,
+                    generation_ms: Some(sample.generation_ms),
+                    error_kind: None,
+                    error_message: None,
+                },
+            )
+            .await
+            .unwrap();
+    }
+
+    /// Model tests must not pollute the business samples, short calls must not
+    /// dilute the rate, and the median wait covers every successful streamed call.
+    #[tokio::test]
+    async fn speed_aggregates_pool_eligible_samples_and_exclude_model_tests() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::connect(&format!(
+            "sqlite://{}",
+            directory.path().join("test.db").display()
+        ))
+        .await
+        .unwrap();
+
+        record(
+            &store,
+            Sample {
+                call_id: "measured",
+                origin: CallOrigin::Run,
+                output_tokens: 1_000,
+                reasoning_tokens: 0,
+                first_output_ms: 2_000,
+                generation_ms: 10_000,
+            },
+        )
+        .await;
+        // Too few tokens to be a sample, but its wait still joins the median.
+        record(
+            &store,
+            Sample {
+                call_id: "short",
+                origin: CallOrigin::Run,
+                output_tokens: 50,
+                reasoning_tokens: 0,
+                first_output_ms: 300,
+                generation_ms: 5_000,
+            },
+        )
+        .await;
+        // Hidden reasoning marks the sample as estimated.
+        record(
+            &store,
+            Sample {
+                call_id: "estimated",
+                origin: CallOrigin::Run,
+                output_tokens: 500,
+                reasoning_tokens: 200,
+                first_output_ms: 1_000,
+                generation_ms: 5_000,
+            },
+        )
+        .await;
+        record(
+            &store,
+            Sample {
+                call_id: "model-test",
+                origin: CallOrigin::ModelTest,
+                output_tokens: 4_000,
+                reasoning_tokens: 0,
+                first_output_ms: 50,
+                generation_ms: 1_000,
+            },
+        )
+        .await;
+
+        let overview = store.overview(None, None, None, None).await.unwrap();
+        let model = overview
+            .models
+            .iter()
+            .find(|item| item.model_id == "glm-4.6")
+            .expect("model summary");
+
+        assert_eq!(model.speed.status, SpeedStatus::Measured);
+        assert_eq!(model.speed.measured.samples, 1);
+        assert_eq!(model.speed.measured.output_tokens, 1_000);
+        assert_eq!(model.speed.estimated.samples, 1);
+        assert!((model.speed.average_tokens_per_second.unwrap() - 100.0).abs() < 0.001);
+        assert_eq!(model.speed.first_output_median_ms, Some(1_000));
+
+        let provider = &model.providers[0];
+        assert_eq!(provider.speed.status, SpeedStatus::Measured);
+        assert_eq!(provider.speed.first_output_median_ms, Some(1_000));
+    }
 }

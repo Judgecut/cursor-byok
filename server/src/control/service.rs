@@ -20,18 +20,19 @@ use super::ads::{
 use crate::{
     local_app::CursorHarness,
     model::{
-        ContentPart, CursorRunTraceArtifact, CursorRunTraceSummary, LlmCallRequest,
-        LlmCallResponseChunk, LlmCallSummary, ModelConfig, ModelConfigInput, ModelInvocation,
-        ModelRequest, ModelSpec, ModelType, Overview, ProjectedContent, ProjectedMessage,
-        PromptSpec, ProviderType, Role,
+        evaluate as evaluate_performance, CallOrigin, ContentPart, CursorRunTraceArtifact,
+        CursorRunTraceSummary, LlmCallRequest, LlmCallResponseChunk, LlmCallSummary, ModelConfig,
+        ModelConfigInput, ModelInvocation, ModelRequest, ModelSpec, ModelType, Overview,
+        ProjectedContent, ProjectedMessage, PromptSpec, ProviderType, Role, SpeedSample,
+        SpeedStatus, SpeedUnavailableReason,
     },
     plugin::{PluginDescriptor, PluginRegistry, PluginRuntime, PluginRuntimeStatus},
     pricing::{PricingService, PricingSyncState},
-    provider::{is_valid_response_event, ModelEvent, Provider},
+    provider::{ModelEvent, Provider},
     store::{
-        CatalogSearchResult, CommitSettings, DesktopSettings, ExternalApiSettings, PortSettings,
-        ProxySettings, ProxySettingsInput, SaveSupplierPricingInput, StatisticsStorage, Store,
-        SupplierPricingView, TabSettings,
+        CallFinish, CatalogSearchResult, CommitSettings, DesktopSettings, ExternalApiSettings,
+        PortSettings, ProxySettings, ProxySettingsInput, SaveSupplierPricingInput,
+        StatisticsStorage, Store, SupplierPricingView, TabSettings,
     },
     Error, Result,
 };
@@ -104,9 +105,14 @@ fn empty_json_object_ref() -> &'static serde_json::Value {
 #[derive(Clone, Debug, Serialize)]
 pub struct ModelConnectivityResult {
     pub duration_ms: u64,
-    pub first_valid_response_ms: Option<u64>,
+    /// Generation time from the first actual output to the end of the test call.
+    pub generation_ms: Option<u64>,
+    pub first_output_ms: Option<u64>,
     pub output_tokens: u64,
-    pub tokens_per_second: f64,
+    pub tokens_per_second: Option<f64>,
+    pub speed_status: SpeedStatus,
+    /// Why no rate is reported, when the test passed but produced no sample.
+    pub speed_reason: Option<SpeedUnavailableReason>,
     pub tokens_estimated: bool,
     pub output: String,
 }
@@ -459,6 +465,7 @@ impl ControlService {
             run_id: call_id.clone(),
             conversation_id: call_id.clone(),
             provider_call_index: 0,
+            origin: CallOrigin::ModelTest,
             request: ModelRequest {
                 prompt: PromptSpec {
                     instructions: String::new(),
@@ -475,8 +482,6 @@ impl ControlService {
             },
         };
         let started = Instant::now();
-        let mut first_valid_response_at = None;
-        let mut output_tokens = None;
         let mut output = String::new();
         let stream = self.provider.stream(invocation, cancellation.clone());
         let completed = tokio::time::timeout(TEST_TIMEOUT, async {
@@ -484,19 +489,9 @@ impl ControlService {
             let mut finished = false;
             while let Some(event) = stream.next().await {
                 let event = event?;
-                if first_valid_response_at.is_none() && is_valid_response_event(&event) {
-                    first_valid_response_at = Some(Instant::now());
-                }
                 match event {
                     ModelEvent::TextDelta(delta) => {
                         output.push_str(&delta);
-                    }
-                    ModelEvent::Usage(usage) => {
-                        if let Some(tokens) = usage.output_tokens.filter(|tokens| *tokens > 0) {
-                            output_tokens = Some(
-                                output_tokens.map_or(tokens, |current: u64| current.max(tokens)),
-                            );
-                        }
                     }
                     ModelEvent::Done(_) => finished = true,
                     _ => {}
@@ -520,11 +515,16 @@ impl ControlService {
                 self.store
                     .finish_llm_call(
                         &call_id,
-                        "error",
-                        None,
-                        started.elapsed().as_millis().min(i64::MAX as u128) as i64,
-                        Some("timeout"),
-                        Some("model connectivity test timed out after 45 seconds"),
+                        CallFinish {
+                            status: "error",
+                            finish_reason: None,
+                            elapsed_ms: started.elapsed().as_millis().min(i64::MAX as u128) as i64,
+                            generation_ms: None,
+                            error_kind: Some("timeout"),
+                            error_message: Some(
+                                "model connectivity test timed out after 45 seconds",
+                            ),
+                        },
                     )
                     .await?;
                 return Err(Error::Provider(
@@ -532,29 +532,43 @@ impl ControlService {
                 ));
             }
         }
-        let elapsed = started.elapsed();
         let output = output.trim().to_string();
-        if first_valid_response_at.is_none() {
+        // The stream recorder already timed this call, so the test reuses the
+        // persisted record instead of maintaining a second measurement path.
+        let record = self
+            .store
+            .llm_call(&call_id)
+            .await?
+            .ok_or_else(|| Error::Store("model connectivity test call is missing".into()))?;
+        let Some(first_output_ms) = record.performance.first_output_ms else {
             return Err(Error::Provider(
                 "model connectivity test received no valid response".into(),
             ));
-        }
-        let tokens_estimated = output_tokens.is_none();
-        let output_tokens = output_tokens.unwrap_or_else(|| estimate_output_tokens(&output));
-        Ok(ModelConnectivityResult {
-            duration_ms: elapsed.as_millis().min(u128::from(u64::MAX)) as u64,
-            first_valid_response_ms: first_valid_response_at.map(|first| {
-                first
-                    .duration_since(started)
-                    .as_millis()
-                    .min(u128::from(u64::MAX)) as u64
+        };
+        let tokens_estimated = record.output_tokens.is_none();
+        let performance = match record.output_tokens {
+            Some(_) => record.performance.clone(),
+            None => evaluate_performance(SpeedSample {
+                status: record.status.as_str(),
+                streaming: record.streaming,
+                output_tokens: Some(estimate_output_tokens(&output) as i64),
+                first_output_ms: record.ttfo_ms,
+                generation_ms: record.generation_ms,
+                tokens_estimated: true,
+                hidden_reasoning: false,
             }),
-            output_tokens,
-            tokens_per_second: if elapsed.is_zero() {
-                0.0
-            } else {
-                output_tokens as f64 / elapsed.as_secs_f64()
-            },
+        };
+        Ok(ModelConnectivityResult {
+            duration_ms: record.duration_ms.unwrap_or_default().max(0) as u64,
+            generation_ms: performance.generation_ms.map(|value| value.max(0) as u64),
+            first_output_ms: Some(first_output_ms.max(0) as u64),
+            output_tokens: record
+                .output_tokens
+                .map(|tokens| tokens.max(0) as u64)
+                .unwrap_or_else(|| estimate_output_tokens(&output)),
+            tokens_per_second: performance.tokens_per_second,
+            speed_status: performance.speed_status,
+            speed_reason: performance.reason,
             tokens_estimated,
             output,
         })
@@ -839,6 +853,18 @@ fn official_call(trace: CursorRunTraceSummary) -> CallSummary {
         .finished_at_ms
         .map(|value| (value - trace.received_at_ms).max(0));
     let error = trace.error_message.clone();
+    let status = trace.status.clone();
+    // Cursor passthrough traces carry no token usage or generation timing, so the
+    // rate stays unavailable while the shared rules still describe why.
+    let performance = evaluate_performance(SpeedSample {
+        status: &status,
+        streaming: Some(true),
+        output_tokens: None,
+        first_output_ms: None,
+        generation_ms: None,
+        tokens_estimated: false,
+        hidden_reasoning: false,
+    });
     CallSummary {
         call: LlmCallSummary {
             call_id: format!("cursor:{}", trace.request_id),
@@ -859,7 +885,7 @@ fn official_call(trace: CursorRunTraceSummary) -> CallSummary {
             display_name: model_id,
             reasoning_effort: None,
             fast: None,
-            status: trace.status.clone(),
+            status,
             finish_reason: None,
             created_at_ms: trace.received_at_ms,
             request_started_at_ms: Some(trace.received_at_ms),
@@ -867,12 +893,19 @@ fn official_call(trace: CursorRunTraceSummary) -> CallSummary {
             first_event_at_ms: trace.first_response_at_ms,
             first_text_at_ms: None,
             first_valid_response_at_ms: None,
+            first_output_at_ms: None,
             finished_at_ms: trace.finished_at_ms,
             queue_ms: None,
             ttfb_ms: ttfb,
             ttft_ms: None,
             ttfr_ms: None,
+            ttfo_ms: None,
             duration_ms: duration,
+            generation_ms: None,
+            streaming: Some(true),
+            call_origin: CallOrigin::Run.as_str().into(),
+            observed_thinking: false,
+            performance,
             input_tokens: None,
             billed_input_tokens: None,
             output_tokens: None,

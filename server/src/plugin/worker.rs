@@ -753,6 +753,8 @@ mod tests {
                 message_count: 1,
                 tool_count: 0,
                 detailed: false,
+                origin: crate::model::CallOrigin::Run,
+                streaming: true,
             },
         )
         .await

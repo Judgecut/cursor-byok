@@ -5,10 +5,10 @@ import { Icon } from "../../shared/ui/Icon";
 import { TooltipTrigger } from "../../shared/ui/TooltipTrigger";
 import { eyeIcon } from "../../shared/ui/icons";
 import { formatUsd, formatUsdExact } from "../../shared/utils/costFormat";
+import { formatFirstOutput, formatSpeed, performanceTooltip } from "../../shared/utils/speedFormat";
 import styles from "./CallTable.module.scss";
 
 const value = (input: string | number | null) => input ?? "-";
-const milliseconds = (input: number | null) => input == null ? "-" : `${input} ms`;
 
 function renderCost(call: LlmCall) {
   if (call.call_kind === "cursor_official") {
@@ -88,6 +88,21 @@ export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (
       render: (call) => value(call.reasoning_effort),
     },
     {
+      key: "speed",
+      header: t("平均速度（tok/s）"),
+      title: (call) => performanceTooltip(call.performance),
+      render: (call) => formatSpeed(
+        call.performance.tokens_per_second,
+        call.performance.speed_status,
+      ),
+    },
+    {
+      key: "first_output",
+      header: t("首 Token（s）"),
+      title: (call) => performanceTooltip(call.performance),
+      render: (call) => formatFirstOutput(call.performance.first_output_ms),
+    },
+    {
       key: "fast",
       header: "Fast",
       render: (call) => call.fast == null ? "-" : call.fast ? t("是") : t("否"),
@@ -110,26 +125,6 @@ export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (
       render: (call) => value(call.finish_reason),
     },
     { key: "http", header: "HTTP", render: (call) => value(call.http_status) },
-    {
-      key: "duration",
-      header: t("耗时"),
-      render: (call) => milliseconds(call.duration_ms),
-    },
-    {
-      key: "ttfb",
-      header: "TTFB",
-      render: (call) => milliseconds(call.ttfb_ms),
-    },
-    {
-      key: "ttfr",
-      header: "TTFR",
-      render: (call) => milliseconds(call.ttfr_ms),
-    },
-    {
-      key: "ttft",
-      header: "TTFT",
-      render: (call) => milliseconds(call.ttft_ms),
-    },
     {
       key: "input_tokens",
       header: "Input Token",

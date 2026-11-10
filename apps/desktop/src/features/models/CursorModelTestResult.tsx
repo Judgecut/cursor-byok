@@ -2,6 +2,12 @@ import type { ModelConnectivityResult } from "../../shared/api";
 import { Icon } from "../../shared/ui/Icon";
 import { TooltipTrigger } from "../../shared/ui/TooltipTrigger";
 import { informationOutlineIcon } from "../../shared/ui/icons";
+import {
+  formatFirstOutput,
+  formatGeneration,
+  formatSpeed,
+  speedUnavailableText,
+} from "../../shared/utils/speedFormat";
 import styles from "./CursorModelTestResult.module.scss";
 
 export type CursorModelTestState =
@@ -29,36 +35,64 @@ export function CursorModelTestResult({ state, testing = false, compact = false 
       : <div className={`${styles.root} ${styles.idle}`}><span className={styles.summary}>{t("测试已取消")}</span></div>;
   }
 
-  const success = state.status === "success";
-  const summary = success
-    ? t("速度：{speed} tokens/s", { speed: formatSpeed(state.result.tokens_per_second) })
-    : t("错误：{error}", { error: state.error });
-  const detail = success
-    ? t("速度 {speed} tokens/s · 首字 {firstText} ms · 总耗时 {duration} ms · 输出 {tokens} tokens{estimated} · 返回：{output}", {
-      speed: formatSpeed(state.result.tokens_per_second),
-      firstText: state.result.first_valid_response_ms ?? "--",
-      duration: state.result.duration_ms,
-      tokens: state.result.output_tokens,
-      estimated: state.result.tokens_estimated ? t("（估算）") : "",
-      output: state.result.output || "--",
-    })
-    : t("测试失败：{error}", { error: state.error });
+  if (state.status === "error") {
+    const failure = t("测试失败：{error}", { error: state.error });
+    return compact
+      ? <TooltipTrigger label={failure}>
+        <span className={`${styles.compact} ${styles.error}`}>{t("测试失败")}<Icon icon={informationOutlineIcon} size="1em" /></span>
+      </TooltipTrigger>
+      : <div className={`${styles.root} ${styles.error}`}>
+        <span className={styles.summary}>{t("错误：{error}", { error: state.error })}</span>
+        <TooltipTrigger label={failure}><button type="button" className={styles.details}>{t("查看详情")}<Icon icon={informationOutlineIcon} size="1.1em" /></button></TooltipTrigger>
+      </div>;
+  }
+
+  const { result } = state;
+  // A passed test with too short an output has no rate; the connection itself
+  // still succeeded, so the summary reports the measurement gap instead.
+  const hasSpeed = result.tokens_per_second != null;
+  const speedText = hasSpeed
+    ? `${formatSpeed(result.tokens_per_second, result.speed_status)} tok/s`
+    : null;
+  const detail = testDetail(result);
 
   if (compact) {
     return <TooltipTrigger label={detail}>
-      <span className={`${styles.compact} ${success ? styles.success : styles.error}`}>
-        {success ? `${formatSpeed(state.result.tokens_per_second)} tokens/s` : t("测试失败")}
+      <span className={`${styles.compact} ${styles.success}`}>
+        {speedText ?? t("测试通过")}
         <Icon icon={informationOutlineIcon} size="1em" />
       </span>
     </TooltipTrigger>;
   }
 
-  return <div className={`${styles.root} ${success ? styles.success : styles.error}`}>
-    <span className={styles.summary}>{summary}</span>
+  return <div className={`${styles.root} ${styles.success}`}>
+    <span className={styles.summary}>{speedText ?? t("测试通过 · 速度样本不足")}</span>
     <TooltipTrigger label={detail}><button type="button" className={styles.details}>{t("查看详情")}<Icon icon={informationOutlineIcon} size="1.1em" /></button></TooltipTrigger>
   </div>;
 }
 
-function formatSpeed(value: number) {
-  return Number.isFinite(value) ? value.toFixed(1) : "0.0";
+/** Lists every measurement behind a passed test, including why a rate is absent. */
+function testDetail(result: ModelConnectivityResult) {
+  const lines: string[] = [];
+  if (result.tokens_per_second == null) {
+    lines.push(speedUnavailableText(result.speed_reason));
+  } else {
+    lines.push(
+      t("平均速度：{speed} tok/s", {
+        speed: formatSpeed(result.tokens_per_second, result.speed_status),
+      }),
+    );
+    if (result.speed_status === "estimated") lines.push(t("Token 或计时口径为估算值"));
+  }
+  lines.push(t("首 Token：{value}", { value: formatFirstOutput(result.first_output_ms) }));
+  lines.push(t("生成时间：{value}", { value: formatGeneration(result.generation_ms) }));
+  lines.push(t("总耗时：{value}", { value: formatGeneration(result.duration_ms) }));
+  lines.push(
+    t("输出：{tokens} tokens{estimated}", {
+      tokens: result.output_tokens,
+      estimated: result.tokens_estimated ? t("（估算）") : "",
+    }),
+  );
+  lines.push(t("返回：{output}", { output: result.output || "--" }));
+  return lines.join("\n");
 }

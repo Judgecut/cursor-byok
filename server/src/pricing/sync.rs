@@ -341,6 +341,8 @@ mod tests {
                 message_count: 1,
                 tool_count: 0,
                 detailed: false,
+                origin: crate::model::CallOrigin::Run,
+                streaming: true,
             })
             .await
             .unwrap();
@@ -356,7 +358,17 @@ mod tests {
             .await
             .unwrap();
         store
-            .finish_llm_call(call_id, "completed", Some("stop"), 10, None, None)
+            .finish_llm_call(
+                call_id,
+                crate::store::CallFinish {
+                    status: "completed",
+                    finish_reason: Some("stop"),
+                    elapsed_ms: 10,
+                    generation_ms: None,
+                    error_kind: None,
+                    error_message: None,
+                },
+            )
             .await
             .unwrap();
     }

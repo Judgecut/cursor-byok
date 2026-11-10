@@ -266,6 +266,7 @@ impl RunEngine {
                     run_id: prepared.run_id.to_string(),
                     conversation_id: prepared.conversation_id.to_string(),
                     provider_call_index,
+                    origin: crate::model::CallOrigin::Run,
                     request: request.clone(),
                 };
                 let cycle_cancellation = cancellation.child_token();
@@ -808,6 +809,7 @@ impl RunEngine {
             run_id: prepared.run_id.to_string(),
             conversation_id: prepared.conversation_id.to_string(),
             provider_call_index,
+            origin: crate::model::CallOrigin::Run,
             request: crate::model::ModelRequest {
                 prompt: crate::model::PromptSpec {
                     instructions: super::compaction::INSTRUCTIONS.into(),

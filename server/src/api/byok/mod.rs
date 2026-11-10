@@ -17,7 +17,11 @@ use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    model::ModelInvocation, plugin::PluginRegistry, provider::Provider, store::Store, Error,
+    model::{CallOrigin, ModelInvocation},
+    plugin::PluginRegistry,
+    provider::Provider,
+    store::Store,
+    Error,
 };
 
 use self::protocol::Protocol;
@@ -185,6 +189,7 @@ async fn generate(
         run_id: id.clone(),
         conversation_id: id.clone(),
         provider_call_index: 0,
+        origin: CallOrigin::Run,
         request,
     };
     let cancellation = CancellationToken::new();

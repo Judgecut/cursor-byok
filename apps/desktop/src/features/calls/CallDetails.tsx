@@ -1,8 +1,14 @@
-import type { CallDetail, LlmCall } from "../../shared/api";
+import type { CallDetail, CallPerformance, LlmCall } from "../../shared/api";
 import { JsonEditor } from "../../shared/ui/JsonEditor";
 import { Tabs, type TabItem } from "../../shared/ui/Tabs";
 import { formatRatePerMillion, formatUsdExact } from "../../shared/utils/costFormat";
 import { formatInteger } from "../../shared/utils/numberFormat";
+import {
+  formatFirstOutput,
+  formatGeneration,
+  formatSpeed,
+  speedUnavailableText,
+} from "../../shared/utils/speedFormat";
 import styles from "./CallDetails.module.scss";
 
 const show = (value: string | number | null) => value ?? "-";
@@ -25,6 +31,56 @@ function costStatusBadge(call: LlmCall) {
     return { label: t("未定价"), warn: true };
   }
   return { label: t("已定价"), warn: false };
+}
+
+function PerformanceSection({ call }: { call: LlmCall }) {
+  const performance = call.performance;
+  const estimated = performance.speed_status === "estimated";
+  const available = performance.tokens_per_second != null;
+  const badge = !available
+    ? { label: t("不可用"), warn: true }
+    : estimated
+      ? { label: t("估算"), warn: true }
+      : { label: t("实测"), warn: false };
+  return <section aria-label={t("速度与首 Token")}>
+    <h4>{t("速度与首 Token")}</h4>
+    <div className={styles.costCard}>
+      <div className={styles.costHeader}>
+        <div className={styles.costTitle}>
+          <span className={[styles.badge, badge.warn ? styles.badgeWarn : styles.badgePrimary].join(" ")}>
+            {badge.label}
+          </span>
+          <span>
+            {available
+              ? `${formatSpeed(performance.tokens_per_second, performance.speed_status)} tok/s`
+              : "—"}
+          </span>
+          <span className={styles.costTag}>{t("首 Token {value}", { value: formatFirstOutput(performance.first_output_ms) })}</span>
+        </div>
+      </div>
+      <div className={styles.meta}>
+        {performanceFormula(performance, call.output_tokens)}
+      </div>
+      {!available && <div className={styles.empty}>{speedUnavailableText(performance.reason)}</div>}
+      {estimated && <div className={styles.meta}>{t("Token 或计时口径为估算值，速度仅供参考。")}</div>}
+    </div>
+  </section>;
+}
+
+/**
+ * States the rate as a division using the backend's decision, so a call without a
+ * valid sample never shows a computed rate that contradicts the status badge.
+ */
+function performanceFormula(performance: CallPerformance, outputTokens: number | null) {
+  const { tokens_per_second: rate, generation_ms: generationMs } = performance;
+  if (rate == null || generationMs == null || outputTokens == null) {
+    return t("计算方式：输出 Token ÷ 生成时间（首 Token 之后到调用结束）。");
+  }
+  return t("计算方式：{tokens} Token ÷ {seconds}s = {speed} tok/s（不含首 Token 等待）。", {
+    tokens: formatInteger(outputTokens),
+    seconds: (generationMs / 1000).toFixed(1),
+    speed: formatSpeed(rate, performance.speed_status),
+  });
 }
 
 function CostBreakdownSection({ call }: { call: LlmCall }) {
@@ -132,6 +188,9 @@ export function CallDetails({ detail }: { detail: CallDetail }) {
     ["HTTP Status", show(call.http_status)],
     ["Created At", `${call.created_at_ms} · ${new Date(call.created_at_ms).toLocaleString()}`],
     [t("耗时"), timing(call.duration_ms)],
+    [t("平均速度（tok/s）"), formatSpeed(call.performance.tokens_per_second, call.performance.speed_status)],
+    [t("生成时间"), formatGeneration(call.performance.generation_ms)],
+    [t("首 Token（首个实际输出）"), formatFirstOutput(call.performance.first_output_ms)],
     ["TTFB", timing(call.ttfb_ms)],
     ["TTFR", timing(call.ttfr_ms)],
     ["TTFT", timing(call.ttft_ms)],
@@ -154,6 +213,7 @@ export function CallDetails({ detail }: { detail: CallDetail }) {
   const tabs: TabItem[] = [
     { value: "call", label: t("调用信息"), content: <section>
       <dl className={styles.details}>{fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd><code>{value}</code></dd></div>)}</dl>
+      <PerformanceSection call={call} />
       <CostBreakdownSection call={call} />
     </section> },
     { value: "request", label: t("请求"), content: <section>

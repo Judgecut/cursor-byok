@@ -196,7 +196,8 @@ fn required_index(value: &serde_json::Value) -> Result<usize> {
 mod tests {
     use super::*;
     use crate::model::{
-        ModelRequest, ModelSpec, ProjectedContent, PromptSpec, ToolCallContent, ToolResultContent,
+        CallOrigin, ModelRequest, ModelSpec, ProjectedContent, PromptSpec, ToolCallContent,
+        ToolResultContent,
     };
 
     #[test]
@@ -206,6 +207,7 @@ mod tests {
             run_id: "run".into(),
             conversation_id: "conversation".into(),
             provider_call_index: 0,
+            origin: CallOrigin::Run,
             request: ModelRequest {
                 prompt: PromptSpec {
                     instructions: "be brief".into(),

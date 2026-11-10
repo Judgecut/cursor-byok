@@ -126,6 +126,26 @@
   font-family: var(--oa-number-font);
 }
 
+.sortHeader {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--vscode-foreground);
+  }
+}
+
+.sortMarker {
+  color: var(--vscode-descriptionForeground);
+}
+
 .subValue {
   display: block;
   color: var(--vscode-descriptionForeground);

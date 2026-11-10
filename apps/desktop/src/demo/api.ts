@@ -1,5 +1,6 @@
 import type {
   CallDetail,
+  CallPerformance,
   CatalogModel,
   CatalogProviderOption,
   CatalogSearchResult,
@@ -16,6 +17,8 @@ import type {
   PricingSyncState,
   ProxySettings,
   SaveSupplierPricingInput,
+  SpeedAggregate,
+  SpeedStatus,
   StatisticsStorage,
   SupplierPricingView,
   TabSettings,
@@ -121,7 +124,13 @@ const calls: LlmCall[] = Array.from({ length: 24 }, (_, index) => {
     ttfb_ms: 210 + index * 13,
     ttfr_ms: 290 + index * 15,
     ttft_ms: 370 + index * 17,
+    ttfo_ms: 418 + index * 9,
     duration_ms: failed ? 812 : 1_420 + index * 71,
+    generation_ms: failed ? null : 1_002 + index * 62,
+    streaming: true,
+    call_origin: "run" as const,
+    observed_thinking: index % 2 === 0,
+    performance: mockPerformance(outputTokens, 418 + index * 9, failed ? null : 1_002 + index * 62, failed),
     input_tokens: model.type === "anthropic" ? billedInput : billedInput + cacheReadTokens + cacheWriteTokens,
     billed_input_tokens: billedInput,
     output_tokens: outputTokens,
@@ -213,7 +222,7 @@ export function installDemoApi() {
     }
     if (path === "/models/import-v0049") return json({ imported: 0, skipped: 0, total: 0 });
     if (/^\/models\/[^/]+\/test\/[^/]+$/.test(path) && method === "POST") {
-      return json({ duration_ms: 1_284, first_valid_response_ms: 418, output_tokens: 42, tokens_per_second: 38.6, tokens_estimated: false, output: "Mock connectivity test passed." });
+      return json({ duration_ms: 1_284, generation_ms: 1_020, first_output_ms: 418, output_tokens: 42, tokens_per_second: 41.2, speed_status: "measured", speed_reason: null, tokens_estimated: false, output: "Mock connectivity test passed." });
     }
     if (/^\/models\/[^/]+\/test\/[^/]+$/.test(path) || /^\/models\/[^/]+$/.test(path)) {
       return method === "DELETE" ? empty() : json(models[0]);
@@ -523,6 +532,7 @@ function createModelSummaries(selected: Model[]): OverviewModelSummary[] {
       priced_calls: priced,
       unpriced_calls: unpriced,
       incomplete_usage_calls: incomplete,
+      speed: mockAggregate(matchingCalls),
     };
     const existing = byModel.get(model.model_id);
     if (existing) existing.push(supplier);
@@ -531,6 +541,7 @@ function createModelSummaries(selected: Model[]): OverviewModelSummary[] {
   return [...byModel.entries()].map(([model_id, providers]) => {
     const priced = providers.reduce((s, p) => s + p.priced_calls, 0);
     const totalNano = providers.reduce((s, p) => s + toNano(p.total_cost), 0);
+    const matchingCallsForModel = calls.filter((call) => call.model_id === model_id);
     return {
       model_id,
       llm_calls: providers.reduce((s, p) => s + p.llm_calls, 0),
@@ -551,6 +562,7 @@ function createModelSummaries(selected: Model[]): OverviewModelSummary[] {
       priced_calls: priced,
       unpriced_calls: providers.reduce((s, p) => s + p.unpriced_calls, 0),
       incomplete_usage_calls: providers.reduce((s, p) => s + p.incomplete_usage_calls, 0),
+      speed: mockAggregate(matchingCallsForModel),
       providers,
     };
   });
@@ -606,6 +618,78 @@ function createCallDetail(id: string): CallDetail {
 function mulRate(tokens: number, rate: string | null | undefined): number {
   if (!rate) return 0;
   return Math.round((tokens / 1_000_000) * Number(rate) * 1_000_000_000);
+}
+
+/** Pools sample numerators and denominators, preferring measured over estimated. */
+function mockAggregate(callList: LlmCall[]): SpeedAggregate {
+  const measured = { output_tokens: 0, generation_ms: 0, samples: 0 };
+  const estimated = { output_tokens: 0, generation_ms: 0, samples: 0 };
+  const waits: number[] = [];
+  for (const call of callList) {
+    const first = call.performance.first_output_ms;
+    if (call.status === "completed" && call.streaming && first != null) waits.push(first);
+    if (call.performance.tokens_per_second == null) continue;
+    const target = call.performance.speed_status === "estimated" ? estimated : measured;
+    target.output_tokens += call.output_tokens ?? 0;
+    target.generation_ms += call.performance.generation_ms ?? 0;
+    target.samples += 1;
+  }
+  waits.sort((left, right) => left - right);
+  const middle = Math.floor(waits.length / 2);
+  const firstOutputMedian = waits.length === 0
+    ? null
+    : waits.length % 2 === 1
+      ? waits[middle]
+      : Math.trunc((waits[middle - 1] + waits[middle]) / 2);
+  const status: SpeedStatus = measured.samples > 0
+    ? "measured"
+    : estimated.samples > 0
+      ? "estimated"
+      : "unavailable";
+  const pool = status === "estimated" ? estimated : measured;
+  const average = status !== "unavailable" && pool.generation_ms > 0
+    ? pool.output_tokens / (pool.generation_ms / 1000)
+    : null;
+  return {
+    average_tokens_per_second: average,
+    status,
+    measured,
+    estimated,
+    first_output_median_ms: firstOutputMedian,
+  };
+}
+
+/** Mirrors the server's speed rules closely enough for the demo dashboard. */
+function mockPerformance(  outputTokens: number,
+  firstOutputMs: number,
+  generationMs: number | null,
+  failed: boolean,
+): CallPerformance {
+  if (failed) {
+    return {
+      speed_status: "unavailable",
+      tokens_per_second: null,
+      reason: "not_completed",
+      first_output_ms: firstOutputMs,
+      generation_ms: generationMs,
+    };
+  }
+  if (generationMs == null || outputTokens < 100 || generationMs < 100) {
+    return {
+      speed_status: "unavailable",
+      tokens_per_second: null,
+      reason: generationMs == null ? "missing_generation" : generationMs < 100 ? "short_generation" : "short_output",
+      first_output_ms: firstOutputMs,
+      generation_ms: generationMs,
+    };
+  }
+  return {
+    speed_status: "measured",
+    tokens_per_second: outputTokens / (generationMs / 1000),
+    reason: null,
+    first_output_ms: firstOutputMs,
+    generation_ms: generationMs,
+  };
 }
 
 function toNano(usd: string | null | undefined): number {

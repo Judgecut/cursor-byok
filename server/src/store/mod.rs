@@ -20,6 +20,7 @@ mod writer;
 
 pub use cas::*;
 pub(crate) use cursor_traces::BufferedCursorTraceChunk;
+pub use llm_calls::CallFinish;
 pub(crate) use llm_calls::{BufferedLlmChunk, ContextUsageAnchor};
 pub use pricing::{
     CatalogProviderOption, CatalogSearchResult, SaveSupplierPricingInput, SupplierPricingView,

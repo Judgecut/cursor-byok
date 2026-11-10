@@ -14,7 +14,7 @@ use serde_json::Value;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
-    model::{ModelConfig, NewLlmCall, Usage},
+    model::{CallOrigin, ModelConfig, NewLlmCall, Usage},
     network::NetworkClients,
     provider::{custom_headers, CallRecorder, FinishReason},
     store::Store,
@@ -55,6 +55,7 @@ impl NativeForwarder {
     ) -> Result<Response> {
         let call_id = format!("external-api:{}", uuid::Uuid::new_v4());
         let request_url = model.request_url()?;
+        let stream = body.get("stream").and_then(Value::as_bool).unwrap_or(false);
         let new_call = NewLlmCall {
             call_id: call_id.clone(),
             run_id: call_id.clone(),
@@ -79,6 +80,8 @@ impl NativeForwarder {
                 .and_then(Value::as_array)
                 .map_or(0, Vec::len),
             detailed: false,
+            origin: CallOrigin::Run,
+            streaming: stream,
         };
         body["model"] = Value::String(model.model_id.clone());
         let mut upstream_headers = HeaderMap::new();
@@ -161,7 +164,6 @@ impl NativeForwarder {
         let status = response.status();
         recorder.response_headers(status.as_u16()).await?;
         let headers = response.headers().clone();
-        let stream = body.get("stream").and_then(Value::as_bool).unwrap_or(false);
         if stream && status.is_success() {
             Ok(self.stream_response(protocol, response, recorder, status, &headers))
         } else {
@@ -211,7 +213,7 @@ impl NativeForwarder {
         let output = try_stream! {
             let _cancel = recorder.cancel_on_drop();
             let (sender, receiver) = tokio::sync::mpsc::channel::<Bytes>(8);
-            let observer = tokio::spawn(observe_events(protocol, receiver));
+            let observer = tokio::spawn(observe_events(protocol, receiver, recorder.clone()));
             let mut upstream = response.bytes_stream();
             loop {
                 let next = tokio::time::timeout(idle_timeout, upstream.next()).await;
@@ -361,19 +363,226 @@ impl NativeSummary {
 async fn observe_events(
     protocol: Protocol,
     receiver: tokio::sync::mpsc::Receiver<Bytes>,
+    recorder: CallRecorder,
 ) -> NativeSummary {
     let source = ReceiverStream::new(receiver)
         .map(Ok::<_, Error>)
         .eventsource();
     futures_util::pin_mut!(source);
     let mut summary = NativeSummary::default();
+    let mut first_output_recorded = false;
+    let mut thinking_observed = false;
     while let Some(event) = source.next().await {
         let Ok(event) = event else {
             break;
         };
         if let Ok(value) = serde_json::from_str::<Value>(&event.data) {
+            // Timing is taken as soon as this payload is parsed, before the
+            // stream ends, so forwarded responses stay byte-for-byte unchanged.
+            // Reasoning that arrives after the first text still counts as an
+            // observation, which keeps the hidden-reasoning estimate honest.
+            if let Some(thinking) = native_output_kind(protocol, &value) {
+                let needs_first_output = !first_output_recorded;
+                let needs_thinking = thinking && !thinking_observed;
+                if needs_first_output || needs_thinking {
+                    match recorder.note_output(thinking).await {
+                        Ok(()) => {
+                            first_output_recorded = true;
+                            if thinking {
+                                thinking_observed = true;
+                            }
+                        }
+                        Err(error) => {
+                            tracing::warn!(%error, "failed to record native output timing");
+                        }
+                    }
+                }
+            }
             summary.observe(protocol, &value);
         }
     }
     summary
+}
+
+/// Mirrors the normalized providers' output rules for one native SSE payload:
+/// non-empty text, reasoning content, or a tool name/argument counts as output,
+/// while headers, heartbeats, usage, and control events do not.
+fn native_output_kind(protocol: Protocol, value: &Value) -> Option<bool> {
+    match protocol {
+        Protocol::Chat => {
+            let delta = value.pointer("/choices/0/delta")?;
+            let reasoning = delta
+                .get("reasoning_content")
+                .or_else(|| delta.get("reasoning"))
+                .and_then(Value::as_str);
+            if reasoning.is_some_and(|text| !text.trim().is_empty()) {
+                return Some(true);
+            }
+            if delta
+                .get("content")
+                .and_then(Value::as_str)
+                .is_some_and(|text| !text.is_empty())
+            {
+                return Some(false);
+            }
+            let tool = delta.get("tool_calls").and_then(Value::as_array)?;
+            tool.iter()
+                .any(|call| {
+                    call.pointer("/function/name")
+                        .and_then(Value::as_str)
+                        .is_some_and(|name| !name.trim().is_empty())
+                        || call
+                            .pointer("/function/arguments")
+                            .and_then(Value::as_str)
+                            .is_some_and(|arguments| !arguments.is_empty())
+                })
+                .then_some(false)
+        }
+        Protocol::Responses => match value.get("type").and_then(Value::as_str) {
+            // An empty reasoning delta opens a summary block but shows nothing, so
+            // it must not start the generation clock.
+            Some("response.reasoning_summary_text.delta" | "response.reasoning_text.delta") => {
+                value
+                    .get("delta")
+                    .and_then(Value::as_str)
+                    .is_some_and(|delta| !delta.is_empty())
+                    .then_some(true)
+            }
+            Some("response.output_text.delta" | "response.function_call_arguments.delta") => value
+                .get("delta")
+                .and_then(Value::as_str)
+                .is_some_and(|delta| !delta.is_empty())
+                .then_some(false),
+            Some("response.output_item.added") => value
+                .pointer("/item/type")
+                .and_then(Value::as_str)
+                .filter(|kind| *kind == "function_call")
+                .and_then(|_| value.pointer("/item/name").and_then(Value::as_str))
+                .is_some_and(|name| !name.trim().is_empty())
+                .then_some(false),
+            _ => None,
+        },
+        Protocol::Messages => match value.get("type").and_then(Value::as_str) {
+            Some("content_block_start") => {
+                let block = value.get("content_block")?;
+                match block.get("type").and_then(Value::as_str) {
+                    Some("tool_use") => block
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .is_some_and(|name| !name.trim().is_empty())
+                        .then_some(false),
+                    Some("thinking") => block
+                        .get("thinking")
+                        .and_then(Value::as_str)
+                        .is_some_and(|thinking| !thinking.trim().is_empty())
+                        .then_some(true),
+                    // Redacted reasoning carries no text, but it is real model
+                    // output, so it starts the clock like any other thinking.
+                    Some("redacted_thinking") => Some(true),
+                    _ => None,
+                }
+            }
+            Some("content_block_delta") => {
+                let delta = value.get("delta")?;
+                match delta.get("type").and_then(Value::as_str) {
+                    Some("thinking_delta") => delta
+                        .get("thinking")
+                        .and_then(Value::as_str)
+                        .is_some_and(|thinking| !thinking.trim().is_empty())
+                        .then_some(true),
+                    Some("text_delta") => delta
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .is_some_and(|text| !text.is_empty())
+                        .then_some(false),
+                    Some("input_json_delta") => delta
+                        .get("partial_json")
+                        .and_then(Value::as_str)
+                        .is_some_and(|json| !json.is_empty())
+                        .then_some(false),
+                    _ => None,
+                }
+            }
+            _ => None,
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn redacted_reasoning_counts_as_output() {
+        // Anthropic sends redacted reasoning as a block without any text; ignoring
+        // it would delay the first output and overstate the generation rate.
+        assert_eq!(
+            native_output_kind(
+                Protocol::Messages,
+                &json!({
+                    "type": "content_block_start",
+                    "content_block": { "type": "redacted_thinking", "data": "opaque" }
+                })
+            ),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn empty_reasoning_deltas_do_not_start_the_clock() {
+        assert_eq!(
+            native_output_kind(
+                Protocol::Responses,
+                &json!({ "type": "response.reasoning_summary_text.delta", "delta": "" })
+            ),
+            None
+        );
+        assert_eq!(
+            native_output_kind(
+                Protocol::Messages,
+                &json!({
+                    "type": "content_block_delta",
+                    "delta": { "type": "thinking_delta", "thinking": "" }
+                })
+            ),
+            None
+        );
+        assert_eq!(
+            native_output_kind(
+                Protocol::Responses,
+                &json!({ "type": "response.output_item.added", "item": { "type": "reasoning" } })
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn real_output_is_reported_with_its_kind() {
+        assert_eq!(
+            native_output_kind(
+                Protocol::Responses,
+                &json!({ "type": "response.reasoning_summary_text.delta", "delta": "plan" })
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            native_output_kind(
+                Protocol::Chat,
+                &json!({ "choices": [{ "delta": { "content": "hello" } }] })
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            native_output_kind(
+                Protocol::Messages,
+                &json!({
+                    "type": "content_block_start",
+                    "content_block": { "type": "tool_use", "name": "Shell" }
+                })
+            ),
+            Some(false)
+        );
+    }
 }

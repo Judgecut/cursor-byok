@@ -27,8 +27,8 @@ use crate::{
         transport::TransportRegistry,
     },
     model::{
-        ContentPart, ModelInvocation, ModelRequest, ModelSpec, ProjectedContent, ProjectedMessage,
-        PromptSpec, Role,
+        CallOrigin, ContentPart, ModelInvocation, ModelRequest, ModelSpec, ProjectedContent,
+        ProjectedMessage, PromptSpec, Role,
     },
     plugin::ADAPTER_ID_PREFIX,
     provider::{ModelEvent, Provider},
@@ -138,6 +138,7 @@ fn build_invocation(
         run_id: call_id.clone(),
         conversation_id: call_id,
         provider_call_index: 0,
+        origin: CallOrigin::Run,
         request: ModelRequest {
             prompt: PromptSpec {
                 instructions: settings.effective_prompt().to_owned(),

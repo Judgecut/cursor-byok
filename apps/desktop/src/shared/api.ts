@@ -88,11 +88,49 @@ export interface LegacyModelImportResult {
 
 export interface ModelConnectivityResult {
   duration_ms: number;
-  first_valid_response_ms: number | null;
+  generation_ms: number | null;
+  first_output_ms: number | null;
   output_tokens: number;
-  tokens_per_second: number;
+  tokens_per_second: number | null;
+  speed_status: SpeedStatus;
+  speed_reason: SpeedUnavailableReason | null;
   tokens_estimated: boolean;
   output: string;
+}
+
+/** How much trust a displayed rate deserves; `estimated` renders with a `≈` prefix. */
+export type SpeedStatus = "measured" | "estimated" | "unavailable";
+
+export type SpeedUnavailableReason =
+  | "not_completed"
+  | "not_streaming"
+  | "missing_output_tokens"
+  | "missing_first_output"
+  | "missing_generation"
+  | "short_output"
+  | "short_generation";
+
+export interface CallPerformance {
+  speed_status: SpeedStatus;
+  tokens_per_second: number | null;
+  reason: SpeedUnavailableReason | null;
+  first_output_ms: number | null;
+  generation_ms: number | null;
+}
+
+/** Accumulated numerator and denominator behind one aggregated rate. */
+export interface SpeedSampleCounts {
+  output_tokens: number;
+  generation_ms: number;
+  samples: number;
+}
+
+export interface SpeedAggregate {
+  average_tokens_per_second: number | null;
+  status: SpeedStatus;
+  measured: SpeedSampleCounts;
+  estimated: SpeedSampleCounts;
+  first_output_median_ms: number | null;
 }
 
 export type CaState = "missing" | "untrusted" | "ready" | "invalid";
@@ -487,6 +525,7 @@ export interface OverviewSupplierSummary {
   priced_calls: number;
   unpriced_calls: number;
   incomplete_usage_calls: number;
+  speed: SpeedAggregate;
 }
 
 export interface OverviewModelSummary {
@@ -509,6 +548,7 @@ export interface OverviewModelSummary {
   priced_calls: number;
   unpriced_calls: number;
   incomplete_usage_calls: number;
+  speed: SpeedAggregate;
   providers: OverviewSupplierSummary[];
 }
 
@@ -556,7 +596,13 @@ export interface LlmCall {
   ttfb_ms: number | null;
   ttft_ms: number | null;
   ttfr_ms: number | null;
+  ttfo_ms: number | null;
   duration_ms: number | null;
+  generation_ms: number | null;
+  streaming: boolean | null;
+  call_origin: "run" | "model_test";
+  observed_thinking: boolean;
+  performance: CallPerformance;
   input_tokens: number | null;
   billed_input_tokens: number | null;
   output_tokens: number | null;

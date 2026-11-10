@@ -5,7 +5,8 @@ use sqlx::Row;
 
 use crate::{
     model::{
-        LlmCallRequest, LlmCallResponseChunk, LlmCallSummary, NewLlmCall, ProviderType, Usage,
+        evaluate as evaluate_performance, LlmCallRequest, LlmCallResponseChunk, LlmCallSummary,
+        NewLlmCall, ProviderType, SpeedSample, Usage,
     },
     pricing::{
         calculate_cost, canonical_supplier_identity, format_nano_usd, PricingRates,
@@ -23,7 +24,8 @@ const LLM_CALL_COLUMNS: &str = r#"
     reasoning_effort, fast, status, finish_reason,
     created_at_ms, request_started_at_ms, response_headers_at_ms,
     first_event_at_ms, first_text_at_ms, first_valid_response_at_ms, finished_at_ms,
-    queue_ms, ttfb_ms, ttft_ms, ttfr_ms, duration_ms,
+    first_output_at_ms, streaming, call_origin, observed_thinking,
+    queue_ms, ttfb_ms, ttft_ms, ttfr_ms, ttfo_ms, duration_ms, generation_ms,
     input_tokens, output_tokens, total_tokens,
     cache_read_tokens, cache_write_tokens, reasoning_tokens, usage_json,
     pricing_source, pricing_provider_id, pricing_model_id, pricing_snapshot_at_ms,
@@ -35,6 +37,18 @@ const LLM_CALL_COLUMNS: &str = r#"
     message_count, tool_count, request_bytes, response_bytes, stream_event_count,
     http_status, error_kind, error_message, detailed
 "#;
+
+/// Terminal state written when a call stops, whether it completed, failed, or was
+/// cancelled. Generation time is absent when no actual output was observed.
+#[derive(Clone, Copy, Debug)]
+pub struct CallFinish<'a> {
+    pub status: &'a str,
+    pub finish_reason: Option<&'a str>,
+    pub elapsed_ms: i64,
+    pub generation_ms: Option<i64>,
+    pub error_kind: Option<&'a str>,
+    pub error_message: Option<&'a str>,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ContextUsageAnchor {
@@ -110,12 +124,13 @@ impl Store {
                 provider_type, provider_url, request_type, request_url, model_id, display_name,
                 reasoning_effort, fast, status,
                 created_at_ms, request_started_at_ms, queue_ms,
+                call_origin, streaming,
                 pricing_source, pricing_provider_id, pricing_model_id, pricing_snapshot_at_ms,
                 unit_input_per_million, unit_output_per_million,
                 unit_cache_read_per_million, unit_cache_write_per_million,
                 cost_backfilled,
                 message_count, tool_count, detailed
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)"#,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)"#,
         )
         .bind(&call.call_id)
         .bind(&call.run_id)
@@ -134,6 +149,8 @@ impl Store {
         .bind(call.fast)
         .bind(now)
         .bind(now)
+        .bind(call.origin.as_str())
+        .bind(call.streaming)
         .bind(snapshot.source.as_str())
         .bind(&snapshot.provider_id)
         .bind(&snapshot.model_id)
@@ -285,6 +302,31 @@ impl Store {
         Ok(())
     }
 
+    /// Records the delay to the first actual output and whether thinking content
+    /// was observed. Both writes stay conditional so a repeated call is harmless.
+    pub async fn record_llm_output(
+        &self,
+        call_id: &str,
+        first_output_elapsed_ms: Option<i64>,
+        observed_thinking: bool,
+    ) -> Result<()> {
+        let _write = self.writes.lock().await;
+        sqlx::query(
+            "UPDATE llm_calls SET
+                first_output_at_ms = COALESCE(first_output_at_ms, ?),
+                ttfo_ms = COALESCE(ttfo_ms, ?),
+                observed_thinking = CASE WHEN ? THEN 1 ELSE observed_thinking END
+             WHERE call_id = ?",
+        )
+        .bind(first_output_elapsed_ms.map(|_| now_ms()))
+        .bind(first_output_elapsed_ms)
+        .bind(observed_thinking)
+        .bind(call_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn record_llm_usage(&self, call_id: &str, usage: Usage) -> Result<()> {
         let usage_json = serde_json::to_string(&usage)?;
         let now = now_ms();
@@ -371,15 +413,7 @@ impl Store {
         Ok(())
     }
 
-    pub async fn finish_llm_call(
-        &self,
-        call_id: &str,
-        status: &str,
-        finish_reason: Option<&str>,
-        elapsed_ms: i64,
-        error_kind: Option<&str>,
-        error_message: Option<&str>,
-    ) -> Result<()> {
+    pub async fn finish_llm_call(&self, call_id: &str, finish: CallFinish<'_>) -> Result<()> {
         let now = now_ms();
         let _write = self.writes.lock().await;
         sqlx::query(
@@ -388,18 +422,20 @@ impl Store {
                 finish_reason = ?,
                 finished_at_ms = ?,
                 duration_ms = ?,
+                generation_ms = COALESCE(generation_ms, ?),
                 error_kind = ?,
                 error_message = ?,
                 cost_status = COALESCE(cost_status, 'incomplete_usage'),
                 cost_calculated_at_ms = COALESCE(cost_calculated_at_ms, ?)
              WHERE call_id = ? AND status = 'running'",
         )
-        .bind(status)
-        .bind(finish_reason)
+        .bind(finish.status)
+        .bind(finish.finish_reason)
         .bind(now)
-        .bind(elapsed_ms)
-        .bind(error_kind)
-        .bind(error_message)
+        .bind(finish.elapsed_ms)
+        .bind(finish.generation_ms)
+        .bind(finish.error_kind)
+        .bind(finish.error_message)
         .bind(now)
         .bind(call_id)
         .execute(&self.pool)
@@ -500,6 +536,13 @@ fn as_i64(value: Option<u64>) -> Option<i64> {
 fn summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<LlmCallSummary> {
     let usage = row.try_get::<Option<String>, _>("usage_json")?;
     let request_type: String = row.try_get("request_type")?;
+    let status: String = row.try_get("status")?;
+    let streaming: Option<bool> = row.try_get("streaming")?;
+    let observed_thinking: bool = row.try_get("observed_thinking")?;
+    let ttfo_ms: Option<i64> = row.try_get("ttfo_ms")?;
+    let generation_ms: Option<i64> = row.try_get("generation_ms")?;
+    let output_tokens: Option<i64> = row.try_get("output_tokens")?;
+    let reasoning_tokens: Option<i64> = row.try_get("reasoning_tokens")?;
     let input_tokens: Option<i64> = row.try_get("input_tokens")?;
     let cache_read_tokens: Option<i64> = row.try_get("cache_read_tokens")?;
     let cache_write_tokens: Option<i64> = row.try_get("cache_write_tokens")?;
@@ -512,6 +555,17 @@ fn summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<LlmCallSummary> {
                 .saturating_sub(cache_write_tokens.unwrap_or(0).max(0))
                 .max(0)
         }
+    });
+    // Reasoning tokens reported without any observed thinking content hide part
+    // of the generation window, so the rate is reported as an estimate.
+    let performance = evaluate_performance(SpeedSample {
+        status: &status,
+        streaming,
+        output_tokens,
+        first_output_ms: ttfo_ms,
+        generation_ms,
+        tokens_estimated: false,
+        hidden_reasoning: reasoning_tokens.unwrap_or(0) > 0 && !observed_thinking,
     });
 
     Ok(LlmCallSummary {
@@ -530,7 +584,7 @@ fn summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<LlmCallSummary> {
         display_name: row.try_get("display_name")?,
         reasoning_effort: row.try_get("reasoning_effort")?,
         fast: Some(row.try_get("fast")?),
-        status: row.try_get("status")?,
+        status,
         finish_reason: row.try_get("finish_reason")?,
         created_at_ms: row.try_get("created_at_ms")?,
         request_started_at_ms: row.try_get("request_started_at_ms")?,
@@ -538,19 +592,26 @@ fn summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<LlmCallSummary> {
         first_event_at_ms: row.try_get("first_event_at_ms")?,
         first_text_at_ms: row.try_get("first_text_at_ms")?,
         first_valid_response_at_ms: row.try_get("first_valid_response_at_ms")?,
+        first_output_at_ms: row.try_get("first_output_at_ms")?,
         finished_at_ms: row.try_get("finished_at_ms")?,
         queue_ms: row.try_get("queue_ms")?,
         ttfb_ms: row.try_get("ttfb_ms")?,
         ttft_ms: row.try_get("ttft_ms")?,
         ttfr_ms: row.try_get("ttfr_ms")?,
+        ttfo_ms,
         duration_ms: row.try_get("duration_ms")?,
+        generation_ms,
+        streaming,
+        call_origin: row.try_get("call_origin")?,
+        observed_thinking,
+        performance,
         input_tokens,
         billed_input_tokens,
-        output_tokens: row.try_get("output_tokens")?,
+        output_tokens,
         total_tokens: row.try_get("total_tokens")?,
         cache_read_tokens,
         cache_write_tokens,
-        reasoning_tokens: row.try_get("reasoning_tokens")?,
+        reasoning_tokens,
         usage: usage
             .map(|value| serde_json::from_str(&value))
             .transpose()?,
@@ -595,7 +656,7 @@ fn summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<LlmCallSummary> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::ProviderType;
+    use crate::model::{CallOrigin, ProviderType};
 
     /// 插件模型不在 model_configs 中,调用记录必须照常落库并可按其稳定供应商键筛选。
     #[tokio::test]
@@ -626,11 +687,23 @@ mod tests {
                 message_count: 1,
                 tool_count: 0,
                 detailed: false,
+                origin: CallOrigin::Run,
+                streaming: true,
             })
             .await
             .unwrap();
         store
-            .finish_llm_call("plugin-call", "completed", None, 10, None, None)
+            .finish_llm_call(
+                "plugin-call",
+                CallFinish {
+                    status: "completed",
+                    finish_reason: None,
+                    elapsed_ms: 10,
+                    generation_ms: None,
+                    error_kind: None,
+                    error_message: None,
+                },
+            )
             .await
             .unwrap();
         let overview = store
@@ -640,6 +713,60 @@ mod tests {
         assert_eq!(overview.metrics.llm_calls, 1);
         assert_eq!(overview.metrics.successful_calls, 1);
         assert_eq!(overview.metrics.incomplete_usage_calls, 1);
+    }
+
+    #[tokio::test]
+    async fn thinking_observed_after_the_first_output_keeps_both_facts() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::connect(&format!(
+            "sqlite://{}",
+            directory.path().join("test.db").display()
+        ))
+        .await
+        .unwrap();
+        store
+            .start_llm_call(&NewLlmCall {
+                call_id: "text-then-thinking".into(),
+                run_id: "run".into(),
+                conversation_id: "conversation".into(),
+                provider_call_index: 0,
+                model_hash: "mh".into(),
+                provider_type: ProviderType::Anthropic,
+                provider_url: "https://example.com/v1".into(),
+                request_type: ProviderType::Anthropic,
+                request_url: "https://example.com/v1/messages".into(),
+                model_id: "claude".into(),
+                display_name: "Claude".into(),
+                reasoning_effort: None,
+                fast: false,
+                message_count: 1,
+                tool_count: 0,
+                detailed: false,
+                origin: CallOrigin::Run,
+                streaming: true,
+            })
+            .await
+            .unwrap();
+
+        // Text arrives first, so the first-output wait is fixed here.
+        store
+            .record_llm_output("text-then-thinking", Some(400), false)
+            .await
+            .unwrap();
+        // Reasoning follows; it must not move the first-output time but must be
+        // remembered, otherwise the rate would be marked as an estimate.
+        store
+            .record_llm_output("text-then-thinking", None, true)
+            .await
+            .unwrap();
+
+        let call = store
+            .llm_call("text-then-thinking")
+            .await
+            .unwrap()
+            .expect("call record");
+        assert_eq!(call.ttfo_ms, Some(400));
+        assert!(call.observed_thinking);
     }
 
     #[tokio::test]
@@ -675,6 +802,8 @@ mod tests {
                     message_count,
                     tool_count: 0,
                     detailed: false,
+                    origin: CallOrigin::Run,
+                    streaming: true,
                 })
                 .await
                 .unwrap();

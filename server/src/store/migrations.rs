@@ -474,7 +474,7 @@ mod tests {
             .unwrap();
 
             assert_eq!(checksum_after, checksum_before);
-            assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+            assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
             assert_eq!(checkpoint_table_exists, 1);
             assert_eq!(argument_error_column_exists, 1);
             assert_eq!(pricing_catalog_exists, 1);
@@ -537,6 +537,63 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(total_cost_nano, None);
+    }
+
+    /// History written before the timing columns existed must keep unknown
+    /// timing, so old calls report an unavailable rate instead of a guessed one.
+    #[tokio::test]
+    async fn migration_0011_keeps_historical_calls_with_unknown_timing() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        let historical = migrator_with_line_endings(MigrationLineEndings::Lf);
+        let first_ten = Migrator {
+            migrations: Cow::Owned(historical.iter().take(10).cloned().collect()),
+            ..Migrator::DEFAULT
+        };
+        first_ten.run(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO llm_calls(
+                call_id, run_id, conversation_id, provider_call_index, model_hash,
+                provider_type, provider_url, request_type, request_url, model_id, display_name,
+                status, created_at_ms, input_tokens, output_tokens,
+                message_count, tool_count, detailed
+            ) VALUES (
+                'timed-before-upgrade', 'run', 'conv', 0, NULL,
+                'openai-chat', 'https://api.openai.com/v1/chat/completions',
+                'openai-chat', 'https://api.openai.com/v1/chat/completions',
+                'gpt-5', 'Legacy GPT-5', 'completed', 100, 1000, 200,
+                1, 0, 0
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        run(&pool, Path::new("upgrade-v10-to-v11.db"))
+            .await
+            .unwrap();
+
+        let (origin, streaming, ttfo, generation, observed_thinking): (
+            String,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+            i64,
+        ) = sqlx::query_as(
+            "SELECT call_origin, streaming, ttfo_ms, generation_ms, observed_thinking
+             FROM llm_calls WHERE call_id = 'timed-before-upgrade'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(origin, "run");
+        assert_eq!(streaming, None);
+        assert_eq!(ttfo, None);
+        assert_eq!(generation, None);
+        assert_eq!(observed_thinking, 0);
     }
 
     #[test]

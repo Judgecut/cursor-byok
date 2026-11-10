@@ -19,7 +19,7 @@ use crate::{
         },
         transport::{OutputHub, TransportRegistry},
     },
-    model::{ModelInvocation, ModelType},
+    model::{CallOrigin, ModelInvocation, ModelType},
     provider::{ModelEvent, Provider},
     Error, Result,
 };
@@ -222,6 +222,7 @@ async fn serve(
                         run_id: run_id.clone(),
                         conversation_id: conversation_id.clone(),
                         provider_call_index,
+                        origin: CallOrigin::Run,
                         request,
                     },
                 ));
