@@ -1,10 +1,109 @@
-import type { CallDetail } from "../../shared/api";
+import type { CallDetail, LlmCall } from "../../shared/api";
 import { JsonEditor } from "../../shared/ui/JsonEditor";
 import { Tabs, type TabItem } from "../../shared/ui/Tabs";
+import { formatRatePerMillion, formatUsdExact } from "../../shared/utils/costFormat";
+import { formatInteger } from "../../shared/utils/numberFormat";
 import styles from "./CallDetails.module.scss";
 
 const show = (value: string | number | null) => value ?? "-";
 const timing = (value: number | null) => value == null ? "-" : `${value} ms`;
+
+function pricingSourceLabel(call: LlmCall) {
+  if (call.pricing_source === "custom") return t("自定义单价");
+  if (call.pricing_source === "catalog") return t("公开目录");
+  return t("未定价");
+}
+
+function costStatusBadge(call: LlmCall) {
+  if (call.call_kind === "cursor_official") {
+    return { label: t("未知"), warn: false };
+  }
+  if (call.cost_status === "incomplete_usage") {
+    return { label: t("用量不完整"), warn: true };
+  }
+  if (call.cost_status !== "priced") {
+    return { label: t("未定价"), warn: true };
+  }
+  return { label: t("已定价"), warn: false };
+}
+
+function CostBreakdownSection({ call }: { call: LlmCall }) {
+  const status = costStatusBadge(call);
+  const priced = call.call_kind !== "cursor_official" && call.cost_status === "priced";
+  const catalogRef = call.pricing_provider_id && call.pricing_model_id
+    ? `${call.pricing_provider_id} / ${call.pricing_model_id}`
+    : null;
+  const rows = [
+    {
+      key: "input",
+      label: t("非缓存输入"),
+      tokens: call.billed_input_tokens,
+      rate: call.unit_input_per_million,
+      cost: call.input_cost,
+    },
+    {
+      key: "output",
+      label: t("模型输出"),
+      tokens: call.output_tokens,
+      rate: call.unit_output_per_million,
+      cost: call.output_cost,
+    },
+    {
+      key: "cache_read",
+      label: t("缓存读取"),
+      tokens: call.cache_read_tokens,
+      rate: call.unit_cache_read_per_million,
+      cost: call.cache_read_cost,
+    },
+    {
+      key: "cache_write",
+      label: t("缓存写入"),
+      tokens: call.cache_write_tokens,
+      rate: call.unit_cache_write_per_million,
+      cost: call.cache_write_cost,
+    },
+  ];
+
+  const note = call.call_kind === "cursor_official"
+    ? t("Cursor 官方通道不计入本地 BYOK 定价估算。")
+    : call.cost_status === "incomplete_usage"
+      ? t("此次调用未收到完整用量字段，未生成费用金额。")
+      : call.cost_status !== "priced"
+        ? t("该供应商模型暂无定价快照；可在 设置 -> 模型定价 中配置单价或绑定公开目录。")
+        : null;
+
+  return <section aria-label={t("费用明细")}>
+    <h4>{t("定价与费用明细")}</h4>
+    <div className={styles.costCard}>
+      <div className={styles.costHeader}>
+        <div className={styles.costTitle}>
+          <span className={[styles.badge, status.warn ? styles.badgeWarn : styles.badgePrimary].join(" ")}>
+            {status.label}
+          </span>
+          {call.call_kind !== "cursor_official" && <span className={styles.badge}>
+            {pricingSourceLabel(call)}
+          </span>}
+          {catalogRef && <span className={styles.badge}>{catalogRef}</span>}
+          {priced && call.status === "running" && <span className={styles.badge}>{t("暂计费用")}</span>}
+          {priced && call.cost_backfilled && <span className={styles.badge}>{t("历史估算")}</span>}
+        </div>
+        <span className={styles.costTotal}>
+          {priced && call.total_cost != null ? formatUsdExact(call.total_cost) : status.label}
+        </span>
+      </div>
+      <div className={styles.costGrid}>
+        {rows.map((item) => <div key={item.key}>
+          <span>{item.label}</span>
+          <strong>{priced && item.cost != null ? formatUsdExact(item.cost) : "—"}</strong>
+          <small>
+            {item.tokens != null ? formatInteger(item.tokens) : "-"} × {formatRatePerMillion(item.rate)}
+          </small>
+        </div>)}
+      </div>
+      {note && <div className={styles.costNote}>{note}</div>}
+    </div>
+  </section>;
+}
 
 export function CallDetails({ detail }: { detail: CallDetail }) {
   const { call, request, response_chunks: chunks, cursor_trace: cursorTrace } = detail;
@@ -13,11 +112,13 @@ export function CallDetails({ detail }: { detail: CallDetail }) {
   const fields: Array<[string, string | number]> = [
     ["Call ID", call.call_id],
     [t("调用类型"), call.call_kind === "cursor_official" ? t("Cursor 官方") : "LLM"],
-    [t("路由"), call.route === "cursor_official" ? t("Cursor 官方") : "BYOK"],
+    [t("路由"), call.route === "cursor_official" ? t("Cursor 官方") : call.route === "external_api" ? "External API" : "BYOK"],
     ["Run ID", call.run_id],
     ["Conversation ID", call.conversation_id],
     [t("上游调用序号"), call.provider_call_index],
     ["Model Hash", show(call.model_hash)],
+    ["Supplier Key", show(call.supplier_key)],
+    ["Endpoint Key", show(call.endpoint_key)],
     [t("上游类型"), call.provider_type],
     [t("上游地址"), call.provider_url],
     [t("最终请求类型"), call.request_type],
@@ -35,11 +136,14 @@ export function CallDetails({ detail }: { detail: CallDetail }) {
     ["TTFR", timing(call.ttfr_ms)],
     ["TTFT", timing(call.ttft_ms)],
     ["Input Token", show(call.input_tokens)],
+    [t("计费输入 Token"), show(call.billed_input_tokens)],
     ["Output Token", show(call.output_tokens)],
     ["Total Token", show(call.total_tokens)],
     ["Cache Read Token", show(call.cache_read_tokens)],
     ["Cache Write Token", show(call.cache_write_tokens)],
     ["Reasoning Token", show(call.reasoning_tokens)],
+    [t("价格快照时间"), call.pricing_snapshot_at_ms ? new Date(call.pricing_snapshot_at_ms).toLocaleString() : "-"],
+    [t("计费时间"), call.cost_calculated_at_ms ? new Date(call.cost_calculated_at_ms).toLocaleString() : "-"],
     [t("消息数"), call.message_count],
     [t("工具数"), call.tool_count],
     [t("详细记录"), call.detailed ? t("是") : t("否")],
@@ -50,6 +154,7 @@ export function CallDetails({ detail }: { detail: CallDetail }) {
   const tabs: TabItem[] = [
     { value: "call", label: t("调用信息"), content: <section>
       <dl className={styles.details}>{fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd><code>{value}</code></dd></div>)}</dl>
+      <CostBreakdownSection call={call} />
     </section> },
     { value: "request", label: t("请求"), content: <section>
       {request ? <>

@@ -73,6 +73,13 @@
   min-height: 0;
 }
 
+.bodyFlex {
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  overflow: hidden;
+}
+
 .bodyContent {
   padding: 18px;
 }

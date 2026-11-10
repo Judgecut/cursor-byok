@@ -16,7 +16,7 @@ mod wire;
 mod worker;
 
 pub use descriptor::{
-    parse_model_id, PluginDescriptor, PluginModelDescriptor, PluginProviderDescriptor,
+    model_id, parse_model_id, PluginDescriptor, PluginModelDescriptor, PluginProviderDescriptor,
     PluginResourceDescriptor, PluginResourceView, ADAPTER_ID_PREFIX,
 };
 pub use registry::{ImportResponse, OAuthBeginResponse, OAuthPollResponse, PluginRegistry};

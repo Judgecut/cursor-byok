@@ -5,6 +5,7 @@ mod harness;
 mod models;
 mod overview;
 mod plugins;
+mod pricing;
 mod service;
 mod settings;
 
@@ -221,8 +222,18 @@ pub fn api_router(service: ControlService) -> Router {
             get(settings::get_commit).put(settings::update_commit),
         )
         .route(
-            "/__byok-api__/api/settings/pricing",
-            get(settings::get_pricing_settings).put(settings::update_pricing_settings),
+            "/__byok-api__/api/pricing/catalog",
+            get(pricing::get_catalog),
+        )
+        .route(
+            "/__byok-api__/api/pricing/models",
+            get(pricing::list_models).put(pricing::update_model),
+        )
+        .route(
+            "/__byok-api__/api/pricing/sync",
+            get(pricing::sync_status)
+                .put(pricing::update_sync)
+                .post(pricing::trigger_sync),
         )
         .route(
             "/__byok-api__/api/harness/cursor/status",

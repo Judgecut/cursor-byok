@@ -204,6 +204,60 @@ impl PluginRegistry {
         models
     }
 
+    /// 返回全部已发现并持久化在核心存储中的插件模型(含禁用或暂未绑定账号的模型),
+    /// 供统计筛选和模型定价管理使用。
+    pub async fn known_models(&self) -> Vec<PluginModelDescriptor> {
+        if let Some(executable) = self.inner.runtime.executable() {
+            let mut models = Vec::new();
+            for entry in self.entries(&executable).await {
+                for provider in &entry.definition.providers {
+                    let stored = self
+                        .inner
+                        .state
+                        .models(&entry.manifest.id, &provider.id)
+                        .await
+                        .unwrap_or_default();
+                    models.extend(stored.iter().map(|model| {
+                        PluginModelDescriptor::new(
+                            &entry.manifest.id,
+                            &entry.manifest.name,
+                            &entry.icon,
+                            provider,
+                            model,
+                        )
+                    }));
+                }
+            }
+            return models;
+        }
+
+        let mut models = Vec::new();
+        for (manifest, icon) in self.inner.catalog.manifests() {
+            let Ok(grouped) = self.inner.state.models_by_provider(&manifest.id).await else {
+                continue;
+            };
+            for (provider_id, stored_models) in grouped {
+                for stored in stored_models {
+                    models.push(PluginModelDescriptor {
+                        id: super::descriptor::model_id(&manifest.id, &provider_id, &stored.id),
+                        plugin_id: manifest.id.clone(),
+                        plugin_name: manifest.name.clone(),
+                        provider_id: provider_id.clone(),
+                        model_id: stored.id,
+                        display_name: stored.display_name,
+                        description: stored.description,
+                        icon: icon.clone(),
+                        provider_type: "plugin".into(),
+                        max_output_tokens: stored.max_output_tokens,
+                        images: stored.images,
+                        enabled: stored.enabled,
+                    });
+                }
+            }
+        }
+        models
+    }
+
     pub async fn model_descriptor(&self, model_id: &str) -> Result<PluginModelDescriptor> {
         let (plugin_id, provider_id, upstream_id) = parse_model_id(model_id)
             .ok_or_else(|| Error::Provider(format!("invalid plugin model ID: {model_id}")))?;

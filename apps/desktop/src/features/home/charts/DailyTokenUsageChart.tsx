@@ -1,6 +1,7 @@
 import type { EChartsCoreOption } from "echarts/core";
 import { useMemo, useState } from "react";
 import type { TokenUsageGranularity } from "../../../shared/api";
+import { formatUsd, parseUsdAmount } from "../../../shared/utils/costFormat";
 import { formatCompactInteger } from "../../../shared/utils/numberFormat";
 import { EChart } from "./EChart";
 import styles from "./DailyTokenUsageChart.module.scss";
@@ -11,7 +12,17 @@ export type DailyTokenUsage = {
   cacheReadTokens: number;
   cacheWriteTokens: number;
   outputTokens: number;
+  inputCost: string;
+  outputCost: string;
+  cacheReadCost: string;
+  cacheWriteCost: string;
+  totalCost: string;
+  pricedCalls: number;
+  unpricedCalls: number;
+  incompleteUsageCalls: number;
 };
+
+type ChartMode = "tokens" | "cost";
 
 type TooltipItem = {
   dataIndex: number;
@@ -66,6 +77,10 @@ function totalTokens(day: DailyTokenUsage) {
   return day.inputTokens + day.cacheReadTokens + day.cacheWriteTokens + day.outputTokens;
 }
 
+function totalCostNumber(day: DailyTokenUsage) {
+  return parseUsdAmount(day.totalCost);
+}
+
 export function DailyTokenUsageChart({
   data,
   granularity,
@@ -73,11 +88,19 @@ export function DailyTokenUsageChart({
   data: DailyTokenUsage[];
   granularity: TokenUsageGranularity;
 }) {
+  const [mode, setMode] = useState<ChartMode>("tokens");
   const [hovered, setHovered] = useState(false);
-  const maximumTotal = data.reduce((maximum, day) => Math.max(maximum, totalTokens(day)), 0);
-  const axisMaximum = Math.max(1, maximumTotal / DATA_HEIGHT_RATIO);
+
+  const totals = useMemo(
+    () => data.map((day) => (mode === "tokens" ? totalTokens(day) : totalCostNumber(day))),
+    [data, mode],
+  );
+  const maximumTotal = totals.reduce((maximum, total) => Math.max(maximum, total), 0);
+  const axisMaximum = mode === "tokens"
+    ? Math.max(1, maximumTotal / DATA_HEIGHT_RATIO)
+    : maximumTotal > 0 ? maximumTotal / DATA_HEIGHT_RATIO : 1;
   const emptyBarHeight = axisMaximum * EMPTY_BAR_RATIO;
-  const nonZeroTotals = data.map(totalTokens).filter((total) => total !== 0);
+  const nonZeroTotals = totals.filter((total) => total > 0);
   const averageLevel = nonZeroTotals.length === 0
     ? 0
     : nonZeroTotals.reduce((sum, total) => sum + total, 0) / nonZeroTotals.length;
@@ -99,15 +122,33 @@ export function DailyTokenUsageChart({
       },
       formatter: (params: unknown) => {
         const first = (params as TooltipItem[])[0];
-        const day = data[first.dataIndex];
-        return [
+        const day = first ? data[first.dataIndex] : undefined;
+        if (!day) return "";
+        if (mode === "tokens") {
+          return [
+            formatTooltipTime(day.bucketStartMs, granularity),
+            `${t("总请求")}：${formatCompactInteger(totalTokens(day))}`,
+            `${colorMark(seriesColors.input)}${t("输入（非缓存）")}：${formatCompactInteger(day.inputTokens)}`,
+            `${colorMark(seriesColors.cacheRead)}${t("缓存输入")}：${formatCompactInteger(day.cacheReadTokens)}`,
+            `${colorMark(seriesColors.cacheWrite)}${t("缓存写入")}：${formatCompactInteger(day.cacheWriteTokens)}`,
+            `${colorMark(seriesColors.output)}${t("模型输出")}：${formatCompactInteger(day.outputTokens)}`,
+          ].join("<br/>");
+        }
+        const lines = [
           formatTooltipTime(day.bucketStartMs, granularity),
-          `${t("总请求")}：${formatCompactInteger(totalTokens(day))}`,
-          `${colorMark(seriesColors.input)}${t("输入（非缓存）")}：${formatCompactInteger(day.inputTokens)}`,
-          `${colorMark(seriesColors.cacheRead)}${t("缓存输入")}：${formatCompactInteger(day.cacheReadTokens)}`,
-          `${colorMark(seriesColors.cacheWrite)}${t("缓存写入")}：${formatCompactInteger(day.cacheWriteTokens)}`,
-          `${colorMark(seriesColors.output)}${t("模型输出")}：${formatCompactInteger(day.outputTokens)}`,
-        ].join("<br/>");
+          `${t("总费用")}：${formatUsd(day.totalCost)}`,
+          `${colorMark(seriesColors.input)}${t("输入（非缓存）")}：${formatUsd(day.inputCost)}`,
+          `${colorMark(seriesColors.cacheRead)}${t("缓存输入")}：${formatUsd(day.cacheReadCost)}`,
+          `${colorMark(seriesColors.cacheWrite)}${t("缓存写入")}：${formatUsd(day.cacheWriteCost)}`,
+          `${colorMark(seriesColors.output)}${t("模型输出")}：${formatUsd(day.outputCost)}`,
+        ];
+        if (day.unpricedCalls > 0) {
+          lines.push(`${t("未定价调用")}：${formatCompactInteger(day.unpricedCalls)}`);
+        }
+        if (day.incompleteUsageCalls > 0) {
+          lines.push(`${t("用量不完整调用")}：${formatCompactInteger(day.incompleteUsageCalls)}`);
+        }
+        return lines.join("<br/>");
       },
     },
     xAxis: {
@@ -118,7 +159,10 @@ export function DailyTokenUsageChart({
       axisLabel: {
         interval: "auto",
         hideOverlap: true,
-        formatter: (_value: string, index: number) => formatAxisLabel(data[index].bucketStartMs, granularity),
+        formatter: (_value: string, index: number) => {
+          const bucket = data[index];
+          return bucket ? formatAxisLabel(bucket.bucketStartMs, granularity) : "";
+        },
         color: "#8c8c8c",
         fontFamily: "HFKos",
         margin: 14,
@@ -132,10 +176,10 @@ export function DailyTokenUsageChart({
     },
     series: [
       {
-        name: t("无用量"),
+        name: mode === "tokens" ? t("无用量") : t("无费用"),
         type: "bar",
         stack: "empty-placeholder",
-        data: data.map((day) => totalTokens(day) === 0 ? emptyBarHeight : 0),
+        data: totals.map((total) => total === 0 ? emptyBarHeight : 0),
         barMaxWidth: 18,
         silent: true,
         z: 0,
@@ -145,8 +189,8 @@ export function DailyTokenUsageChart({
       {
         name: t("输入（非缓存）"),
         type: "bar",
-        stack: "tokens",
-        data: data.map(({ inputTokens }) => inputTokens),
+        stack: "usage",
+        data: data.map((day) => mode === "tokens" ? day.inputTokens : parseUsdAmount(day.inputCost)),
         barMaxWidth: 18,
         itemStyle: { color: seriesColors.input },
         ...seriesFocus,
@@ -154,8 +198,8 @@ export function DailyTokenUsageChart({
       {
         name: t("缓存输入"),
         type: "bar",
-        stack: "tokens",
-        data: data.map(({ cacheReadTokens }) => cacheReadTokens),
+        stack: "usage",
+        data: data.map((day) => mode === "tokens" ? day.cacheReadTokens : parseUsdAmount(day.cacheReadCost)),
         barMaxWidth: 18,
         itemStyle: { color: seriesColors.cacheRead },
         ...seriesFocus,
@@ -163,8 +207,8 @@ export function DailyTokenUsageChart({
       {
         name: t("缓存写入"),
         type: "bar",
-        stack: "tokens",
-        data: data.map(({ cacheWriteTokens }) => cacheWriteTokens),
+        stack: "usage",
+        data: data.map((day) => mode === "tokens" ? day.cacheWriteTokens : parseUsdAmount(day.cacheWriteCost)),
         barMaxWidth: 18,
         itemStyle: { color: seriesColors.cacheWrite },
         ...seriesFocus,
@@ -172,8 +216,8 @@ export function DailyTokenUsageChart({
       {
         name: t("模型输出"),
         type: "bar",
-        stack: "tokens",
-        data: data.map(({ outputTokens }) => outputTokens),
+        stack: "usage",
+        data: data.map((day) => mode === "tokens" ? day.outputTokens : parseUsdAmount(day.outputCost)),
         barMaxWidth: 18,
         barGap: "-100%",
         itemStyle: { color: seriesColors.output, borderRadius: [2, 2, 0, 0] },
@@ -193,12 +237,20 @@ export function DailyTokenUsageChart({
         ...seriesFocus,
       },
     ],
-  }), [averageLevel, axisMaximum, data, emptyBarHeight, granularity, hovered]);
+  }), [averageLevel, axisMaximum, data, emptyBarHeight, granularity, hovered, mode, totals]);
 
-  return <EChart
-    option={option}
-    className={styles.root}
-    onMouseEnter={() => setHovered(true)}
-    onMouseLeave={() => setHovered(false)}
-  />;
+  return <div className={styles.container}>
+    <div className={styles.toolbar}>
+      <div className={styles.modeSwitch} role="group" aria-label={t("趋势统计维度")}>
+        <button type="button" aria-pressed={mode === "tokens"} onClick={() => setMode("tokens")}>Token</button>
+        <button type="button" aria-pressed={mode === "cost"} onClick={() => setMode("cost")}>{t("费用")}</button>
+      </div>
+    </div>
+    <EChart
+      option={option}
+      className={styles.root}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    />
+  </div>;
 }

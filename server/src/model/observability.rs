@@ -131,6 +131,8 @@ mod llm_call {
         pub conversation_id: String,
         pub provider_call_index: i64,
         pub model_hash: Option<String>,
+        pub supplier_key: Option<String>,
+        pub endpoint_key: Option<String>,
         pub provider_type: String,
         pub provider_url: String,
         pub request_type: String,
@@ -154,12 +156,29 @@ mod llm_call {
         pub ttfr_ms: Option<i64>,
         pub duration_ms: Option<i64>,
         pub input_tokens: Option<i64>,
+        pub billed_input_tokens: Option<i64>,
         pub output_tokens: Option<i64>,
         pub total_tokens: Option<i64>,
         pub cache_read_tokens: Option<i64>,
         pub cache_write_tokens: Option<i64>,
         pub reasoning_tokens: Option<i64>,
         pub usage: Option<serde_json::Value>,
+        pub pricing_source: Option<String>,
+        pub pricing_provider_id: Option<String>,
+        pub pricing_model_id: Option<String>,
+        pub pricing_snapshot_at_ms: Option<i64>,
+        pub unit_input_per_million: Option<String>,
+        pub unit_output_per_million: Option<String>,
+        pub unit_cache_read_per_million: Option<String>,
+        pub unit_cache_write_per_million: Option<String>,
+        pub cost_status: Option<String>,
+        pub input_cost: Option<String>,
+        pub output_cost: Option<String>,
+        pub cache_read_cost: Option<String>,
+        pub cache_write_cost: Option<String>,
+        pub total_cost: Option<String>,
+        pub cost_calculated_at_ms: Option<i64>,
+        pub cost_backfilled: bool,
         pub message_count: i64,
         pub tool_count: i64,
         pub request_bytes: Option<i64>,
@@ -221,11 +240,11 @@ mod cursor_trace {
 pub use cursor_trace::*;
 
 mod overview {
-    //! Read-only usage aggregates rendered by the desktop overview page.
+    //! Read-only usage and cost aggregates rendered by the desktop overview page.
 
     use serde::Serialize;
 
-    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
     pub struct OverviewMetrics {
         pub llm_calls: i64,
         pub successful_calls: i64,
@@ -236,6 +255,40 @@ mod overview {
         pub cache_read_tokens: i64,
         pub cache_write_tokens: i64,
         pub output_tokens: i64,
+        pub total_cost: String,
+        pub input_cost: String,
+        pub output_cost: String,
+        pub cache_read_cost: String,
+        pub cache_write_cost: String,
+        pub average_priced_cost: Option<String>,
+        pub priced_calls: i64,
+        pub unpriced_calls: i64,
+        pub incomplete_usage_calls: i64,
+    }
+
+    impl Default for OverviewMetrics {
+        fn default() -> Self {
+            Self {
+                llm_calls: 0,
+                successful_calls: 0,
+                failed_calls: 0,
+                token_usage: 0,
+                prompt_tokens: 0,
+                input_tokens: 0,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                output_tokens: 0,
+                total_cost: "0".into(),
+                input_cost: "0".into(),
+                output_cost: "0".into(),
+                cache_read_cost: "0".into(),
+                cache_write_cost: "0".into(),
+                average_priced_cost: None,
+                priced_calls: 0,
+                unpriced_calls: 0,
+                incomplete_usage_calls: 0,
+            }
+        }
     }
 
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -247,13 +300,41 @@ mod overview {
         Day,
     }
 
-    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
     pub struct TokenUsageBucket {
         pub bucket_start_ms: i64,
         pub input_tokens: i64,
         pub cache_read_tokens: i64,
         pub cache_write_tokens: i64,
         pub output_tokens: i64,
+        pub input_cost: String,
+        pub output_cost: String,
+        pub cache_read_cost: String,
+        pub cache_write_cost: String,
+        pub total_cost: String,
+        pub priced_calls: i64,
+        pub unpriced_calls: i64,
+        pub incomplete_usage_calls: i64,
+    }
+
+    impl Default for TokenUsageBucket {
+        fn default() -> Self {
+            Self {
+                bucket_start_ms: 0,
+                input_tokens: 0,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                output_tokens: 0,
+                input_cost: "0".into(),
+                output_cost: "0".into(),
+                cache_read_cost: "0".into(),
+                cache_write_cost: "0".into(),
+                total_cost: "0".into(),
+                priced_calls: 0,
+                unpriced_calls: 0,
+                incomplete_usage_calls: 0,
+            }
+        }
     }
 
     impl TokenUsageBucket {
@@ -265,11 +346,80 @@ mod overview {
         }
     }
 
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+    pub struct OverviewSupplierSummary {
+        pub supplier_key: String,
+        pub source_kind: String,
+        pub endpoint_key: String,
+        pub model_id: String,
+        pub label: String,
+        pub provider_type: String,
+        pub active: bool,
+        pub pricing_source: String,
+        pub llm_calls: i64,
+        pub successful_calls: i64,
+        pub failed_calls: i64,
+        pub token_usage: i64,
+        pub prompt_tokens: i64,
+        pub input_tokens: i64,
+        pub cache_read_tokens: i64,
+        pub cache_write_tokens: i64,
+        pub output_tokens: i64,
+        pub total_cost: String,
+        pub input_cost: String,
+        pub output_cost: String,
+        pub cache_read_cost: String,
+        pub cache_write_cost: String,
+        pub average_priced_cost: Option<String>,
+        pub priced_calls: i64,
+        pub unpriced_calls: i64,
+        pub incomplete_usage_calls: i64,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+    pub struct OverviewModelSummary {
+        pub model_id: String,
+        pub llm_calls: i64,
+        pub successful_calls: i64,
+        pub failed_calls: i64,
+        pub token_usage: i64,
+        pub prompt_tokens: i64,
+        pub input_tokens: i64,
+        pub cache_read_tokens: i64,
+        pub cache_write_tokens: i64,
+        pub output_tokens: i64,
+        pub total_cost: String,
+        pub input_cost: String,
+        pub output_cost: String,
+        pub cache_read_cost: String,
+        pub cache_write_cost: String,
+        pub average_priced_cost: Option<String>,
+        pub priced_calls: i64,
+        pub unpriced_calls: i64,
+        pub incomplete_usage_calls: i64,
+        pub providers: Vec<OverviewSupplierSummary>,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+    pub struct OverviewFilterModel {
+        pub supplier_key: String,
+        pub source_kind: String,
+        pub endpoint_key: String,
+        pub model_id: String,
+        pub label: String,
+        pub group: String,
+        pub provider_type: String,
+        pub plugin_icon: Option<String>,
+        pub active: bool,
+    }
+
     #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
     pub struct Overview {
         pub metrics: OverviewMetrics,
         pub token_usage_granularity: TokenUsageGranularity,
         pub token_usage_series: Vec<TokenUsageBucket>,
+        pub models: Vec<OverviewModelSummary>,
+        pub available_models: Vec<OverviewFilterModel>,
     }
 }
 pub use overview::*;

@@ -1,13 +1,23 @@
 import type {
   CallDetail,
+  CatalogModel,
+  CatalogProviderOption,
+  CatalogSearchResult,
   CursorHarnessStatus,
   ExternalApiSettings,
   LlmCall,
   Model,
   Overview,
+  OverviewFilterModel,
+  OverviewModelSummary,
+  OverviewSupplierSummary,
   OverviewTokenUsageBucket,
+  PricingRates,
+  PricingSyncState,
   ProxySettings,
+  SaveSupplierPricingInput,
   StatisticsStorage,
+  SupplierPricingView,
   TabSettings,
 } from "../shared/api";
 
@@ -33,9 +43,60 @@ const models: Model[] = [
   createModel({ hash: "mock-mistral-small", order: 16, name: "Mistral Small", type: "openai", url: "https://api.mistral.ai", modelId: "mistral-small-latest", endpoint: "/v1/chat/completions" }),
 ];
 
+const DEMO_CATALOG: CatalogModel[] = [
+  catalogEntry("anthropic", "Anthropic", "https://api.anthropic.com", "claude-sonnet-4-20250514", "Claude Sonnet 4", { input_per_million: "3", output_per_million: "15", cache_read_per_million: "0.3", cache_write_per_million: "3.75" }),
+  catalogEntry("anthropic", "Anthropic", "https://api.anthropic.com", "claude-opus-4-20250514", "Claude Opus 4", { input_per_million: "15", output_per_million: "75", cache_read_per_million: "1.5", cache_write_per_million: "18.75" }),
+  catalogEntry("openai", "OpenAI", "https://api.openai.com", "gpt-5.2", "GPT-5.2", { input_per_million: "2.5", output_per_million: "10", cache_read_per_million: "0.625", cache_write_per_million: "0" }),
+  catalogEntry("openai", "OpenAI", "https://api.openai.com", "o3", "o3", { input_per_million: "2", output_per_million: "8", cache_read_per_million: "0.5", cache_write_per_million: "0" }),
+  catalogEntry("deepseek", "DeepSeek", "https://api.deepseek.com", "deepseek-chat", "DeepSeek Chat", { input_per_million: "0.27", output_per_million: "1.1", cache_read_per_million: "0.07", cache_write_per_million: "0" }),
+  catalogEntry("deepseek", "DeepSeek", "https://api.deepseek.com", "deepseek-reasoner", "DeepSeek Reasoner", { input_per_million: "0.55", output_per_million: "2.19", cache_read_per_million: "0.14", cache_write_per_million: "0" }),
+  catalogEntry("google", "Google", "https://generativelanguage.googleapis.com", "gemini-2.5-pro", "Gemini 2.5 Pro", { input_per_million: "1.25", output_per_million: "10", cache_read_per_million: "0.31", cache_write_per_million: "0" }),
+  catalogEntry("google", "Google", "https://generativelanguage.googleapis.com", "gemini-2.5-flash", "Gemini 2.5 Flash", { input_per_million: "0.15", output_per_million: "0.6", cache_read_per_million: "0.0375", cache_write_per_million: "0" }),
+];
+
+const EMPTY_RATES: PricingRates = {
+  input_per_million: null,
+  output_per_million: null,
+  cache_read_per_million: null,
+  cache_write_per_million: null,
+};
+
+function catalogEntry(
+  provider_id: string,
+  provider_name: string,
+  provider_api: string | null,
+  model_id: string,
+  model_name: string,
+  rates: PricingRates,
+): CatalogModel {
+  return { provider_id, provider_name, provider_api, model_id, model_name, rates, synced_at_ms: FIXED_NOW - 30 * 60_000 };
+}
+
+function supplierKeyFor(model: Model): string {
+  return `builtin::${model.base_url}::${model.model_id}`;
+}
+
 const calls: LlmCall[] = Array.from({ length: 24 }, (_, index) => {
   const model = models[index % models.length];
   const failed = index === 7 || index === 19;
+  const catalog = DEMO_CATALOG.find((item) => item.model_id === model.model_id);
+  const billedInput = 4_800 + index * 337;
+  const outputTokens = failed ? 0 : 820 + index * 43;
+  const cacheReadTokens = 3_100 + index * 251;
+  const cacheWriteTokens = 320 + index * 19;
+  const pricingSource = catalog ? "catalog" : "unpriced";
+  const costStatus = catalog ? "priced" : "unpriced";
+  const inputCost = catalog ? formatNano(mulRate(billedInput, catalog.rates.input_per_million)) : null;
+  const outputCost = catalog ? formatNano(mulRate(outputTokens, catalog.rates.output_per_million)) : null;
+  const cacheReadCost = catalog ? formatNano(mulRate(cacheReadTokens, catalog.rates.cache_read_per_million)) : null;
+  const cacheWriteCost = catalog ? formatNano(mulRate(cacheWriteTokens, catalog.rates.cache_write_per_million)) : null;
+  const totalNano = catalog
+    ? mulRate(billedInput, catalog.rates.input_per_million)
+      + mulRate(outputTokens, catalog.rates.output_per_million)
+      + mulRate(cacheReadTokens, catalog.rates.cache_read_per_million)
+      + mulRate(cacheWriteTokens, catalog.rates.cache_write_per_million)
+    : null;
+
   return {
     call_kind: "provider_llm",
     route: "local_byok",
@@ -44,6 +105,8 @@ const calls: LlmCall[] = Array.from({ length: 24 }, (_, index) => {
     conversation_id: `mock-conversation-${Math.floor(index / 4) + 1}`,
     provider_call_index: index + 1,
     model_hash: model.model_hash,
+    supplier_key: supplierKeyFor(model),
+    endpoint_key: model.base_url,
     provider_type: model.type,
     provider_url: model.base_url,
     request_type: model.type === "anthropic" ? "messages" : "responses",
@@ -59,12 +122,29 @@ const calls: LlmCall[] = Array.from({ length: 24 }, (_, index) => {
     ttfr_ms: 290 + index * 15,
     ttft_ms: 370 + index * 17,
     duration_ms: failed ? 812 : 1_420 + index * 71,
-    input_tokens: 4_800 + index * 337,
-    output_tokens: failed ? 0 : 820 + index * 43,
-    total_tokens: failed ? 4_800 + index * 337 : 5_620 + index * 380,
-    cache_read_tokens: 3_100 + index * 251,
-    cache_write_tokens: 320 + index * 19,
+    input_tokens: model.type === "anthropic" ? billedInput : billedInput + cacheReadTokens + cacheWriteTokens,
+    billed_input_tokens: billedInput,
+    output_tokens: outputTokens,
+    total_tokens: failed ? billedInput : billedInput + outputTokens + cacheReadTokens + cacheWriteTokens,
+    cache_read_tokens: cacheReadTokens,
+    cache_write_tokens: cacheWriteTokens,
     reasoning_tokens: index % 2 === 0 ? 420 + index * 11 : null,
+    pricing_source: pricingSource,
+    pricing_provider_id: catalog?.provider_id ?? null,
+    pricing_model_id: catalog?.model_id ?? null,
+    pricing_snapshot_at_ms: FIXED_NOW - 30 * 60_000,
+    unit_input_per_million: catalog?.rates.input_per_million ?? null,
+    unit_output_per_million: catalog?.rates.output_per_million ?? null,
+    unit_cache_read_per_million: catalog?.rates.cache_read_per_million ?? null,
+    unit_cache_write_per_million: catalog?.rates.cache_write_per_million ?? null,
+    cost_status: costStatus,
+    input_cost: inputCost,
+    output_cost: outputCost,
+    cache_read_cost: cacheReadCost,
+    cache_write_cost: cacheWriteCost,
+    total_cost: totalNano == null ? null : formatNano(totalNano),
+    cost_calculated_at_ms: FIXED_NOW - index * 3 * 60_000,
+    cost_backfilled: index % 5 === 0,
     message_count: 14 + (index % 8),
     tool_count: 3 + (index % 5),
     http_status: failed ? 429 : 200,
@@ -73,6 +153,19 @@ const calls: LlmCall[] = Array.from({ length: 24 }, (_, index) => {
     detailed: true,
   };
 });
+
+let pricingSyncState: PricingSyncState = {
+  auto_sync_enabled: true,
+  sync_interval_hours: 6,
+  catalog_model_count: DEMO_CATALOG.length,
+  last_attempted_at_ms: FIXED_NOW - 30 * 60_000,
+  last_synced_at_ms: FIXED_NOW - 30 * 60_000,
+  last_error: null,
+  syncing: false,
+  backfilling: false,
+};
+
+let pricingConfigs = new Map<string, SaveSupplierPricingInput>();
 
 let harnessStatus: CursorHarnessStatus = {
   platform: "macos",
@@ -128,6 +221,29 @@ export function installDemoApi() {
     if (path === "/overview") return json(createOverview(url.searchParams));
     if (path === "/llm-calls") return json(calls);
     if (path.startsWith("/llm-calls/")) return json(createCallDetail(path.slice("/llm-calls/".length)));
+    if (path === "/pricing/catalog" && method === "GET") return json(searchCatalog(url.searchParams));
+    if (path === "/pricing/models" && method === "GET") return json(buildSupplierPricingViews());
+    if (path === "/pricing/models" && method === "PUT") {
+      const saveInput = body as SaveSupplierPricingInput;
+      const key = `${saveInput.source_kind}::${saveInput.endpoint_key}::${saveInput.model_id}`;
+      if (saveInput.binding_mode === "auto" && !hasAnyRate(saveInput.custom_rates)) {
+        pricingConfigs.delete(key);
+      } else {
+        pricingConfigs.set(key, saveInput);
+      }
+      const updated = buildSupplierPricingViews().find((item) => item.supplier_key === key) ?? buildSupplierPricingViews()[0];
+      return json(updated);
+    }
+    if (path === "/pricing/sync" && method === "GET") return json(pricingSyncState);
+    if (path === "/pricing/sync" && method === "PUT") {
+      const enabled = Boolean((body as { auto_sync_enabled?: unknown } | null)?.auto_sync_enabled);
+      pricingSyncState = { ...pricingSyncState, auto_sync_enabled: enabled };
+      return json(pricingSyncState);
+    }
+    if (path === "/pricing/sync" && method === "POST") {
+      pricingSyncState = { ...pricingSyncState, last_attempted_at_ms: FIXED_NOW, last_synced_at_ms: FIXED_NOW, last_error: null };
+      return json(pricingSyncState);
+    }
     if (path === "/harness/cursor/status") return json(harnessStatus);
     if (path === "/harness/cursor/ca/initialize") return json(harnessStatus);
     if (path === "/harness/cursor/enabled") {
@@ -188,6 +304,70 @@ export function installDemoApi() {
   };
 }
 
+function searchCatalog(params: URLSearchParams): CatalogSearchResult {
+  const query = (params.get("query") ?? "").trim().toLowerCase();
+  const providerId = (params.get("provider_id") ?? "").trim();
+  const limit = Math.max(1, Math.min(200, Number(params.get("limit")) || 100));
+  const offset = Math.max(0, Number(params.get("offset")) || 0);
+  const providersMap = new Map<string, CatalogProviderOption>();
+  for (const item of DEMO_CATALOG) {
+    const existing = providersMap.get(item.provider_id);
+    if (existing) existing.model_count += 1;
+    else providersMap.set(item.provider_id, { provider_id: item.provider_id, provider_name: item.provider_name, provider_api: item.provider_api, model_count: 1 });
+  }
+  const filtered = DEMO_CATALOG.filter((item) => {
+    if (providerId && item.provider_id !== providerId) return false;
+    if (!query) return true;
+    return [item.provider_id, item.provider_name, item.model_id, item.model_name, item.provider_api ?? ""]
+      .some((field) => field.toLowerCase().includes(query));
+  });
+  return { total: filtered.length, providers: [...providersMap.values()], items: filtered.slice(offset, offset + limit) };
+}
+
+function buildSupplierPricingViews(): SupplierPricingView[] {
+  return models.map((model) => {
+    const key = supplierKeyFor(model);
+    const saved = pricingConfigs.get(key);
+    const modelCalls = calls.filter((call) => call.supplier_key === key);
+    const autoCatalog = DEMO_CATALOG.find((item) => item.model_id === model.model_id) ?? null;
+    const bindingMode = saved?.binding_mode ?? "auto";
+    const matched = bindingMode === "manual"
+      ? DEMO_CATALOG.find((item) => item.provider_id === saved?.catalog_provider_id && item.model_id === saved?.catalog_model_id) ?? null
+      : autoCatalog;
+    const customRates = saved?.custom_rates ?? EMPTY_RATES;
+    const effectiveRates: PricingRates = {
+      input_per_million: customRates.input_per_million ?? matched?.rates.input_per_million ?? null,
+      output_per_million: customRates.output_per_million ?? matched?.rates.output_per_million ?? null,
+      cache_read_per_million: customRates.cache_read_per_million ?? matched?.rates.cache_read_per_million ?? null,
+      cache_write_per_million: customRates.cache_write_per_million ?? matched?.rates.cache_write_per_million ?? null,
+    };
+    const effectiveSource = hasAnyRate(customRates) ? "custom" : hasAnyRate(effectiveRates) ? "catalog" : "unpriced";
+    return {
+      supplier_key: key,
+      source_kind: "builtin",
+      endpoint_key: model.base_url,
+      model_id: model.model_id,
+      display_name: model.display_name,
+      provider_type: model.type,
+      plugin_icon: null,
+      active: true,
+      call_count: modelCalls.length,
+      unpriced_call_count: modelCalls.filter((call) => call.cost_status !== "priced").length,
+      binding_mode: bindingMode,
+      catalog_match_kind: bindingMode === "manual" ? (matched ? "manual" : "manual_missing") : (matched ? "auto_exact" : "none"),
+      matched_provider_id: matched?.provider_id ?? saved?.catalog_provider_id ?? null,
+      matched_provider_name: matched?.provider_name ?? null,
+      matched_model_id: matched?.model_id ?? saved?.catalog_model_id ?? null,
+      matched_model_name: matched?.model_name ?? null,
+      matched_rates: matched?.rates ?? null,
+      custom_rates: customRates,
+      effective_source: effectiveSource,
+      effective_rates: effectiveRates,
+      updated_at_ms: saved ? FIXED_NOW : null,
+    };
+  });
+}
+
 function createModel({ hash, order, name, type, url, modelId, endpoint = "/v1/responses" }: {
   hash: string;
   order: number;
@@ -229,46 +409,179 @@ function createModel({ hash, order, name, type, url, modelId, endpoint = "/v1/re
 function createOverview(params: URLSearchParams): Overview {
   const start = Number(params.get("start_ms"));
   const end = Number(params.get("end_ms"));
+  const rawSupplierKeys = params.get("supplier_keys");
+  const filterKeys = rawSupplierKeys ? new Set(JSON.parse(rawSupplierKeys) as string[]) : null;
+  const selectedModels = filterKeys?.size ? models.filter((m) => filterKeys.has(supplierKeyFor(m))) : models;
   const duration = Number.isFinite(start) && Number.isFinite(end) && end > start ? end - start : 365 * 86_400_000;
   const granularity = duration <= 2 * 60 * 60_000 ? "minute" : duration <= 2 * 86_400_000 ? "hour" : "day";
   const step = granularity === "minute" ? 60_000 : granularity === "hour" ? 3_600_000 : 86_400_000;
   const count = granularity === "minute" ? Math.min(60, Math.max(10, Math.ceil(duration / step))) : granularity === "hour" ? Math.min(24, Math.max(8, Math.ceil(duration / step))) : Math.min(365, Math.max(7, Math.ceil(duration / step)));
   const series = createSeries(count, step, Number.isFinite(end) && end > 0 ? end : FIXED_NOW);
+
+  const modelSummaries = createModelSummaries(selectedModels);
   const totals = series.reduce((sum, bucket) => ({
     input: sum.input + bucket.input_tokens,
     cacheRead: sum.cacheRead + bucket.cache_read_tokens,
     cacheWrite: sum.cacheWrite + bucket.cache_write_tokens,
     output: sum.output + bucket.output_tokens,
-  }), { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 });
-  const llmCalls = Math.max(12, Math.round(count * 5.4));
+    inputNano: sum.inputNano + toNano(bucket.input_cost),
+    outputNano: sum.outputNano + toNano(bucket.output_cost),
+    cacheReadNano: sum.cacheReadNano + toNano(bucket.cache_read_cost),
+    cacheWriteNano: sum.cacheWriteNano + toNano(bucket.cache_write_cost),
+    totalNano: sum.totalNano + toNano(bucket.total_cost),
+    priced: sum.priced + bucket.priced_calls,
+    unpriced: sum.unpriced + bucket.unpriced_calls,
+    incomplete: sum.incomplete + bucket.incomplete_usage_calls,
+  }), { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, inputNano: 0, outputNano: 0, cacheReadNano: 0, cacheWriteNano: 0, totalNano: 0, priced: 0, unpriced: 0, incomplete: 0 });
+  const llmCalls = Math.max(selectedModels.length, totals.priced + totals.unpriced + totals.incomplete);
+  const failedCalls = Math.max(0, Math.floor(llmCalls * 0.008));
+
+  const availableModels: OverviewFilterModel[] = models.map((model) => ({
+    supplier_key: supplierKeyFor(model),
+    source_kind: "builtin",
+    endpoint_key: model.base_url,
+    model_id: model.model_id,
+    label: model.display_name,
+    group: new URL(model.base_url).hostname.toLowerCase(),
+    provider_type: model.type,
+    plugin_icon: null,
+    active: true,
+  }));
 
   return {
     metrics: {
       llm_calls: llmCalls,
-      successful_calls: llmCalls - Math.max(1, Math.floor(llmCalls * 0.008)),
-      failed_calls: Math.max(1, Math.floor(llmCalls * 0.008)),
+      successful_calls: llmCalls - failedCalls,
+      failed_calls: failedCalls,
       token_usage: totals.input + totals.cacheRead + totals.cacheWrite + totals.output,
       prompt_tokens: totals.input + totals.cacheRead + totals.cacheWrite,
       input_tokens: totals.input,
       cache_read_tokens: totals.cacheRead,
       cache_write_tokens: totals.cacheWrite,
       output_tokens: totals.output,
+      total_cost: formatNano(totals.totalNano),
+      input_cost: formatNano(totals.inputNano),
+      output_cost: formatNano(totals.outputNano),
+      cache_read_cost: formatNano(totals.cacheReadNano),
+      cache_write_cost: formatNano(totals.cacheWriteNano),
+      average_priced_cost: totals.priced > 0 ? formatNano(Math.round(totals.totalNano / totals.priced)) : null,
+      priced_calls: totals.priced,
+      unpriced_calls: totals.unpriced,
+      incomplete_usage_calls: totals.incomplete,
     },
     token_usage_granularity: granularity,
     token_usage_series: series,
+    models: modelSummaries,
+    available_models: availableModels,
   };
+}
+
+function createModelSummaries(selected: Model[]): OverviewModelSummary[] {
+  const byModel = new Map<string, OverviewSupplierSummary[]>();
+  const views = new Map(buildSupplierPricingViews().map((view) => [view.supplier_key, view]));
+  for (const model of selected) {
+    const key = supplierKeyFor(model);
+    const matchingCalls = calls.filter((c) => c.supplier_key === key);
+    const llmCalls = Math.max(1, matchingCalls.length);
+    const failed = matchingCalls.filter((c) => c.status !== "completed").length;
+    const input = matchingCalls.reduce((s, c) => s + (c.billed_input_tokens ?? 0), 0) || 4_800;
+    const cacheRead = matchingCalls.reduce((s, c) => s + (c.cache_read_tokens ?? 0), 0) || 3_100;
+    const cacheWrite = matchingCalls.reduce((s, c) => s + (c.cache_write_tokens ?? 0), 0) || 320;
+    const output = matchingCalls.reduce((s, c) => s + (c.output_tokens ?? 0), 0) || 820;
+    const priced = matchingCalls.filter((c) => c.cost_status === "priced").length;
+    const unpriced = matchingCalls.filter((c) => !c.cost_status || c.cost_status === "unpriced").length;
+    const incomplete = matchingCalls.filter((c) => c.cost_status === "incomplete_usage").length;
+    const inputNano = matchingCalls.reduce((s, c) => s + toNano(c.input_cost), 0);
+    const outputNano = matchingCalls.reduce((s, c) => s + toNano(c.output_cost), 0);
+    const cacheReadNano = matchingCalls.reduce((s, c) => s + toNano(c.cache_read_cost), 0);
+    const cacheWriteNano = matchingCalls.reduce((s, c) => s + toNano(c.cache_write_cost), 0);
+    const totalNano = inputNano + outputNano + cacheReadNano + cacheWriteNano;
+    const supplier: OverviewSupplierSummary = {
+      supplier_key: key,
+      source_kind: "builtin",
+      endpoint_key: model.base_url,
+      model_id: model.model_id,
+      label: model.display_name,
+      provider_type: model.type,
+      active: true,
+      pricing_source: views.get(key)?.effective_source ?? "unpriced",
+      llm_calls: llmCalls,
+      successful_calls: llmCalls - failed,
+      failed_calls: failed,
+      token_usage: input + cacheRead + cacheWrite + output,
+      prompt_tokens: input + cacheRead + cacheWrite,
+      input_tokens: input,
+      cache_read_tokens: cacheRead,
+      cache_write_tokens: cacheWrite,
+      output_tokens: output,
+      total_cost: formatNano(totalNano),
+      input_cost: formatNano(inputNano),
+      output_cost: formatNano(outputNano),
+      cache_read_cost: formatNano(cacheReadNano),
+      cache_write_cost: formatNano(cacheWriteNano),
+      average_priced_cost: priced > 0 ? formatNano(Math.round(totalNano / priced)) : null,
+      priced_calls: priced,
+      unpriced_calls: unpriced,
+      incomplete_usage_calls: incomplete,
+    };
+    const existing = byModel.get(model.model_id);
+    if (existing) existing.push(supplier);
+    else byModel.set(model.model_id, [supplier]);
+  }
+  return [...byModel.entries()].map(([model_id, providers]) => {
+    const priced = providers.reduce((s, p) => s + p.priced_calls, 0);
+    const totalNano = providers.reduce((s, p) => s + toNano(p.total_cost), 0);
+    return {
+      model_id,
+      llm_calls: providers.reduce((s, p) => s + p.llm_calls, 0),
+      successful_calls: providers.reduce((s, p) => s + p.successful_calls, 0),
+      failed_calls: providers.reduce((s, p) => s + p.failed_calls, 0),
+      token_usage: providers.reduce((s, p) => s + p.token_usage, 0),
+      prompt_tokens: providers.reduce((s, p) => s + p.prompt_tokens, 0),
+      input_tokens: providers.reduce((s, p) => s + p.input_tokens, 0),
+      cache_read_tokens: providers.reduce((s, p) => s + p.cache_read_tokens, 0),
+      cache_write_tokens: providers.reduce((s, p) => s + p.cache_write_tokens, 0),
+      output_tokens: providers.reduce((s, p) => s + p.output_tokens, 0),
+      total_cost: formatNano(totalNano),
+      input_cost: formatNano(providers.reduce((s, p) => s + toNano(p.input_cost), 0)),
+      output_cost: formatNano(providers.reduce((s, p) => s + toNano(p.output_cost), 0)),
+      cache_read_cost: formatNano(providers.reduce((s, p) => s + toNano(p.cache_read_cost), 0)),
+      cache_write_cost: formatNano(providers.reduce((s, p) => s + toNano(p.cache_write_cost), 0)),
+      average_priced_cost: priced > 0 ? formatNano(Math.round(totalNano / priced)) : null,
+      priced_calls: priced,
+      unpriced_calls: providers.reduce((s, p) => s + p.unpriced_calls, 0),
+      incomplete_usage_calls: providers.reduce((s, p) => s + p.incomplete_usage_calls, 0),
+      providers,
+    };
+  });
 }
 
 function createSeries(count: number, step: number, end: number): OverviewTokenUsageBucket[] {
   return Array.from({ length: count }, (_, index) => {
     const wave = 0.72 + ((index * 17) % 31) / 50;
+    const input = Math.round(800 * wave);
+    const cacheRead = Math.round(79_200 * wave);
+    const cacheWrite = Math.round(7_500 * wave);
+    const output = Math.round(12_500 * wave);
+    const inputNano = mulRate(input, "2.5");
+    const cacheReadNano = mulRate(cacheRead, "0.3");
+    const cacheWriteNano = mulRate(cacheWrite, "3.125");
+    const outputNano = mulRate(output, "12.5");
     return {
       bucket_start_ms: end - (count - index) * step,
       // input : cache_read = 1 : 99，使默认口径缓存命中率恰为 99%
-      input_tokens: Math.round(800 * wave),
-      cache_read_tokens: Math.round(79_200 * wave),
-      cache_write_tokens: Math.round(7_500 * wave),
-      output_tokens: Math.round(12_500 * wave),
+      input_tokens: input,
+      cache_read_tokens: cacheRead,
+      cache_write_tokens: cacheWrite,
+      output_tokens: output,
+      input_cost: formatNano(inputNano),
+      output_cost: formatNano(outputNano),
+      cache_read_cost: formatNano(cacheReadNano),
+      cache_write_cost: formatNano(cacheWriteNano),
+      total_cost: formatNano(inputNano + outputNano + cacheReadNano + cacheWriteNano),
+      priced_calls: 4,
+      unpriced_calls: index % 4 === 0 ? 1 : 0,
+      incomplete_usage_calls: 0,
     };
   });
 }
@@ -288,6 +601,30 @@ function createCallDetail(id: string): CallDetail {
     ],
     cursor_trace: null,
   };
+}
+
+function mulRate(tokens: number, rate: string | null | undefined): number {
+  if (!rate) return 0;
+  return Math.round((tokens / 1_000_000) * Number(rate) * 1_000_000_000);
+}
+
+function toNano(usd: string | null | undefined): number {
+  if (!usd) return 0;
+  return Math.round(Number(usd) * 1_000_000_000);
+}
+
+function formatNano(nano: number): string {
+  const scaled = (nano / 1_000_000_000).toFixed(9).replace(/\.?0+$/, "");
+  return scaled || "0";
+}
+
+function hasAnyRate(rates: PricingRates): boolean {
+  return Boolean(
+    rates.input_per_million != null
+    || rates.output_per_million != null
+    || rates.cache_read_per_million != null
+    || rates.cache_write_per_million != null,
+  );
 }
 
 async function readBody(input: RequestInfo | URL, init?: RequestInit): Promise<unknown> {

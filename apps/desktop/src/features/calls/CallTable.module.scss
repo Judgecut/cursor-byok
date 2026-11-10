@@ -10,3 +10,29 @@
 
 .completed { color: #56b870; }
 .failed { color: var(--vscode-errorForeground, #f48771); }
+
+.costCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.costAmount {
+  font-family: var(--oa-number-font);
+}
+
+.costMuted {
+  color: var(--vscode-descriptionForeground);
+}
+
+.costTag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-sideBar-border);
+  border-radius: 99px;
+  font-size: type.$font-size-2xs;
+}

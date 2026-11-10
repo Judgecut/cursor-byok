@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use crate::store::{
     CommitPromptLocale, CommitSettings, DesktopSettings, ExternalApiSettings, PortSettings,
     ProxySettings, ProxySettingsInput, StatisticsStorage, StatisticsStorageScope, TabSettings,
-    TokenPricingSettings,
 };
 
 use super::{ControlService, ObservabilitySettings};
@@ -146,19 +145,6 @@ pub async fn update_commit(
     let saved = service.set_commit_settings(settings).await?;
     let default_locale = saved.prompt_locale;
     Ok(Json(CommitSettingsView::new(saved, default_locale)))
-}
-
-pub async fn get_pricing_settings(
-    State(service): State<ControlService>,
-) -> Result<Json<TokenPricingSettings>> {
-    Ok(Json(service.pricing_settings().await?))
-}
-
-pub async fn update_pricing_settings(
-    State(service): State<ControlService>,
-    Json(settings): Json<TokenPricingSettings>,
-) -> Result<Json<TokenPricingSettings>> {
-    Ok(Json(service.set_pricing_settings(settings).await?))
 }
 
 fn requested_commit_locale(headers: &HeaderMap) -> CommitPromptLocale {

@@ -126,6 +126,42 @@ impl PluginDataStore {
         }
     }
 
+    pub async fn list_keys(&self, plugin_id: &str, prefix: &str) -> Result<Vec<String>> {
+        validate_component(plugin_id, "plugin id")?;
+        let directory = self.root.join(plugin_id);
+        let lock = self.lock(plugin_id);
+        let _guard = lock.lock().await;
+        let mut entries = match tokio::fs::read_dir(&directory).await {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => {
+                return Err(Error::Config(format!(
+                    "plugin data directory read failed at {}: {error}",
+                    directory.display()
+                )));
+            }
+        };
+        let mut keys = Vec::new();
+        while let Some(entry) = entries.next_entry().await.map_err(|error| {
+            Error::Config(format!(
+                "plugin data directory scan failed at {}: {error}",
+                directory.display()
+            ))
+        })? {
+            let file_name = entry.file_name();
+            let Some(name) = file_name.to_str() else {
+                continue;
+            };
+            if let Some(stem) = name.strip_suffix(".json") {
+                if stem.starts_with(prefix) {
+                    keys.push(stem.to_owned());
+                }
+            }
+        }
+        keys.sort();
+        Ok(keys)
+    }
+
     fn path(&self, plugin_id: &str, key: &str) -> Result<PathBuf> {
         validate_component(plugin_id, "plugin id")?;
         validate_component(key, "plugin data key")?;

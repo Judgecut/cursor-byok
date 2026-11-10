@@ -1,12 +1,40 @@
-//! Persists provider call payloads, timing, and usage.
+//! Persists provider call payloads, timing, frozen pricing snapshots, and usage costs.
+use std::str::FromStr;
+
 use sqlx::Row;
 
 use crate::{
-    model::{LlmCallRequest, LlmCallResponseChunk, LlmCallSummary, NewLlmCall, Usage},
+    model::{
+        LlmCallRequest, LlmCallResponseChunk, LlmCallSummary, NewLlmCall, ProviderType, Usage,
+    },
+    pricing::{
+        calculate_cost, canonical_supplier_identity, format_nano_usd, PricingRates,
+        PricingSnapshot, PricingSource,
+    },
     Result,
 };
 
-use super::{now_ms, Store};
+use super::{now_ms, pricing::resolve_snapshot_conn, Store};
+
+const LLM_CALL_COLUMNS: &str = r#"
+    call_id, run_id, conversation_id, provider_call_index, model_hash,
+    supplier_key, endpoint_key,
+    provider_type, provider_url, request_type, request_url, model_id, display_name,
+    reasoning_effort, fast, status, finish_reason,
+    created_at_ms, request_started_at_ms, response_headers_at_ms,
+    first_event_at_ms, first_text_at_ms, first_valid_response_at_ms, finished_at_ms,
+    queue_ms, ttfb_ms, ttft_ms, ttfr_ms, duration_ms,
+    input_tokens, output_tokens, total_tokens,
+    cache_read_tokens, cache_write_tokens, reasoning_tokens, usage_json,
+    pricing_source, pricing_provider_id, pricing_model_id, pricing_snapshot_at_ms,
+    unit_input_per_million, unit_output_per_million,
+    unit_cache_read_per_million, unit_cache_write_per_million,
+    cost_status, input_cost_nano, output_cost_nano,
+    cache_read_cost_nano, cache_write_cost_nano, total_cost_nano,
+    cost_calculated_at_ms, cost_backfilled,
+    message_count, tool_count, request_bytes, response_bytes, stream_event_count,
+    http_status, error_kind, error_message, detailed
+"#;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ContextUsageAnchor {
@@ -65,21 +93,37 @@ impl Store {
     }
 
     pub async fn start_llm_call(&self, call: &NewLlmCall) -> Result<()> {
+        let identity = canonical_supplier_identity(
+            call.request_type,
+            &call.request_url,
+            &call.provider_url,
+            &call.model_id,
+        );
         let _write = self.writes.lock().await;
         let now = now_ms();
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let snapshot = resolve_snapshot_conn(&mut transaction, &identity, now).await?;
         sqlx::query(
             r#"INSERT INTO llm_calls(
                 call_id, run_id, conversation_id, provider_call_index, model_hash,
+                supplier_key, endpoint_key,
                 provider_type, provider_url, request_type, request_url, model_id, display_name,
                 reasoning_effort, fast, status,
-                created_at_ms, request_started_at_ms, queue_ms, message_count, tool_count, detailed
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, 0, ?, ?, ?)"#,
+                created_at_ms, request_started_at_ms, queue_ms,
+                pricing_source, pricing_provider_id, pricing_model_id, pricing_snapshot_at_ms,
+                unit_input_per_million, unit_output_per_million,
+                unit_cache_read_per_million, unit_cache_write_per_million,
+                cost_backfilled,
+                message_count, tool_count, detailed
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)"#,
         )
         .bind(&call.call_id)
         .bind(&call.run_id)
         .bind(&call.conversation_id)
         .bind(call.provider_call_index)
         .bind(&call.model_hash)
+        .bind(&identity.supplier_key)
+        .bind(&identity.endpoint_key)
         .bind(call.provider_type.as_str())
         .bind(&call.provider_url)
         .bind(call.request_type.as_str())
@@ -90,11 +134,20 @@ impl Store {
         .bind(call.fast)
         .bind(now)
         .bind(now)
+        .bind(snapshot.source.as_str())
+        .bind(&snapshot.provider_id)
+        .bind(&snapshot.model_id)
+        .bind(snapshot.snapshot_at_ms)
+        .bind(&snapshot.rates.input_per_million)
+        .bind(&snapshot.rates.output_per_million)
+        .bind(&snapshot.rates.cache_read_per_million)
+        .bind(&snapshot.rates.cache_write_per_million)
         .bind(call.message_count as i64)
         .bind(call.tool_count as i64)
         .bind(call.detailed)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await?;
+        transaction.commit().await?;
         Ok(())
     }
 
@@ -234,18 +287,87 @@ impl Store {
 
     pub async fn record_llm_usage(&self, call_id: &str, usage: Usage) -> Result<()> {
         let usage_json = serde_json::to_string(&usage)?;
+        let now = now_ms();
         let _write = self.writes.lock().await;
-        sqlx::query("UPDATE llm_calls SET input_tokens = ?, output_tokens = ?, total_tokens = ?, cache_read_tokens = ?, cache_write_tokens = ?, reasoning_tokens = ?, usage_json = ? WHERE call_id = ?")
-            .bind(as_i64(usage.input_tokens))
-            .bind(as_i64(usage.output_tokens))
-            .bind(as_i64(usage.total_tokens))
-            .bind(as_i64(usage.cache_read_tokens))
-            .bind(as_i64(usage.cache_write_tokens))
-            .bind(as_i64(usage.reasoning_tokens))
-            .bind(usage_json)
-            .bind(call_id)
-            .execute(&self.pool)
-            .await?;
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let frozen = sqlx::query(
+            "SELECT
+                request_type,
+                pricing_source,
+                pricing_provider_id,
+                pricing_model_id,
+                pricing_snapshot_at_ms,
+                unit_input_per_million,
+                unit_output_per_million,
+                unit_cache_read_per_million,
+                unit_cache_write_per_million
+             FROM llm_calls
+             WHERE call_id = ?",
+        )
+        .bind(call_id)
+        .fetch_optional(&mut *transaction)
+        .await?;
+
+        let Some(row) = frozen else {
+            return Ok(());
+        };
+        let request_type_raw: String = row.try_get("request_type")?;
+        let request_type =
+            ProviderType::from_str(&request_type_raw).unwrap_or(ProviderType::OpenAiChat);
+        let source_raw: Option<String> = row.try_get("pricing_source")?;
+        let snapshot = PricingSnapshot {
+            source: PricingSource::parse(source_raw.as_deref().unwrap_or("unpriced")),
+            provider_id: row.try_get("pricing_provider_id")?,
+            model_id: row.try_get("pricing_model_id")?,
+            snapshot_at_ms: row
+                .try_get::<Option<i64>, _>("pricing_snapshot_at_ms")?
+                .unwrap_or(now),
+            rates: PricingRates {
+                input_per_million: row.try_get("unit_input_per_million")?,
+                output_per_million: row.try_get("unit_output_per_million")?,
+                cache_read_per_million: row.try_get("unit_cache_read_per_million")?,
+                cache_write_per_million: row.try_get("unit_cache_write_per_million")?,
+            },
+        };
+        let calculated = calculate_cost(request_type, &usage, &snapshot)?;
+
+        sqlx::query(
+            "UPDATE llm_calls SET
+                input_tokens = ?,
+                output_tokens = ?,
+                total_tokens = ?,
+                cache_read_tokens = ?,
+                cache_write_tokens = ?,
+                reasoning_tokens = ?,
+                usage_json = ?,
+                cost_status = ?,
+                input_cost_nano = ?,
+                output_cost_nano = ?,
+                cache_read_cost_nano = ?,
+                cache_write_cost_nano = ?,
+                total_cost_nano = ?,
+                cost_calculated_at_ms = ?,
+                cost_backfilled = 0
+             WHERE call_id = ?",
+        )
+        .bind(as_i64(usage.input_tokens))
+        .bind(as_i64(usage.output_tokens))
+        .bind(as_i64(usage.total_tokens))
+        .bind(as_i64(usage.cache_read_tokens))
+        .bind(as_i64(usage.cache_write_tokens))
+        .bind(as_i64(usage.reasoning_tokens))
+        .bind(usage_json)
+        .bind(calculated.status.as_str())
+        .bind(calculated.input_cost_nano)
+        .bind(calculated.output_cost_nano)
+        .bind(calculated.cache_read_cost_nano)
+        .bind(calculated.cache_write_cost_nano)
+        .bind(calculated.total_cost_nano)
+        .bind(now)
+        .bind(call_id)
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
         Ok(())
     }
 
@@ -258,17 +380,30 @@ impl Store {
         error_kind: Option<&str>,
         error_message: Option<&str>,
     ) -> Result<()> {
+        let now = now_ms();
         let _write = self.writes.lock().await;
-        sqlx::query("UPDATE llm_calls SET status = ?, finish_reason = ?, finished_at_ms = ?, duration_ms = ?, error_kind = ?, error_message = ? WHERE call_id = ? AND status = 'running'")
-            .bind(status)
-            .bind(finish_reason)
-            .bind(now_ms())
-            .bind(elapsed_ms)
-            .bind(error_kind)
-            .bind(error_message)
-            .bind(call_id)
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "UPDATE llm_calls SET
+                status = ?,
+                finish_reason = ?,
+                finished_at_ms = ?,
+                duration_ms = ?,
+                error_kind = ?,
+                error_message = ?,
+                cost_status = COALESCE(cost_status, 'incomplete_usage'),
+                cost_calculated_at_ms = COALESCE(cost_calculated_at_ms, ?)
+             WHERE call_id = ? AND status = 'running'",
+        )
+        .bind(status)
+        .bind(finish_reason)
+        .bind(now)
+        .bind(elapsed_ms)
+        .bind(error_kind)
+        .bind(error_message)
+        .bind(now)
+        .bind(call_id)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -304,7 +439,9 @@ impl Store {
     }
 
     pub async fn llm_calls(&self, limit: i64) -> Result<Vec<LlmCallSummary>> {
-        let rows = sqlx::query("SELECT * FROM llm_calls ORDER BY created_at_ms DESC LIMIT ?")
+        let query =
+            format!("SELECT {LLM_CALL_COLUMNS} FROM llm_calls ORDER BY created_at_ms DESC LIMIT ?");
+        let rows = sqlx::query(&query)
             .bind(limit.clamp(1, 500))
             .fetch_all(&self.pool)
             .await?;
@@ -312,7 +449,8 @@ impl Store {
     }
 
     pub async fn llm_call(&self, call_id: &str) -> Result<Option<LlmCallSummary>> {
-        sqlx::query("SELECT * FROM llm_calls WHERE call_id = ?")
+        let query = format!("SELECT {LLM_CALL_COLUMNS} FROM llm_calls WHERE call_id = ?");
+        sqlx::query(&query)
             .bind(call_id)
             .fetch_optional(&self.pool)
             .await?
@@ -361,15 +499,32 @@ fn as_i64(value: Option<u64>) -> Option<i64> {
 
 fn summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<LlmCallSummary> {
     let usage = row.try_get::<Option<String>, _>("usage_json")?;
+    let request_type: String = row.try_get("request_type")?;
+    let input_tokens: Option<i64> = row.try_get("input_tokens")?;
+    let cache_read_tokens: Option<i64> = row.try_get("cache_read_tokens")?;
+    let cache_write_tokens: Option<i64> = row.try_get("cache_write_tokens")?;
+    let billed_input_tokens = input_tokens.map(|raw_input| {
+        if request_type == ProviderType::Anthropic.as_str() {
+            raw_input.max(0)
+        } else {
+            raw_input
+                .saturating_sub(cache_read_tokens.unwrap_or(0).max(0))
+                .saturating_sub(cache_write_tokens.unwrap_or(0).max(0))
+                .max(0)
+        }
+    });
+
     Ok(LlmCallSummary {
         call_id: row.try_get("call_id")?,
         run_id: row.try_get("run_id")?,
         conversation_id: row.try_get("conversation_id")?,
         provider_call_index: row.try_get("provider_call_index")?,
         model_hash: row.try_get("model_hash")?,
+        supplier_key: row.try_get("supplier_key")?,
+        endpoint_key: row.try_get("endpoint_key")?,
         provider_type: row.try_get("provider_type")?,
         provider_url: row.try_get("provider_url")?,
-        request_type: row.try_get("request_type")?,
+        request_type,
         request_url: row.try_get("request_url")?,
         model_id: row.try_get("model_id")?,
         display_name: row.try_get("display_name")?,
@@ -389,15 +544,42 @@ fn summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<LlmCallSummary> {
         ttft_ms: row.try_get("ttft_ms")?,
         ttfr_ms: row.try_get("ttfr_ms")?,
         duration_ms: row.try_get("duration_ms")?,
-        input_tokens: row.try_get("input_tokens")?,
+        input_tokens,
+        billed_input_tokens,
         output_tokens: row.try_get("output_tokens")?,
         total_tokens: row.try_get("total_tokens")?,
-        cache_read_tokens: row.try_get("cache_read_tokens")?,
-        cache_write_tokens: row.try_get("cache_write_tokens")?,
+        cache_read_tokens,
+        cache_write_tokens,
         reasoning_tokens: row.try_get("reasoning_tokens")?,
         usage: usage
             .map(|value| serde_json::from_str(&value))
             .transpose()?,
+        pricing_source: row.try_get("pricing_source")?,
+        pricing_provider_id: row.try_get("pricing_provider_id")?,
+        pricing_model_id: row.try_get("pricing_model_id")?,
+        pricing_snapshot_at_ms: row.try_get("pricing_snapshot_at_ms")?,
+        unit_input_per_million: row.try_get("unit_input_per_million")?,
+        unit_output_per_million: row.try_get("unit_output_per_million")?,
+        unit_cache_read_per_million: row.try_get("unit_cache_read_per_million")?,
+        unit_cache_write_per_million: row.try_get("unit_cache_write_per_million")?,
+        cost_status: row.try_get("cost_status")?,
+        input_cost: row
+            .try_get::<Option<i64>, _>("input_cost_nano")?
+            .map(format_nano_usd),
+        output_cost: row
+            .try_get::<Option<i64>, _>("output_cost_nano")?
+            .map(format_nano_usd),
+        cache_read_cost: row
+            .try_get::<Option<i64>, _>("cache_read_cost_nano")?
+            .map(format_nano_usd),
+        cache_write_cost: row
+            .try_get::<Option<i64>, _>("cache_write_cost_nano")?
+            .map(format_nano_usd),
+        total_cost: row
+            .try_get::<Option<i64>, _>("total_cost_nano")?
+            .map(format_nano_usd),
+        cost_calculated_at_ms: row.try_get("cost_calculated_at_ms")?,
+        cost_backfilled: row.try_get("cost_backfilled")?,
         message_count: row.try_get("message_count")?,
         tool_count: row.try_get("tool_count")?,
         request_bytes: row.try_get("request_bytes")?,
@@ -415,7 +597,7 @@ mod tests {
     use super::*;
     use crate::model::ProviderType;
 
-    /// 插件模型不在 model_configs 中,调用记录必须照常落库并可按其稳定 ID 筛选。
+    /// 插件模型不在 model_configs 中,调用记录必须照常落库并可按其稳定供应商键筛选。
     #[tokio::test]
     async fn plugin_calls_record_without_a_model_config_row() {
         let directory = tempfile::tempdir().unwrap();
@@ -457,6 +639,7 @@ mod tests {
             .unwrap();
         assert_eq!(overview.metrics.llm_calls, 1);
         assert_eq!(overview.metrics.successful_calls, 1);
+        assert_eq!(overview.metrics.incomplete_usage_calls, 1);
     }
 
     #[tokio::test]

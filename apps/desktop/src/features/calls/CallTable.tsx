@@ -4,10 +4,45 @@ import { DataTable, type DataTableColumn } from "../../shared/ui/DataTable";
 import { Icon } from "../../shared/ui/Icon";
 import { TooltipTrigger } from "../../shared/ui/TooltipTrigger";
 import { eyeIcon } from "../../shared/ui/icons";
+import { formatUsd, formatUsdExact } from "../../shared/utils/costFormat";
 import styles from "./CallTable.module.scss";
 
 const value = (input: string | number | null) => input ?? "-";
 const milliseconds = (input: number | null) => input == null ? "-" : `${input} ms`;
+
+function renderCost(call: LlmCall) {
+  if (call.call_kind === "cursor_official") {
+    return <span className={styles.costMuted}>{t("未知")}</span>;
+  }
+  if (call.cost_status === "incomplete_usage") {
+    return <span className={styles.costMuted}>{t("用量不完整")}</span>;
+  }
+  if (call.cost_status !== "priced" || call.total_cost == null) {
+    return <span className={styles.costMuted}>{t("未定价")}</span>;
+  }
+  const tag = call.status === "running"
+    ? t("暂计")
+    : call.cost_backfilled
+      ? t("历史估算")
+      : null;
+  return <span className={styles.costCell}>
+    <span className={styles.costAmount}>{formatUsd(call.total_cost)}</span>
+    {tag && <span className={styles.costTag}>{tag}</span>}
+  </span>;
+}
+
+function costTitle(call: LlmCall): string | undefined {
+  if (call.call_kind === "cursor_official") return t("Cursor 官方通道无法估算费用");
+  if (call.cost_status === "incomplete_usage") return t("调用用量字段不完整");
+  if (call.cost_status !== "priced" || call.total_cost == null) return t("该供应商模型尚未配置定价");
+  return t("总费用：{total}（输入 {input} · 输出 {output} · 缓存读 {read} · 缓存写 {write}）", {
+    total: formatUsdExact(call.total_cost),
+    input: formatUsdExact(call.input_cost),
+    output: formatUsdExact(call.output_cost),
+    read: formatUsdExact(call.cache_read_cost),
+    write: formatUsdExact(call.cache_write_cost),
+  });
+}
 
 export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (call: LlmCall) => void }) {
   const columns: DataTableColumn<LlmCall>[] = [
@@ -24,7 +59,6 @@ export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (
         </span>
       ),
     },
-
     {
       key: "display_name",
       header: t("显示名称"),
@@ -43,6 +77,12 @@ export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (
       title: (call) => call.model_id,
     },
     {
+      key: "estimated_cost",
+      header: t("估算费用"),
+      render: renderCost,
+      title: costTitle,
+    },
+    {
       key: "reasoning_effort",
       header: t("思考强度"),
       render: (call) => value(call.reasoning_effort),
@@ -52,7 +92,6 @@ export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (
       header: "Fast",
       render: (call) => call.fast == null ? "-" : call.fast ? t("是") : t("否"),
     },
-
     {
       key: "call_kind",
       header: t("调用类型"),
@@ -63,14 +102,8 @@ export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (
       key: "route",
       header: t("路由"),
       render: (call) =>
-        call.route === "cursor_official" ? t("Cursor 官方") : "BYOK",
+        call.route === "cursor_official" ? t("Cursor 官方") : call.route === "external_api" ? "External API" : "BYOK",
     },
-
-    // { key: "model_hash", header: "Model Hash", render: (call) => value(call.model_hash), title: (call) => call.model_hash ?? undefined },
-    // { key: "provider_type", header: t("供应商类型"), render: (call) => call.provider_type },
-    // { key: "provider_url", header: t("供应商地址"), render: (call) => call.provider_url, title: (call) => call.provider_url },
-    // { key: "request_type", header: t("最终请求类型"), render: (call) => call.request_type },
-    // { key: "request_url", header: t("最终请求地址"), render: (call) => call.request_url, title: (call) => call.request_url },
     {
       key: "finish_reason",
       header: "Finish Reason",
@@ -142,7 +175,6 @@ export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (
       header: t("详细记录"),
       render: (call) => (call.detailed ? t("是") : t("否")),
     },
-
     {
       key: "error_kind",
       header: "Error Kind",
@@ -195,5 +227,5 @@ export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (
       ),
     },
   ];
-  return <DataTable rows={calls} columns={columns} rowKey={(call) => call.call_id} minWidth={4180} />;
+  return <DataTable rows={calls} columns={columns} rowKey={(call) => call.call_id} minWidth={4340} />;
 }

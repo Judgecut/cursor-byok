@@ -1,5 +1,5 @@
+import { addUsdStrings, formatUsd, formatUsdExact } from "../../../shared/utils/costFormat";
 import { formatCompactInteger, formatInteger } from "../../../shared/utils/numberFormat";
-import { useAppStore } from "../../../shared/store/appStore";
 import { Icon } from "../../../shared/ui/Icon";
 import { useTooltip, type TooltipAnchor } from "../../../shared/ui/Tooltip";
 import { informationOutlineIcon } from "../../../shared/ui/icons";
@@ -12,8 +12,19 @@ export type HomeMetricsData = {
   failedCalls: number;
   tokenUsage: number;
   promptTokens: number;
+  inputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  outputTokens: number;
+  totalCost: string;
+  inputCost: string;
+  outputCost: string;
+  cacheReadCost: string;
+  cacheWriteCost: string;
+  averagePricedCost: string | null;
+  pricedCalls: number;
+  unpricedCalls: number;
+  incompleteUsageCalls: number;
 };
 
 function formatMetricValue(value: number) {
@@ -28,14 +39,6 @@ function formatRate(value: number | null) {
 
 function calculateRate(numerator: number, denominator: number) {
   return denominator > 0 ? numerator / denominator : null;
-}
-
-function priceTokens(tokens: number, pricePerMillion: number) {
-  return (tokens / 1_000_000) * pricePerMillion;
-}
-
-function formatUSD(value: number) {
-  return `$${value.toFixed(2)}`;
 }
 
 function elementAnchor(element: HTMLElement): TooltipAnchor {
@@ -60,23 +63,14 @@ function InfoTooltip({ content }: { content: string }) {
 }
 
 export function HomeMetrics({ data, refreshVersion = 0 }: { data: HomeMetricsData; refreshVersion?: number }) {
-  const { pricing } = useAppStore();
-  const inputTokens = Math.max(0, data.promptTokens - data.cacheReadTokens - data.cacheWriteTokens);
-  const outputTokens = Math.max(0, data.tokenUsage - data.promptTokens);
-  const defaultCacheHitRate = calculateRate(data.cacheReadTokens, data.cacheReadTokens + inputTokens);
+  const defaultCacheHitRate = calculateRate(data.cacheReadTokens, data.cacheReadTokens + data.inputTokens);
   const cacheReuseRate = calculateRate(
     data.cacheReadTokens,
-    data.cacheReadTokens + data.cacheWriteTokens + inputTokens,
+    data.cacheReadTokens + data.cacheWriteTokens + data.inputTokens,
   );
   const successfulCallRate = calculateRate(data.successfulCalls, data.llmCalls);
-  const costs = {
-    input: priceTokens(inputTokens, pricing.input_per_million),
-    output: priceTokens(outputTokens, pricing.output_per_million),
-    cacheRead: priceTokens(data.cacheReadTokens, pricing.cache_read_per_million),
-    cacheWrite: priceTokens(data.cacheWriteTokens, pricing.cache_write_per_million),
-  };
-  const totalCost = costs.input + costs.output + costs.cacheRead + costs.cacheWrite;
-  const cacheCost = costs.cacheRead + costs.cacheWrite;
+  const cacheCost = addUsdStrings(data.cacheReadCost, data.cacheWriteCost);
+
   const cacheTooltip = [
     t("当前：{rate}", { rate: formatRate(defaultCacheHitRate) }),
     t("公式：缓存读取 /（缓存读取 + 非缓存输入）"),
@@ -98,40 +92,40 @@ export function HomeMetrics({ data, refreshVersion = 0 }: { data: HomeMetricsDat
     "",
     t("总请求：{tokens}", { tokens: formatMetricValue(data.tokenUsage) }),
     t("提示词：{tokens}", { tokens: formatMetricValue(data.promptTokens) }),
-    t("输出推算：{tokens}", { tokens: formatMetricValue(outputTokens) }),
-    t("非缓存输入：{tokens}", { tokens: formatMetricValue(inputTokens) }),
+    t("输出推算：{tokens}", { tokens: formatMetricValue(data.outputTokens) }),
+    t("非缓存输入：{tokens}", { tokens: formatMetricValue(data.inputTokens) }),
     t("缓存读取：{tokens}", { tokens: formatMetricValue(data.cacheReadTokens) }),
     t("缓存写入：{tokens}", { tokens: formatMetricValue(data.cacheWriteTokens) }),
     "",
     t("缓存读写已计入提示词侧统计。"),
   ].join("\n");
-  const costTooltip = [
-    t("按配置的 Token 价格估算。"),
-    t("缓存统计策略：默认口径（{rate}）", { rate: formatRate(defaultCacheHitRate) }),
+
+  const costTooltipLines = [
+    t("基于每条调用冻结的价格快照累计；未定价或用量不完整的调用不计入总金额。"),
     "",
-    t("普通输入：{tokens} × ${price}/1M = {cost}", {
-      tokens: formatMetricValue(inputTokens),
-      price: pricing.input_per_million,
-      cost: formatUSD(costs.input),
-    }),
-    t("模型输出：{tokens} × ${price}/1M = {cost}", {
-      tokens: formatMetricValue(outputTokens),
-      price: pricing.output_per_million,
-      cost: formatUSD(costs.output),
-    }),
-    t("缓存读取：{tokens} × ${price}/1M = {cost}", {
-      tokens: formatMetricValue(data.cacheReadTokens),
-      price: pricing.cache_read_per_million,
-      cost: formatUSD(costs.cacheRead),
-    }),
-    t("缓存写入：{tokens} × ${price}/1M = {cost}", {
-      tokens: formatMetricValue(data.cacheWriteTokens),
-      price: pricing.cache_write_per_million,
-      cost: formatUSD(costs.cacheWrite),
-    }),
+    t("普通输入：{cost}", { cost: formatUsdExact(data.inputCost) }),
+    t("模型输出：{cost}", { cost: formatUsdExact(data.outputCost) }),
+    t("缓存读取：{cost}", { cost: formatUsdExact(data.cacheReadCost) }),
+    t("缓存写入：{cost}", { cost: formatUsdExact(data.cacheWriteCost) }),
     "",
-    t("合计：{cost}", { cost: formatUSD(totalCost) }),
-  ].join("\n");
+    t("已计费调用：{count}", { count: formatMetricValue(data.pricedCalls) }),
+  ];
+  if (data.averagePricedCost) {
+    costTooltipLines.push(t("单次平均费用：{cost}", { cost: formatUsdExact(data.averagePricedCost) }));
+  }
+  if (data.unpricedCalls > 0) {
+    costTooltipLines.push(t("未定价调用：{count}（请前往 设置 -> 模型定价 配置单价）", { count: formatMetricValue(data.unpricedCalls) }));
+  }
+  if (data.incompleteUsageCalls > 0) {
+    costTooltipLines.push(t("用量不完整调用：{count}", { count: formatMetricValue(data.incompleteUsageCalls) }));
+  }
+  costTooltipLines.push("", t("合计：{cost}", { cost: formatUsdExact(data.totalCost) }));
+
+  const costSecondary = data.unpricedCalls > 0
+    ? t("含 {count} 次未定价调用", { count: formatCompactInteger(data.unpricedCalls) })
+    : data.incompleteUsageCalls > 0 && data.pricedCalls === 0
+      ? t("含 {count} 次用量不完整", { count: formatCompactInteger(data.incompleteUsageCalls) })
+      : t("缓存读写 {cost}", { cost: formatUsd(cacheCost) });
 
   return <div className={styles.scroller}>
     <section className={styles.root} aria-label={t("调用统计")}>
@@ -157,10 +151,10 @@ export function HomeMetrics({ data, refreshVersion = 0 }: { data: HomeMetricsDat
         </div>
       </article>
       <article className={styles.metric}>
-        <div className={styles.label}>{t("价值估算")}<InfoTooltip content={costTooltip} /></div>
+        <div className={styles.label}>{t("估算费用")}<InfoTooltip content={costTooltipLines.join("\n")} /></div>
         <div className={styles.body}>
-          <div className={styles.value} title={formatUSD(totalCost)}>{formatUSD(totalCost)}</div>
-          <div className={styles.secondary}>{t("缓存读写 {cost}", { cost: formatUSD(cacheCost) })}</div>
+          <div className={styles.value} title={formatUsdExact(data.totalCost)}>{formatUsd(data.totalCost)}</div>
+          <div className={styles.secondary} title={costSecondary}>{costSecondary}</div>
         </div>
       </article>
     </section>

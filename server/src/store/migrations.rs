@@ -454,12 +454,89 @@ mod tests {
             .fetch_one(&pool)
             .await
             .unwrap();
+            let pricing_catalog_exists: i64 = sqlx::query_scalar(
+                "SELECT EXISTS(
+                    SELECT 1 FROM sqlite_master
+                    WHERE type = 'table' AND name = 'pricing_catalog_models'
+                 )",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            let cost_status_column_exists: i64 = sqlx::query_scalar(
+                "SELECT EXISTS(
+                    SELECT 1 FROM pragma_table_info('llm_calls')
+                    WHERE name = 'cost_status'
+                 )",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
 
             assert_eq!(checksum_after, checksum_before);
-            assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
+            assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
             assert_eq!(checkpoint_table_exists, 1);
             assert_eq!(argument_error_column_exists, 1);
+            assert_eq!(pricing_catalog_exists, 1);
+            assert_eq!(cost_status_column_exists, 1);
         }
+    }
+
+    #[tokio::test]
+    async fn migration_0010_preserves_calls_and_drops_legacy_global_pricing() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        let historical = migrator_with_line_endings(MigrationLineEndings::Lf);
+        let first_nine = Migrator {
+            migrations: Cow::Owned(historical.iter().take(9).cloned().collect()),
+            ..Migrator::DEFAULT
+        };
+        first_nine.run(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO service_settings(setting_key, value_json, updated_at_ms)
+             VALUES ('token_pricing', '{\"input_per_million\":5.0}', 100)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO llm_calls(
+                call_id, run_id, conversation_id, provider_call_index, model_hash,
+                provider_type, provider_url, request_type, request_url, model_id, display_name,
+                status, created_at_ms, input_tokens, output_tokens,
+                message_count, tool_count, detailed
+            ) VALUES (
+                'legacy-call', 'run', 'conv', 0, NULL,
+                'openai-responses', 'https://api.openai.com/v1/responses',
+                'openai-responses', 'https://api.openai.com/v1/responses',
+                'gpt-5', 'Legacy GPT-5', 'completed', 100, 1000, 200,
+                1, 0, 0
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        run(&pool, Path::new("upgrade-v9-to-v10.db")).await.unwrap();
+
+        let legacy_setting_exists: i64 = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM service_settings WHERE setting_key = 'token_pricing')",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(legacy_setting_exists, 0);
+
+        let total_cost_nano: Option<i64> = sqlx::query_scalar(
+            "SELECT total_cost_nano FROM llm_calls WHERE call_id = 'legacy-call'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(total_cost_nano, None);
     }
 
     #[test]

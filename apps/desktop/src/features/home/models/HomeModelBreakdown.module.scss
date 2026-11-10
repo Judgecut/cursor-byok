@@ -1,0 +1,140 @@
+@use "../../../styles/typography" as type;
+
+.card {
+  overflow: hidden;
+}
+
+.viewport {
+  width: 100%;
+}
+
+.content {
+  width: 100%;
+  min-width: 720px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: type.$font-size-xs;
+
+  th,
+  td {
+    padding: 10px 14px;
+    text-align: right;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--vscode-sideBar-border);
+  }
+
+  th:first-child,
+  td:first-child {
+    text-align: left;
+  }
+
+  th {
+    color: var(--vscode-descriptionForeground);
+    font-weight: 500;
+  }
+
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+}
+
+.parentRow {
+  cursor: pointer;
+
+  &:hover td {
+    background: var(--vscode-list-hoverBackground);
+  }
+}
+
+.childRow {
+  background: color-mix(in srgb, var(--vscode-editor-background) 42%, transparent);
+
+  &:hover td {
+    background: var(--vscode-list-hoverBackground);
+  }
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  color: var(--vscode-foreground);
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font: inherit;
+}
+
+.chevron {
+  color: var(--vscode-descriptionForeground);
+  transition: transform 140ms ease;
+}
+
+.chevronExpanded {
+  transform: rotate(90deg);
+}
+
+.modelName {
+  font-weight: 600;
+}
+
+.supplierCell {
+  padding-left: 24px;
+  display: grid;
+  gap: 3px;
+}
+
+.supplierMain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.supplierEndpoint {
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--oa-code-font);
+  font-size: type.$font-size-2xs;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-sideBar-border);
+  border-radius: 99px;
+  font-size: type.$font-size-2xs;
+}
+
+.badgeWarn {
+  color: var(--vscode-editorWarning-foreground, #e5c07b);
+  border-color: color-mix(in srgb, var(--vscode-editorWarning-foreground, #e5c07b) 40%, transparent);
+}
+
+.badgeActive {
+  color: var(--vscode-textLink-foreground);
+}
+
+.monoNum {
+  font-family: var(--oa-number-font);
+}
+
+.subValue {
+  display: block;
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-2xs;
+}
+
+.empty {
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-xs;
+}

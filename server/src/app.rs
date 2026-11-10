@@ -14,6 +14,7 @@ use crate::{
     },
     local_app::CursorHarness,
     plugin::{PluginRegistry, PluginRuntime},
+    pricing::PricingService,
     provider::ProviderRouter,
     search::WebCache,
     store::Store,
@@ -26,6 +27,7 @@ pub struct App {
     registry: TransportRegistry,
     harness: CursorHarness,
     store: Store,
+    pricing: PricingService,
 }
 
 impl App {
@@ -80,6 +82,7 @@ impl App {
             config.app_version.clone(),
         )?;
         let harness = control.cursor_harness().clone();
+        let pricing = control.pricing().clone();
         let mut router = api::router(registry.clone(), clients)?.merge(byok);
         router = match &config.console {
             Some(ConsoleSource::Directory(directory)) => {
@@ -95,6 +98,7 @@ impl App {
             registry,
             harness,
             store,
+            pricing,
             config,
         })
     }
@@ -143,6 +147,7 @@ impl App {
         let address = listener.local_addr()?;
         self.registry.web_cache().set_service_addr(address);
         self.harness.set_backend_addr(address);
+        self.pricing.start(shutdown.clone());
         tracing::info!(%address, "cursor server listening");
         let registry = self.registry;
         let harness = self.harness;

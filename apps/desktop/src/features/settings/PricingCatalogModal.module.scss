@@ -1,0 +1,139 @@
+@use "../../styles/typography" as type;
+
+.banner {
+  display: grid;
+  gap: 10px;
+}
+
+.targetInfo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: type.$font-size-xs;
+
+  code {
+    color: var(--vscode-descriptionForeground);
+    font-family: var(--oa-code-font);
+    font-size: type.$font-size-2xs;
+  }
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-2xs;
+}
+
+.listFrame {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 0;
+  position: relative;
+}
+
+.list {
+  height: 100%;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 12px;
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-sideBar-border);
+  border-radius: 6px;
+}
+
+.rowSelected {
+  border-color: var(--vscode-focusBorder);
+}
+
+.rowMain {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  gap: 4px;
+}
+
+.rowHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: type.$font-size-xs;
+
+  code {
+    color: var(--vscode-descriptionForeground);
+    font-family: var(--oa-code-font);
+    font-size: type.$font-size-2xs;
+  }
+}
+
+.providerBadge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-sideBar-border);
+  border-radius: 99px;
+  font-size: type.$font-size-2xs;
+}
+
+.apiUrl {
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--oa-code-font);
+  font-size: type.$font-size-2xs;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-2xs;
+
+  span {
+    font-family: var(--oa-number-font);
+  }
+}
+
+.empty {
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-xs;
+}
+
+.error {
+  color: var(--vscode-errorForeground, #f48771);
+  font-size: type.$font-size-xs;
+}
+
+@media (max-width: 680px) {
+  .controls {
+    grid-template-columns: 1fr;
+  }
+
+  .row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

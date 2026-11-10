@@ -15,7 +15,7 @@ use super::ControlService;
 pub struct OverviewRange {
     start_ms: Option<i64>,
     end_ms: Option<i64>,
-    model_hashes: Option<String>,
+    supplier_keys: Option<String>,
     bucket_ms: Option<i64>,
 }
 
@@ -28,7 +28,7 @@ pub async fn get(
             .overview(
                 range.start_ms,
                 range.end_ms,
-                range.model_hashes.as_deref(),
+                range.supplier_keys.as_deref(),
                 range.bucket_ms,
             )
             .await?,

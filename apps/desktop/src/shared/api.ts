@@ -165,11 +165,85 @@ export interface CommitSettingsView extends CommitSettings {
   default_prompt: string;
 }
 
-export interface TokenPricingSettings {
-  input_per_million: number;
-  output_per_million: number;
-  cache_read_per_million: number;
-  cache_write_per_million: number;
+export type PricingSource = "custom" | "catalog" | "unpriced";
+export type BindingMode = "auto" | "manual";
+export type CatalogMatchKind = "manual" | "manual_missing" | "auto_exact" | "auto_unique" | "auto_default" | "none";
+export type CostStatus = "priced" | "unpriced" | "incomplete_usage";
+export type SourceKind = "builtin" | "plugin";
+
+export interface PricingRates {
+  input_per_million: string | null;
+  output_per_million: string | null;
+  cache_read_per_million: string | null;
+  cache_write_per_million: string | null;
+}
+
+export interface CatalogModel {
+  provider_id: string;
+  provider_name: string;
+  provider_api: string | null;
+  model_id: string;
+  model_name: string;
+  rates: PricingRates;
+  synced_at_ms: number;
+}
+
+export interface CatalogProviderOption {
+  provider_id: string;
+  provider_name: string;
+  provider_api: string | null;
+  model_count: number;
+}
+
+export interface CatalogSearchResult {
+  total: number;
+  providers: CatalogProviderOption[];
+  items: CatalogModel[];
+}
+
+export interface SupplierPricingView {
+  supplier_key: string;
+  source_kind: SourceKind;
+  endpoint_key: string;
+  model_id: string;
+  display_name: string;
+  provider_type: string;
+  plugin_icon: string | null;
+  active: boolean;
+  call_count: number;
+  unpriced_call_count: number;
+  binding_mode: BindingMode;
+  catalog_match_kind: CatalogMatchKind;
+  matched_provider_id: string | null;
+  matched_provider_name: string | null;
+  matched_model_id: string | null;
+  matched_model_name: string | null;
+  matched_rates: PricingRates | null;
+  custom_rates: PricingRates;
+  effective_source: PricingSource;
+  effective_rates: PricingRates;
+  updated_at_ms: number | null;
+}
+
+export interface SaveSupplierPricingInput {
+  source_kind: SourceKind;
+  endpoint_key: string;
+  model_id: string;
+  binding_mode: BindingMode;
+  catalog_provider_id: string | null;
+  catalog_model_id: string | null;
+  custom_rates: PricingRates;
+}
+
+export interface PricingSyncState {
+  auto_sync_enabled: boolean;
+  sync_interval_hours: number;
+  catalog_model_count: number;
+  last_attempted_at_ms: number | null;
+  last_synced_at_ms: number | null;
+  last_error: string | null;
+  syncing: boolean;
+  backfilling: boolean;
 }
 
 export type PluginRuntimeState = "uninitialized" | "initializing" | "ready" | "failed" | "unsupported";
@@ -357,6 +431,15 @@ export interface OverviewMetrics {
   cache_read_tokens: number;
   cache_write_tokens: number;
   output_tokens: number;
+  total_cost: string;
+  input_cost: string;
+  output_cost: string;
+  cache_read_cost: string;
+  cache_write_cost: string;
+  average_priced_cost: string | null;
+  priced_calls: number;
+  unpriced_calls: number;
+  incomplete_usage_calls: number;
 }
 
 export type TokenUsageGranularity = "minute" | "hour" | "day";
@@ -367,22 +450,98 @@ export interface OverviewTokenUsageBucket {
   cache_read_tokens: number;
   cache_write_tokens: number;
   output_tokens: number;
+  input_cost: string;
+  output_cost: string;
+  cache_read_cost: string;
+  cache_write_cost: string;
+  total_cost: string;
+  priced_calls: number;
+  unpriced_calls: number;
+  incomplete_usage_calls: number;
+}
+
+export interface OverviewSupplierSummary {
+  supplier_key: string;
+  source_kind: SourceKind;
+  endpoint_key: string;
+  model_id: string;
+  label: string;
+  provider_type: string;
+  active: boolean;
+  pricing_source: PricingSource;
+  llm_calls: number;
+  successful_calls: number;
+  failed_calls: number;
+  token_usage: number;
+  prompt_tokens: number;
+  input_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  output_tokens: number;
+  total_cost: string;
+  input_cost: string;
+  output_cost: string;
+  cache_read_cost: string;
+  cache_write_cost: string;
+  average_priced_cost: string | null;
+  priced_calls: number;
+  unpriced_calls: number;
+  incomplete_usage_calls: number;
+}
+
+export interface OverviewModelSummary {
+  model_id: string;
+  llm_calls: number;
+  successful_calls: number;
+  failed_calls: number;
+  token_usage: number;
+  prompt_tokens: number;
+  input_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  output_tokens: number;
+  total_cost: string;
+  input_cost: string;
+  output_cost: string;
+  cache_read_cost: string;
+  cache_write_cost: string;
+  average_priced_cost: string | null;
+  priced_calls: number;
+  unpriced_calls: number;
+  incomplete_usage_calls: number;
+  providers: OverviewSupplierSummary[];
+}
+
+export interface OverviewFilterModel {
+  supplier_key: string;
+  source_kind: SourceKind;
+  endpoint_key: string;
+  model_id: string;
+  label: string;
+  group: string;
+  provider_type: string;
+  plugin_icon: string | null;
+  active: boolean;
 }
 
 export interface Overview {
   metrics: OverviewMetrics;
   token_usage_granularity: TokenUsageGranularity;
   token_usage_series: OverviewTokenUsageBucket[];
+  models: OverviewModelSummary[];
+  available_models: OverviewFilterModel[];
 }
 
 export interface LlmCall {
   call_kind: "provider_llm" | "cursor_official";
-  route: "local_byok" | "cursor_official";
+  route: "local_byok" | "external_api" | "cursor_official";
   call_id: string;
   run_id: string;
   conversation_id: string;
   provider_call_index: number;
   model_hash: string | null;
+  supplier_key: string | null;
+  endpoint_key: string | null;
   provider_type: string;
   provider_url: string;
   request_type: string;
@@ -399,11 +558,28 @@ export interface LlmCall {
   ttfr_ms: number | null;
   duration_ms: number | null;
   input_tokens: number | null;
+  billed_input_tokens: number | null;
   output_tokens: number | null;
   total_tokens: number | null;
   cache_read_tokens: number | null;
   cache_write_tokens: number | null;
   reasoning_tokens: number | null;
+  pricing_source: PricingSource | null;
+  pricing_provider_id: string | null;
+  pricing_model_id: string | null;
+  pricing_snapshot_at_ms: number | null;
+  unit_input_per_million: string | null;
+  unit_output_per_million: string | null;
+  unit_cache_read_per_million: string | null;
+  unit_cache_write_per_million: string | null;
+  cost_status: CostStatus | null;
+  input_cost: string | null;
+  output_cost: string | null;
+  cache_read_cost: string | null;
+  cache_write_cost: string | null;
+  total_cost: string | null;
+  cost_calculated_at_ms: number | null;
+  cost_backfilled: boolean;
   message_count: number;
   tool_count: number;
   http_status: number | null;
@@ -496,12 +672,12 @@ export const api = {
   deleteModel: (hash: string) => request<void>(`/models/${hash}`, { method: "DELETE" }),
   testModel: (hash: string, testId: string, signal?: AbortSignal) => request<ModelConnectivityResult>(`/models/${encodeURIComponent(hash)}/test/${encodeURIComponent(testId)}`, { method: "POST", signal }),
   cancelModelTest: (hash: string, testId: string) => request<void>(`/models/${encodeURIComponent(hash)}/test/${encodeURIComponent(testId)}`, { method: "DELETE" }),
-  overview: (filter?: { startMs: number; endMs: number; modelHashes?: string[]; bucketMs?: number }) => {
+  overview: (filter?: { startMs: number; endMs: number; supplierKeys?: string[]; bucketMs?: number }) => {
     const params = new URLSearchParams();
     if (filter) {
       params.set("start_ms", String(filter.startMs));
       params.set("end_ms", String(filter.endMs));
-      if (filter.modelHashes?.length) params.set("model_hashes", JSON.stringify(filter.modelHashes));
+      if (filter.supplierKeys?.length) params.set("supplier_keys", JSON.stringify(filter.supplierKeys));
       if (filter.bucketMs) params.set("bucket_ms", String(filter.bucketMs));
     }
     const query = params.toString();
@@ -558,6 +734,18 @@ export const api = {
   setDesktopSettings: (settings: DesktopSettings) => request<DesktopSettings>("/settings/desktop", { method: "PUT", body: JSON.stringify(settings) }),
   commitSettings: (locale: Locale) => request<CommitSettingsView>("/settings/commit", { headers: { "accept-language": locale } }),
   setCommitSettings: (settings: CommitSettings) => request<CommitSettingsView>("/settings/commit", { method: "PUT", body: JSON.stringify(settings) }),
-  pricingSettings: () => request<TokenPricingSettings>("/settings/pricing"),
-  setPricingSettings: (settings: TokenPricingSettings) => request<TokenPricingSettings>("/settings/pricing", { method: "PUT", body: JSON.stringify(settings) }),
+  pricingCatalog: (filter?: { query?: string; providerId?: string; limit?: number; offset?: number }) => {
+    const params = new URLSearchParams();
+    if (filter?.query) params.set("query", filter.query);
+    if (filter?.providerId) params.set("provider_id", filter.providerId);
+    if (filter?.limit != null) params.set("limit", String(filter.limit));
+    if (filter?.offset != null) params.set("offset", String(filter.offset));
+    const query = params.toString();
+    return request<CatalogSearchResult>(`/pricing/catalog${query ? `?${query}` : ""}`);
+  },
+  pricingModels: () => request<SupplierPricingView[]>("/pricing/models"),
+  savePricingModel: (input: SaveSupplierPricingInput) => request<SupplierPricingView>("/pricing/models", { method: "PUT", body: JSON.stringify(input) }),
+  pricingSync: () => request<PricingSyncState>("/pricing/sync"),
+  setPricingAutoSync: (autoSyncEnabled: boolean) => request<PricingSyncState>("/pricing/sync", { method: "PUT", body: JSON.stringify({ auto_sync_enabled: autoSyncEnabled }) }),
+  syncPricingNow: () => request<PricingSyncState>("/pricing/sync", { method: "POST" }),
 };

@@ -329,6 +329,25 @@ impl PluginStateStore {
         Ok(serde_json::from_value(value)?)
     }
 
+    pub async fn models_by_provider(
+        &self,
+        plugin_id: &str,
+    ) -> Result<Vec<(String, Vec<StoredModel>)>> {
+        let keys = self.data.list_keys(plugin_id, "models-").await?;
+        let mut grouped = Vec::new();
+        for key in keys {
+            let Some(provider_id) = key.strip_prefix("models-") else {
+                continue;
+            };
+            if provider_id.is_empty() {
+                continue;
+            }
+            let models = self.models(plugin_id, provider_id).await?;
+            grouped.push((provider_id.to_owned(), models));
+        }
+        Ok(grouped)
+    }
+
     pub async fn replace_models(
         &self,
         plugin_id: &str,

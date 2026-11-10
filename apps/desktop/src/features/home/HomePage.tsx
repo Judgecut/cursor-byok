@@ -1,15 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, pluginText, type Overview } from "../../shared/api";
 import { ContributionCalendarChart } from "./charts/ContributionCalendarChart";
 import { DailyTokenUsageChart } from "./charts/DailyTokenUsageChart";
 import { HomeMetrics } from "./metrics/HomeMetrics";
+import { HomeModelBreakdown } from "./models/HomeModelBreakdown";
 import { PageContent } from "../../shell/layout/PageContent";
 import type { VirtualPageSection } from "../../shell/layout/VirtualPage";
 import { OverviewTimeRangeFilter, type OverviewRangePreset, type QuickPreset } from "./overview/OverviewTimeRangeFilter";
 import { PageActions } from "../../shell/PageActions";
 import { appStore, useAppStore } from "../../shared/store/appStore";
 import { formatTimeInput, parseTimeInput } from "../../shared/utils/parseTimeInput";
-import { modelProviderName } from "../../shared/utils/modelProvider";
 import { claudeIcon, flatColorOrganizationIcon, openAiIcon } from "../../shared/ui/icons";
 import { useI18n } from "../../i18n/store";
 
@@ -53,7 +53,7 @@ function presetRange(preset: Exclude<OverviewRangePreset, "custom">, now = new D
 }
 
 export function HomePage() {
-  const { overview, busy, models, plugins } = useAppStore();
+  const { overview, busy, plugins } = useAppStore();
   const { locale } = useI18n();
   const [preset, setPreset] = useState<OverviewRangePreset>("month");
   const [quick, setQuick] = useState<QuickPreset | null>(null);
@@ -74,7 +74,7 @@ export function HomePage() {
     setRangeBusy(true);
     void api.overview({
       ...selectedRange,
-      modelHashes: appliedModels,
+      supplierKeys: appliedModels,
     }).then((next) => {
       if (active) setRangeOverview(next);
     }).finally(() => {
@@ -90,6 +90,14 @@ export function HomePage() {
     cacheReadTokens: bucket.cache_read_tokens,
     cacheWriteTokens: bucket.cache_write_tokens,
     outputTokens: bucket.output_tokens,
+    inputCost: bucket.input_cost,
+    outputCost: bucket.output_cost,
+    cacheReadCost: bucket.cache_read_cost,
+    cacheWriteCost: bucket.cache_write_cost,
+    totalCost: bucket.total_cost,
+    pricedCalls: bucket.priced_calls,
+    unpricedCalls: bucket.unpriced_calls,
+    incompleteUsageCalls: bucket.incomplete_usage_calls,
   }));
   const contribution = contributionCalendarData(filteredOverview, selectedRange?.endMs ?? Date.now());
   const metrics = {
@@ -98,8 +106,19 @@ export function HomePage() {
     failedCalls: filteredOverview.metrics.failed_calls,
     tokenUsage: filteredOverview.metrics.token_usage,
     promptTokens: filteredOverview.metrics.prompt_tokens,
+    inputTokens: filteredOverview.metrics.input_tokens,
     cacheReadTokens: filteredOverview.metrics.cache_read_tokens,
     cacheWriteTokens: filteredOverview.metrics.cache_write_tokens,
+    outputTokens: filteredOverview.metrics.output_tokens,
+    totalCost: filteredOverview.metrics.total_cost,
+    inputCost: filteredOverview.metrics.input_cost,
+    outputCost: filteredOverview.metrics.output_cost,
+    cacheReadCost: filteredOverview.metrics.cache_read_cost,
+    cacheWriteCost: filteredOverview.metrics.cache_write_cost,
+    averagePricedCost: filteredOverview.metrics.average_priced_cost,
+    pricedCalls: filteredOverview.metrics.priced_calls,
+    unpricedCalls: filteredOverview.metrics.unpriced_calls,
+    incompleteUsageCalls: filteredOverview.metrics.incomplete_usage_calls,
   };
   const openCustom = (open: boolean) => {
     if (open && !customStart && !customEnd) {
@@ -139,28 +158,39 @@ export function HomePage() {
     await appStore.refresh();
     setRefreshVersion((version) => version + 1);
   };
-  const iconFor = (type: string) => type === "anthropic" ? claudeIcon : openAiIcon;
-  const modelOptions = [
-    ...models.map((model) => ({
-      value: model.model_hash,
-      label: model.display_name,
-      group: modelProviderName(model),
-      icon: iconFor(model.type),
-    })),
-    ...plugins.flatMap((plugin) => plugin.providers.flatMap((provider) =>
-      provider.configured ? provider.models.filter((model) => model.enabled).map((model) => ({
-        value: model.id,
-        label: model.displayName,
-        group: pluginText(provider.displayName, locale) || model.pluginName,
-        iconSrc: model.icon || undefined,
-        icon: model.icon ? undefined : flatColorOrganizationIcon,
-      })) : [],
-    )),
-  ];
+
+  const modelOptions = useMemo(() => {
+    const available = filteredOverview.available_models.length
+      ? filteredOverview.available_models
+      : overview.available_models;
+    const pluginGroups = new Map<string, string>();
+    for (const plugin of plugins) {
+      for (const provider of plugin.providers) {
+        pluginGroups.set(
+          `plugin://${plugin.id}/${provider.id}`,
+          pluginText(provider.displayName, locale) || plugin.name,
+        );
+      }
+    }
+    return available.map((item) => ({
+      value: item.supplier_key,
+      label: item.active ? item.label : t("{label}（历史）", { label: item.label }),
+      group: (item.source_kind === "plugin" ? pluginGroups.get(item.endpoint_key) : undefined) || item.group,
+      iconSrc: item.plugin_icon || undefined,
+      icon: item.plugin_icon
+        ? undefined
+        : item.provider_type === "anthropic"
+          ? claudeIcon
+          : item.source_kind === "plugin"
+            ? flatColorOrganizationIcon
+            : openAiIcon,
+    }));
+  }, [filteredOverview.available_models, locale, overview.available_models, plugins]);
+
   const sections: VirtualPageSection[] = [
     {
       key: "daily-token-usage",
-      estimatedHeight: 240,
+      estimatedHeight: 236,
       content: <DailyTokenUsageChart
         data={dailyTokenUsage}
         granularity={filteredOverview.token_usage_granularity}
@@ -171,11 +201,15 @@ export function HomePage() {
       estimatedHeight: 130,
       content: <HomeMetrics data={metrics} refreshVersion={refreshVersion} />,
     },
-
     {
       key: "activity",
       estimatedHeight: 106,
       content: <ContributionCalendarChart data={contribution} />,
+    },
+    {
+      key: "model-breakdown",
+      estimatedHeight: Math.max(120, 48 + filteredOverview.models.length * 42),
+      content: <HomeModelBreakdown models={filteredOverview.models} />,
     },
   ];
 

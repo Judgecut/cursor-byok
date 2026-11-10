@@ -75,9 +75,12 @@ impl Store {
                 .await?;
                 sqlx::query(
                     "UPDATE llm_calls SET status = 'cancelled', finished_at_ms = ?,
-                     duration_ms = MAX(0, ? - created_at_ms)
+                     duration_ms = MAX(0, ? - created_at_ms),
+                     cost_status = COALESCE(cost_status, 'incomplete_usage'),
+                     cost_calculated_at_ms = COALESCE(cost_calculated_at_ms, ?)
                      WHERE run_id = ? AND status = 'running'",
                 )
+                .bind(now)
                 .bind(now)
                 .bind(now)
                 .bind(replaced)
@@ -228,7 +231,9 @@ impl Store {
         };
         sqlx::query(
             "UPDATE llm_calls SET status = ?, finished_at_ms = ?,
-             duration_ms = MAX(0, ? - created_at_ms), error_kind = ?, error_message = ?
+             duration_ms = MAX(0, ? - created_at_ms), error_kind = ?, error_message = ?,
+             cost_status = COALESCE(cost_status, 'incomplete_usage'),
+             cost_calculated_at_ms = COALESCE(cost_calculated_at_ms, ?)
              WHERE run_id = ? AND status = 'running'",
         )
         .bind(call_status)
@@ -236,6 +241,7 @@ impl Store {
         .bind(now)
         .bind(call_error_kind)
         .bind(call_error_message)
+        .bind(now)
         .bind(run_id.as_str())
         .execute(&mut *tx)
         .await?;

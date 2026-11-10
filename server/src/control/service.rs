@@ -26,10 +26,12 @@ use crate::{
         PromptSpec, ProviderType, Role,
     },
     plugin::{PluginDescriptor, PluginRegistry, PluginRuntime, PluginRuntimeStatus},
+    pricing::{PricingService, PricingSyncState},
     provider::{is_valid_response_event, ModelEvent, Provider},
     store::{
-        CommitSettings, DesktopSettings, ExternalApiSettings, PortSettings, ProxySettings,
-        ProxySettingsInput, StatisticsStorage, Store, TabSettings, TokenPricingSettings,
+        CatalogSearchResult, CommitSettings, DesktopSettings, ExternalApiSettings, PortSettings,
+        ProxySettings, ProxySettingsInput, SaveSupplierPricingInput, StatisticsStorage, Store,
+        SupplierPricingView, TabSettings,
     },
     Error, Result,
 };
@@ -41,6 +43,7 @@ pub struct ControlService {
     provider: Arc<dyn Provider>,
     plugin_runtime: PluginRuntime,
     plugins: PluginRegistry,
+    pricing: PricingService,
     clients: crate::network::NetworkClients,
     app_version: String,
     model_tests: Arc<Mutex<BTreeMap<String, CancellationToken>>>,
@@ -156,16 +159,27 @@ impl ControlService {
         clients: crate::network::NetworkClients,
         app_version: String,
     ) -> Result<Self> {
+        let pricing = PricingService::new(store.clone(), clients.clone());
         Ok(Self {
             cursor_harness: CursorHarness::new(store.clone())?,
             store,
             provider,
             plugin_runtime,
             plugins,
+            pricing,
             clients,
             app_version,
             model_tests: Arc::new(Mutex::new(BTreeMap::new())),
         })
+    }
+
+    pub fn with_pricing_service(mut self, pricing: PricingService) -> Self {
+        self.pricing = pricing;
+        self
+    }
+
+    pub fn pricing(&self) -> &PricingService {
+        &self.pricing
     }
 
     pub fn cursor_harness(&self) -> &CursorHarness {
@@ -353,11 +367,12 @@ impl ControlService {
         &self,
         start_ms: Option<i64>,
         end_ms: Option<i64>,
-        model_hashes: Option<&str>,
+        supplier_keys: Option<&str>,
         bucket_ms: Option<i64>,
     ) -> Result<Overview> {
+        let plugin_models = self.plugins.known_models().await;
         self.store
-            .overview(start_ms, end_ms, model_hashes, bucket_ms)
+            .overview_with_plugins(start_ms, end_ms, supplier_keys, bucket_ms, &plugin_models)
             .await
     }
 
@@ -764,15 +779,46 @@ impl ControlService {
         self.store.set_commit_settings(settings).await
     }
 
-    pub async fn pricing_settings(&self) -> Result<TokenPricingSettings> {
-        self.store.pricing_settings().await
+    pub async fn pricing_catalog(
+        &self,
+        query: Option<&str>,
+        provider_id: Option<&str>,
+        limit: Option<i64>,
+        offset: Option<i64>,
+    ) -> Result<CatalogSearchResult> {
+        self.store
+            .search_pricing_catalog(query, provider_id, limit, offset)
+            .await
     }
 
-    pub async fn set_pricing_settings(
+    pub async fn pricing_models(&self) -> Result<Vec<SupplierPricingView>> {
+        let plugin_models = self.plugins.known_models().await;
+        self.store.supplier_pricing_models(&plugin_models).await
+    }
+
+    pub async fn save_pricing_model(
         &self,
-        settings: TokenPricingSettings,
-    ) -> Result<TokenPricingSettings> {
-        self.store.set_pricing_settings(settings).await
+        input: &SaveSupplierPricingInput,
+    ) -> Result<SupplierPricingView> {
+        let plugin_models = self.plugins.known_models().await;
+        let saved = self
+            .store
+            .save_supplier_pricing_config(input, &plugin_models)
+            .await?;
+        self.pricing.trigger_backfill_oneshot();
+        Ok(saved)
+    }
+
+    pub async fn pricing_sync_status(&self) -> Result<PricingSyncState> {
+        self.pricing.status().await
+    }
+
+    pub async fn set_pricing_auto_sync(&self, enabled: bool) -> Result<PricingSyncState> {
+        self.pricing.set_auto_sync(enabled).await
+    }
+
+    pub async fn sync_pricing_now(&self) -> Result<PricingSyncState> {
+        self.pricing.sync_now().await
     }
 }
 
@@ -803,6 +849,8 @@ fn official_call(trace: CursorRunTraceSummary) -> CallSummary {
                 .unwrap_or_else(|| trace.request_id.clone()),
             provider_call_index: 0,
             model_hash: None,
+            supplier_key: None,
+            endpoint_key: None,
             provider_type: "cursor-official".into(),
             provider_url: "https://api2.cursor.sh".into(),
             request_type: "cursor-run-sse".into(),
@@ -826,12 +874,29 @@ fn official_call(trace: CursorRunTraceSummary) -> CallSummary {
             ttfr_ms: None,
             duration_ms: duration,
             input_tokens: None,
+            billed_input_tokens: None,
             output_tokens: None,
             total_tokens: None,
             cache_read_tokens: None,
             cache_write_tokens: None,
             reasoning_tokens: None,
             usage: None,
+            pricing_source: None,
+            pricing_provider_id: None,
+            pricing_model_id: None,
+            pricing_snapshot_at_ms: None,
+            unit_input_per_million: None,
+            unit_output_per_million: None,
+            unit_cache_read_per_million: None,
+            unit_cache_write_per_million: None,
+            cost_status: Some("unknown".into()),
+            input_cost: None,
+            output_cost: None,
+            cache_read_cost: None,
+            cache_write_cost: None,
+            total_cost: None,
+            cost_calculated_at_ms: None,
+            cost_backfilled: false,
             message_count: 0,
             tool_count: 0,
             request_bytes: Some(trace.request_bytes),

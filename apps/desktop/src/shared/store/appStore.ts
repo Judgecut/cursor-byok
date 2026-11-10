@@ -1,13 +1,19 @@
 import { useSyncExternalStore } from "react";
-import { api, type CursorHarnessStatus, type LlmCall, type Model, type ModelInput, type Overview, type PluginDescriptor, type PluginRuntimeStatus, type PortSettings, type TokenPricingSettings } from "../api";
+import {
+  api,
+  type CursorHarnessStatus,
+  type LlmCall,
+  type Model,
+  type ModelInput,
+  type Overview,
+  type PluginDescriptor,
+  type PluginRuntimeStatus,
+  type PortSettings,
+  type PricingSyncState,
+  type SaveSupplierPricingInput,
+  type SupplierPricingView,
+} from "../api";
 import { applyTheme, isThemeId, type ThemeId } from "../theme/theme";
-
-export const DEFAULT_TOKEN_PRICING: TokenPricingSettings = {
-  input_per_million: 5.0,
-  output_per_million: 25.0,
-  cache_read_per_million: 0.5,
-  cache_write_per_million: 6.25,
-};
 
 export type AppSnapshot = {
   models: Model[];
@@ -15,7 +21,8 @@ export type AppSnapshot = {
   overview: Overview;
   detailed: boolean;
   ports: PortSettings;
-  pricing: TokenPricingSettings;
+  pricingModels: SupplierPricingView[];
+  pricingSync: PricingSyncState | null;
   busy: boolean;
   error: string | null;
   theme: ThemeId;
@@ -44,13 +51,25 @@ let snapshot: AppSnapshot = {
       cache_read_tokens: 0,
       cache_write_tokens: 0,
       output_tokens: 0,
+      total_cost: "0",
+      input_cost: "0",
+      output_cost: "0",
+      cache_read_cost: "0",
+      cache_write_cost: "0",
+      average_priced_cost: null,
+      priced_calls: 0,
+      unpriced_calls: 0,
+      incomplete_usage_calls: 0,
     },
     token_usage_granularity: "day",
     token_usage_series: [],
+    models: [],
+    available_models: [],
   },
   detailed: false,
   ports: { proxy_port: 0, service_port: 0 },
-  pricing: DEFAULT_TOKEN_PRICING,
+  pricingModels: [],
+  pricingSync: null,
   busy: false,
   error: null,
   theme: savedTheme(),
@@ -86,18 +105,19 @@ export const appStore = {
   async refresh() {
     update({ busy: true, error: null });
     try {
-      const [models, calls, overview, settings, ports, pricing, cursorHarness, pluginRuntime, plugins] = await Promise.all([
+      const [models, calls, overview, settings, ports, pricingModels, pricingSync, cursorHarness, pluginRuntime, plugins] = await Promise.all([
         api.models(),
         api.calls(),
         api.overview(),
         api.observability(),
         api.ports(),
-        api.pricingSettings(),
+        api.pricingModels(),
+        api.pricingSync(),
         api.cursorHarness(),
         api.pluginRuntime(),
         api.plugins(),
       ]);
-      update({ models, calls, overview, detailed: settings.detailed, ports, pricing, cursorHarness, pluginRuntime, plugins });
+      update({ models, calls, overview, detailed: settings.detailed, ports, pricingModels, pricingSync, cursorHarness, pluginRuntime, plugins });
     } catch (cause) {
       update({ error: cause instanceof Error ? cause.message : String(cause) });
     } finally {
@@ -266,14 +286,63 @@ export const appStore = {
       return false;
     }
   },
-  async updatePricingSettings(pricing: TokenPricingSettings) {
+  async refreshPricing() {
     try {
-      update({ error: null });
-      update({ pricing: await api.setPricingSettings(pricing) });
-      return true;
+      const [pricingModels, pricingSync, overview, calls] = await Promise.all([
+        api.pricingModels(),
+        api.pricingSync(),
+        api.overview(),
+        api.calls(),
+      ]);
+      update({ pricingModels, pricingSync, overview, calls });
+      return pricingSync;
     } catch (cause) {
       update({ error: cause instanceof Error ? cause.message : String(cause) });
-      return false;
+      return null;
+    }
+  },
+  async refreshPricingSyncOnly() {
+    try {
+      const pricingSync = await api.pricingSync();
+      update({ pricingSync });
+      return pricingSync;
+    } catch (cause) {
+      update({ error: cause instanceof Error ? cause.message : String(cause) });
+      return null;
+    }
+  },
+  async savePricingModel(input: SaveSupplierPricingInput) {
+    try {
+      update({ error: null });
+      const saved = await api.savePricingModel(input);
+      await appStore.refreshPricing();
+      return saved;
+    } catch (cause) {
+      update({ error: cause instanceof Error ? cause.message : String(cause) });
+      return null;
+    }
+  },
+  async setPricingAutoSync(enabled: boolean) {
+    try {
+      update({ error: null });
+      const pricingSync = await api.setPricingAutoSync(enabled);
+      update({ pricingSync });
+      return pricingSync;
+    } catch (cause) {
+      update({ error: cause instanceof Error ? cause.message : String(cause) });
+      return null;
+    }
+  },
+  async syncPricingNow() {
+    try {
+      update({ error: null });
+      const pricingSync = await api.syncPricingNow();
+      update({ pricingSync });
+      await appStore.refreshPricing();
+      return pricingSync;
+    } catch (cause) {
+      update({ error: cause instanceof Error ? cause.message : String(cause) });
+      return null;
     }
   },
   selectTheme(theme: ThemeId) {

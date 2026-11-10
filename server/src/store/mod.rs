@@ -10,6 +10,7 @@ mod messages;
 mod migrations;
 mod models;
 mod overview;
+pub(crate) mod pricing;
 mod runs;
 mod settings;
 mod sqlite;
@@ -20,6 +21,9 @@ mod writer;
 pub use cas::*;
 pub(crate) use cursor_traces::BufferedCursorTraceChunk;
 pub(crate) use llm_calls::{BufferedLlmChunk, ContextUsageAnchor};
+pub use pricing::{
+    CatalogProviderOption, CatalogSearchResult, SaveSupplierPricingInput, SupplierPricingView,
+};
 pub use runs::*;
 pub use settings::*;
 pub(crate) use sqlite::now_ms;
