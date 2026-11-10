@@ -154,28 +154,39 @@ fn history_image_count(history: &agent::ConversationHistory) -> usize {
 }
 
 pub fn decode(request: &ai::BidiAppendRequest) -> Result<DecodedAppend> {
+    let (request_id, payload) = extract_payload(request)?;
+    decode_payload(request_id, request.append_seqno, &payload)
+}
+
+pub(crate) fn extract_payload(request: &ai::BidiAppendRequest) -> Result<(&str, Vec<u8>)> {
     let request_id = request
         .request_id
         .as_ref()
         .map(|id| id.request_id.as_str())
         .filter(|id| !id.is_empty())
         .ok_or_else(|| Error::Protocol("BidiAppend request_id is required".into()))?;
-    if !request.data_binary.is_empty() {
-        return Err(Error::Protocol(
-            "BidiAppend data_binary is not part of the captured protocol".into(),
-        ));
-    }
-    if request.data.is_empty() {
+    let payload = if !request.data_binary.is_empty() {
+        request.data_binary.clone()
+    } else if !request.data.is_empty() {
+        hex::decode(&request.data)
+            .map_err(|error| Error::Protocol(format!("invalid BidiAppend hex: {error}")))?
+    } else {
         return Err(Error::Protocol(
             "BidiAppend contains no AgentClientMessage".into(),
         ));
-    }
-    let payload = hex::decode(&request.data)
-        .map_err(|error| Error::Protocol(format!("invalid BidiAppend hex: {error}")))?;
+    };
+    Ok((request_id, payload))
+}
+
+pub(crate) fn decode_payload(
+    request_id: &str,
+    seqno: i64,
+    payload: &[u8],
+) -> Result<DecodedAppend> {
     Ok(DecodedAppend {
         request_id: request_id.into(),
-        seqno: request.append_seqno,
-        message: agent::AgentClientMessage::decode(payload.as_slice())?,
+        seqno,
+        message: agent::AgentClientMessage::decode(payload)?,
     })
 }
 
@@ -208,4 +219,63 @@ pub async fn append(
         })
         .await?;
     Ok(ai::BidiAppendResponse {})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_agent_message() -> agent::AgentClientMessage {
+        agent::AgentClientMessage {
+            message: Some(agent::agent_client_message::Message::ClientHeartbeat(
+                agent::ClientHeartbeat {},
+            )),
+        }
+    }
+
+    #[test]
+    fn decode_accepts_hex_and_binary_payloads() {
+        let message = sample_agent_message();
+        let bytes = message.encode_to_vec();
+
+        let from_hex = decode(&ai::BidiAppendRequest {
+            request_id: Some(ai::BidiRequestId {
+                request_id: "req-hex".into(),
+            }),
+            data: hex::encode(&bytes),
+            append_seqno: 0,
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(from_hex.request_id, "req-hex");
+        assert_eq!(from_hex.message, message);
+
+        let from_binary = decode(&ai::BidiAppendRequest {
+            request_id: Some(ai::BidiRequestId {
+                request_id: "req-bin".into(),
+            }),
+            data_binary: bytes,
+            append_seqno: 1,
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(from_binary.request_id, "req-bin");
+        assert_eq!(from_binary.seqno, 1);
+        assert_eq!(from_binary.message, message);
+    }
+
+    #[test]
+    fn decode_rejects_empty_payload_explicitly() {
+        let error = decode(&ai::BidiAppendRequest {
+            request_id: Some(ai::BidiRequestId {
+                request_id: "req-empty".into(),
+            }),
+            ..Default::default()
+        })
+        .err()
+        .expect("empty BidiAppend must fail explicitly");
+        assert!(error
+            .to_string()
+            .contains("BidiAppend contains no AgentClientMessage"));
+    }
 }

@@ -13,7 +13,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     cursor::{
-        protocol::{connect, proto::inference as pb},
+        protocol::{
+            connect,
+            proto::{agent::v1 as agent, inference as pb},
+        },
         transport::{OutputHub, TransportRegistry},
     },
     model::{ModelInvocation, ModelType},
@@ -274,10 +277,43 @@ fn run_ready(
             is_gpt5: gpt5,
             persona: "auto".into(),
             self_identity_name: "Cursor".into(),
+            agent_mode_configs: agent_mode_configs(),
+            use_new_plan_mode_prompts: Some(true),
+            ask_question_config: Some(pb::RunInferenceAskQuestionConfig {
+                tool_name: "AskQuestion".into(),
+                auto_reject_first: false,
+            }),
             ..Default::default()
         }),
         accepts_aborted_finish: true,
         ..Default::default()
+    }
+}
+
+fn agent_mode_configs() -> Vec<pb::RunInferenceAgentModeConfig> {
+    vec![
+        mode_config("agent", true, Some(&["plan", "debug"])),
+        mode_config("chat", true, None),
+        mode_config("plan", true, Some(&["agent"])),
+        mode_config("debug", true, Some(&["agent", "plan"])),
+        mode_config("triage", true, None),
+        mode_config("multitask", true, Some(&["agent", "plan", "debug"])),
+    ]
+}
+
+fn mode_config(
+    mode_id: &str,
+    enable_ask_question_tool: bool,
+    switch_targets: Option<&[&str]>,
+) -> pb::RunInferenceAgentModeConfig {
+    pb::RunInferenceAgentModeConfig {
+        mode_id: mode_id.into(),
+        enable_ask_question_tool,
+        switch_mode_tool_config: switch_targets.map(|targets| {
+            pb::RunInferenceSwitchModeToolConfig {
+                target_modes: targets.iter().map(|&mode| mode.into()).collect(),
+            }
+        }),
     }
 }
 
@@ -453,4 +489,68 @@ fn emit(output: &OutputHub, message: pb::run_inference_server_message::Message) 
 
 pub(crate) fn decode_append(data: &[u8]) -> Result<pb::RunInferenceClientMessage> {
     pb::RunInferenceClientMessage::decode(data).map_err(Error::from)
+}
+
+/// Identifies an unrouted `BidiAppend` first frame that starts a client-owned
+/// `RunInference` stream rather than an `AgentService` run.
+///
+/// Both top-level client messages place `RunRequest` at field 1, and `RunRequest`
+/// shares field 1 (wire type LEN) and field 3 (`model_id` at field 1). Plain string
+/// `conversation_id` values make no format assumptions (such as UUID shape); instead,
+/// we verify whether the frame fails `AgentClientMessage` decoding or lacks any
+/// `AgentRunRequest`-specific message structure.
+pub(crate) fn starts_run_inference(payload: &[u8]) -> bool {
+    let Ok(pb::RunInferenceClientMessage {
+        message: Some(pb::run_inference_client_message::Message::RunRequest(inference)),
+    }) = decode_append(payload)
+    else {
+        return false;
+    };
+    if inference.conversation_id.is_empty()
+        || !inference
+            .requested_model
+            .as_ref()
+            .is_some_and(|model| !model.model_id.is_empty())
+    {
+        return false;
+    }
+    let Ok(agent::AgentClientMessage {
+        message: Some(agent::agent_client_message::Message::RunRequest(agent)),
+    }) = agent::AgentClientMessage::decode(payload)
+    else {
+        return true;
+    };
+    !looks_like_agent_run_request(&agent, &inference)
+}
+
+fn looks_like_agent_run_request(
+    agent: &agent::AgentRunRequest,
+    inference: &pb::RunInferenceRunRequest,
+) -> bool {
+    agent.requested_model.is_some()
+        || agent
+            .action
+            .as_ref()
+            .is_some_and(|action| *action != agent::ConversationAction::default())
+        || agent
+            .mcp_tools
+            .as_ref()
+            .is_some_and(|tools| !tools.mcp_tools.is_empty())
+        || is_populated_conversation_state(agent.conversation_state.as_ref())
+        || inference
+            .conversation_id
+            .bytes()
+            .any(|byte| byte < 0x20 || byte == 0x7f)
+}
+
+fn is_populated_conversation_state(state: Option<&agent::ConversationStateStructure>) -> bool {
+    let Some(state) = state else {
+        return false;
+    };
+    let valid_mode = state.mode.filter(|mode| (0..=8).contains(mode));
+    let baseline = agent::ConversationStateStructure {
+        mode: state.mode,
+        ..Default::default()
+    };
+    state != &baseline || valid_mode.is_some()
 }

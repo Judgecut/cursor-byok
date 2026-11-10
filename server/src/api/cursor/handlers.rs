@@ -15,7 +15,7 @@ use crate::{
         run_sse,
     },
     cursor::{
-        inference::{decode_append, InferenceRoute, InferenceService},
+        inference::{decode_append, starts_run_inference, InferenceRoute, InferenceService},
         protocol::{
             connect,
             proto::{agent::v1 as agent, aiserver::v1 as ai, inference},
@@ -293,65 +293,63 @@ async fn bidi_handler(
 ) -> Result<Response<Body>> {
     let (parts, body) = buffered(request).await?;
     let request: ai::BidiAppendRequest = connect::decode_unary(&body)?;
-    let request_id = request
-        .request_id
-        .as_ref()
-        .map(|id| id.request_id.as_str())
-        .filter(|id| !id.is_empty())
-        .ok_or_else(|| crate::Error::Protocol("BidiAppend request_id is required".into()))?;
-    let payload = if request.data_binary.is_empty() {
-        hex::decode(&request.data)
-            .map_err(|error| crate::Error::Protocol(format!("invalid BidiAppend hex: {error}")))?
-    } else {
-        request.data_binary.clone()
-    };
-    let current_route = inference_service.route(request_id);
-    let candidate = decode_append(&payload).ok();
-    let starts_inference = candidate.as_ref().is_some_and(|message| {
-        matches!(
-            message.message.as_ref(),
-            Some(inference::run_inference_client_message::Message::RunRequest(run))
-                if !run.conversation_id.is_empty()
-                    && run.requested_model.as_ref().is_some_and(|model| !model.model_id.is_empty())
+    let (request_id, payload) = bidi::extract_payload(&request)?;
+    if let Some(route) = inference_service.route(request_id) {
+        let message = decode_append(&payload)?;
+        return dispatch_inference(
+            route,
+            &inference_service,
+            proxy,
+            parts,
+            body,
+            request_id,
+            request.append_seqno,
+            message,
         )
-    });
-    if current_route.is_some() || starts_inference {
-        let message = candidate
-            .ok_or_else(|| crate::Error::Protocol("invalid RunInference client message".into()))?;
-        let route = match current_route {
-            Some(route) => route,
-            None => inference_service.begin(request_id, &message).await?,
-        };
-        match route {
-            InferenceRoute::Local(run) => {
-                run.append(request.append_seqno, message).await?;
-                let mut response = Response::new(Body::empty());
-                response.headers_mut().insert(
-                    header::CONTENT_TYPE,
-                    HeaderValue::from_static("application/proto"),
-                );
-                return Ok(response);
-            }
-            InferenceRoute::Upstream => {
-                let finished = matches!(
-                    message.message,
-                    Some(inference::run_inference_client_message::Message::FinishRun(
-                        _
-                    ))
-                );
-                let response = proxy::forward(
-                    Extension(proxy),
-                    Request::from_parts(parts, Body::from(body)),
-                )
-                .await;
-                if finished {
-                    inference_service.finish(request_id);
-                }
-                return response;
-            }
-        }
+        .await;
     }
-    let decoded = bidi::decode(&request)?;
+    let active_local = registry
+        .local(request_id)
+        .await
+        .is_some_and(|handle| handle.accepting_appends());
+    let active_upstream = registry.upstream(request_id).await;
+    if !active_local && !active_upstream && starts_run_inference(&payload) {
+        let message = decode_append(&payload)?;
+        let route = inference_service.begin(request_id, &message).await?;
+        return dispatch_inference(
+            route,
+            &inference_service,
+            proxy,
+            parts,
+            body,
+            request_id,
+            request.append_seqno,
+            message,
+        )
+        .await;
+    }
+    let decoded = match bidi::decode_payload(request_id, request.append_seqno, &payload) {
+        Ok(decoded) => decoded,
+        Err(_) if active_upstream => {
+            let trace = registry.trace(request_id);
+            trace.resume();
+            let metadata = serde_json::json!({
+                "append_seqno": request.append_seqno,
+                "message_type": "opaque_upstream",
+            });
+            trace.request(
+                "bidi_request",
+                body.clone(),
+                trace_outcome(metadata, true, "upstream", None),
+            );
+            return proxy::forward(
+                Extension(proxy),
+                Request::from_parts(parts, Body::from(body)),
+            )
+            .await;
+        }
+        Err(error) => return Err(error),
+    };
     let first_model = decoded.model_id().map(str::to_owned);
     let conversation_id = decoded.conversation_id().map(str::to_owned);
     let trace_metadata = decoded.trace_metadata();
@@ -461,6 +459,47 @@ async fn bidi_handler(
         HeaderValue::from_static("application/proto"),
     );
     Ok(response)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn dispatch_inference(
+    route: InferenceRoute,
+    inference_service: &InferenceService,
+    proxy: CursorProxy,
+    parts: axum::http::request::Parts,
+    body: Bytes,
+    request_id: &str,
+    seqno: i64,
+    message: inference::RunInferenceClientMessage,
+) -> Result<Response<Body>> {
+    match route {
+        InferenceRoute::Local(run) => {
+            run.append(seqno, message).await?;
+            let mut response = Response::new(Body::empty());
+            response.headers_mut().insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/proto"),
+            );
+            Ok(response)
+        }
+        InferenceRoute::Upstream => {
+            let finished = matches!(
+                message.message,
+                Some(inference::run_inference_client_message::Message::FinishRun(
+                    _
+                ))
+            );
+            let response = proxy::forward(
+                Extension(proxy),
+                Request::from_parts(parts, Body::from(body)),
+            )
+            .await;
+            if finished {
+                inference_service.finish(request_id);
+            }
+            response
+        }
+    }
 }
 
 fn trace_outcome(

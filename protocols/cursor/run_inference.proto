@@ -94,6 +94,24 @@ message RunInferencePromptModelMetadata {
   optional string reasoning_effort = 30;
   string persona = 35;
   string self_identity_name = 44;
+  repeated RunInferenceAgentModeConfig agent_mode_configs = 46;
+  optional bool use_new_plan_mode_prompts = 47;
+  optional RunInferenceAskQuestionConfig ask_question_config = 48;
+}
+
+message RunInferenceAgentModeConfig {
+  string mode_id = 1;
+  bool enable_ask_question_tool = 2;
+  optional RunInferenceSwitchModeToolConfig switch_mode_tool_config = 3;
+}
+
+message RunInferenceSwitchModeToolConfig {
+  repeated string target_modes = 1;
+}
+
+message RunInferenceAskQuestionConfig {
+  string tool_name = 1;
+  bool auto_reject_first = 2;
 }
 
 message RunInferenceInvocationResponse {
