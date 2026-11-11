@@ -13,7 +13,7 @@ use crate::{
         transport::TransportRegistry,
     },
     model::{
-        ModelConfigInput, ModelInvocation, ModelRequest, ModelType, ProjectedContent,
+        ModelConfigInput, ModelInvocation, ModelRequest, ModelType, ProjectedContent, Usage,
         OPENAI_CHAT_ENDPOINT,
     },
     network::NetworkClients,
@@ -207,13 +207,27 @@ async fn client_loop_receives_ready_text_tool_call_and_completion() {
 }
 
 #[tokio::test]
-async fn client_loop_inherits_run_reasoning_without_leaking_invocation_overrides() {
+async fn client_loop_inherits_model_selection_and_returns_context_usage() {
     let (_directory, store) = temp_store().await;
-    let model = store.create_model(&model_input()).await.unwrap();
+    let mut input = model_input();
+    input.context_window_tokens = Some(258_000);
+    let model = store.create_model(&input).await.unwrap();
     let provider = FakeProvider::default();
     let (_router_directory, router) = router(store, provider.clone());
-    for run_effort in ["high", "xhigh"] {
+    for (run_effort, run_context, expected_context) in
+        [("high", Some("1m"), 1_000_000), ("xhigh", None, 258_000)]
+    {
         let request_id = format!("reasoning-{run_effort}");
+        let mut parameters = vec![pb::InferenceModelParameterValue {
+            id: "reasoning".into(),
+            value: run_effort.into(),
+        }];
+        if let Some(context) = run_context {
+            parameters.push(pb::InferenceModelParameterValue {
+                id: "context".into(),
+                value: context.into(),
+            });
+        }
         append(
             &router,
             &request_id,
@@ -224,10 +238,7 @@ async fn client_loop_inherits_run_reasoning_without_leaking_invocation_overrides
                         conversation_id: "reasoning-conversation".into(),
                         requested_model: Some(pb::InferenceRequestedModel {
                             model_id: model.model_hash.clone(),
-                            parameters: vec![pb::InferenceModelParameterValue {
-                                id: "reasoning".into(),
-                                value: run_effort.into(),
-                            }],
+                            parameters,
                             ..Default::default()
                         }),
                         ..Default::default()
@@ -260,20 +271,31 @@ async fn client_loop_inherits_run_reasoning_without_leaking_invocation_overrides
             ready.resolved_model.unwrap().parameters[0].value,
             run_effort
         );
-        for (index, (requested_model, expected)) in [
-            (None, run_effort),
+        for (index, (requested_model, expected, context_limit)) in [
+            (None, run_effort, expected_context),
             (
                 Some(pb::InferenceRequestedModel {
-                    parameters: vec![pb::InferenceModelParameterValue {
-                        id: "effort".into(),
-                        value: "low".into(),
-                    }],
+                    parameters: vec![
+                        pb::InferenceModelParameterValue {
+                            id: "effort".into(),
+                            value: "low".into(),
+                        },
+                        pb::InferenceModelParameterValue {
+                            id: "context".into(),
+                            value: "128k".into(),
+                        },
+                    ],
                     ..Default::default()
                 }),
                 "low",
+                128_000,
             ),
-            (Some(pb::InferenceRequestedModel::default()), run_effort),
-            (None, run_effort),
+            (
+                Some(pb::InferenceRequestedModel::default()),
+                run_effort,
+                expected_context,
+            ),
+            (None, run_effort, expected_context),
         ]
         .into_iter()
         .enumerate()
@@ -282,6 +304,14 @@ async fn client_loop_inherits_run_reasoning_without_leaking_invocation_overrides
                 ModelEvent::TextStart,
                 ModelEvent::TextDelta("ok".into()),
                 ModelEvent::TextEnd,
+                ModelEvent::Usage(Usage {
+                    input_tokens: Some(3),
+                    context_input_tokens: Some(103_000),
+                    output_tokens: Some(7_000),
+                    cache_read_tokens: Some(100_000),
+                    cache_write_tokens: Some(2_997),
+                    ..Default::default()
+                }),
                 ModelEvent::Done(FinishReason::Stop),
             ]);
             let invocation_id = format!("{request_id}-{index}");
@@ -303,8 +333,30 @@ async fn client_loop_inherits_run_reasoning_without_leaking_invocation_overrides
                 },
             )
             .await;
+            let mut reported_usage = None;
+            let mut basic_usage = None;
             loop {
                 let message = next_message(&mut stream).await;
+                if let Some(pb::run_inference_server_message::Message::InvocationResponse(
+                    response,
+                )) = &message.message
+                {
+                    if let Some(pb::inference_stream_response::Response::ExtendedUsage(usage)) =
+                        response
+                            .response
+                            .as_ref()
+                            .and_then(|response| response.response.as_ref())
+                    {
+                        reported_usage = Some(usage.clone());
+                    }
+                    if let Some(pb::inference_stream_response::Response::Usage(usage)) = response
+                        .response
+                        .as_ref()
+                        .and_then(|response| response.response.as_ref())
+                    {
+                        basic_usage = Some(usage.clone());
+                    }
+                }
                 if let Some(pb::run_inference_server_message::Message::InvocationEnd(end)) =
                     message.message
                 {
@@ -313,10 +365,31 @@ async fn client_loop_inherits_run_reasoning_without_leaking_invocation_overrides
                     break;
                 }
             }
+            let usage = reported_usage.expect("context usage was not returned");
+            assert_eq!(usage.max_tokens, context_limit);
+            assert_eq!(usage.input_tokens, 103_000);
+            assert_eq!(usage.output_tokens, 7_000);
+            assert_eq!(usage.cache_read_tokens, 100_000);
+            assert_eq!(usage.cache_write_tokens, 2_997);
+            let basic = basic_usage
+                .expect("Cursor requires an independent usage event for the context ring");
+            assert_eq!(basic.prompt_tokens, 103_000);
+            assert_eq!(basic.completion_tokens, 7_000);
+            assert_eq!(basic.total_tokens, Some(110_000));
+            // Mirror Cursor's calculation from usage.total_tokens and extended_usage.max_tokens.
+            let percent = f64::from(basic.total_tokens.unwrap().min(usage.max_tokens))
+                / f64::from(usage.max_tokens)
+                * 100.0;
+            assert!((percent - 110_000.0 / f64::from(context_limit) * 100.0).abs() < 1e-9);
+            assert!(percent.round() > 0.0);
             let requests = provider.requests();
             let request = requests.last().unwrap();
             assert_eq!(request.model.reasoning.effort.as_deref(), Some(expected));
             assert!(request.model.reasoning.enabled);
+            assert_eq!(
+                request.model.context_window_tokens,
+                Some(context_limit as u64)
+            );
         }
         append(
             &router,

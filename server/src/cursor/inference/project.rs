@@ -6,8 +6,9 @@ use serde_json::{Map, Value};
 use crate::{
     cursor::protocol::proto::inference as pb,
     model::{
-        ContentPart, ModelRequest, ModelSpec, ProjectedContent, ProjectedMessage, PromptSpec,
-        ProviderReplayState, Role, ToolCallContent, ToolDefinition, ToolResultContent,
+        parse_token_count, ContentPart, ModelRequest, ModelSpec, ProjectedContent,
+        ProjectedMessage, PromptSpec, ProviderReplayState, Role, ToolCallContent, ToolDefinition,
+        ToolResultContent,
     },
     Error, Result,
 };
@@ -38,9 +39,24 @@ pub(crate) fn project(
     for requested in std::iter::once(run_model).chain(input.requested_model.as_ref()) {
         model.reasoning.enabled |= requested.max_mode;
         for parameter in &requested.parameters {
-            if matches!(parameter.id.as_str(), "effort" | "reasoning") {
-                model.reasoning.effort = Some(parameter.value.clone());
-                model.reasoning.enabled = true;
+            match parameter.id.as_str() {
+                "effort" | "reasoning" => {
+                    model.reasoning.effort = Some(parameter.value.clone());
+                    model.reasoning.enabled = true;
+                }
+                "context" => {
+                    model.context_window_tokens = Some(
+                        parse_token_count(&parameter.value)
+                            .filter(|tokens| *tokens > 0)
+                            .ok_or_else(|| {
+                                Error::Protocol(format!(
+                                    "invalid Cursor context token count: {}",
+                                    parameter.value
+                                ))
+                            })?,
+                    );
+                }
+                _ => {}
             }
         }
     }
@@ -270,10 +286,16 @@ mod tests {
         };
         let model = pb::InferenceRequestedModel {
             model_id: "test-model".into(),
-            parameters: vec![pb::InferenceModelParameterValue {
-                id: "reasoning".into(),
-                value: "high".into(),
-            }],
+            parameters: vec![
+                pb::InferenceModelParameterValue {
+                    id: "reasoning".into(),
+                    value: "high".into(),
+                },
+                pb::InferenceModelParameterValue {
+                    id: "context".into(),
+                    value: "1m".into(),
+                },
+            ],
             ..Default::default()
         };
         let first = project(&input, &model).unwrap();
@@ -284,7 +306,29 @@ mod tests {
         assert_eq!(first.prompt.instructions, second.prompt.instructions);
         assert_eq!(first.history, second.history[..first.history.len()]);
         assert_eq!(first.model.reasoning.effort.as_deref(), Some("high"));
+        assert_eq!(first.model.context_window_tokens, Some(1_000_000));
         assert_eq!(first.model, second.model);
+    }
+
+    #[test]
+    fn invalid_context_parameters_are_rejected() {
+        let run_model = pb::InferenceRequestedModel::default();
+        for value in ["", "0", "-1", "invalid", "18446744073709551615m"] {
+            let input = pb::InferenceStreamRequest {
+                requested_model: Some(pb::InferenceRequestedModel {
+                    parameters: vec![pb::InferenceModelParameterValue {
+                        id: "context".into(),
+                        value: value.into(),
+                    }],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            assert!(
+                project(&input, &run_model).is_err(),
+                "accepted context: {value}"
+            );
+        }
     }
 
     #[test]
