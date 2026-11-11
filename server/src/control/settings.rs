@@ -8,8 +8,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::store::{
-    CommitPromptLocale, CommitSettings, DesktopSettings, ExternalApiSettings, PortSettings,
-    ProxySettings, ProxySettingsInput, StatisticsStorage, StatisticsStorageScope, TabSettings,
+    CommitPromptLocale, CommitSettings, DesktopSettings, ExternalApiSettings, InterfaceSettings,
+    InterfaceSettingsPatch, PortSettings, ProxySettings, ProxySettingsInput, StatisticsStorage,
+    StatisticsStorageScope, TabSettings,
 };
 
 use super::{ControlService, ObservabilitySettings};
@@ -145,6 +146,19 @@ pub async fn update_commit(
     let saved = service.set_commit_settings(settings).await?;
     let default_locale = saved.prompt_locale;
     Ok(Json(CommitSettingsView::new(saved, default_locale)))
+}
+
+pub async fn get_interface(
+    State(service): State<ControlService>,
+) -> Result<Json<InterfaceSettings>> {
+    Ok(Json(service.interface_settings().await?))
+}
+
+pub async fn update_interface(
+    State(service): State<ControlService>,
+    Json(patch): Json<InterfaceSettingsPatch>,
+) -> Result<Json<InterfaceSettings>> {
+    Ok(Json(service.update_interface_settings(patch).await?))
 }
 
 fn requested_commit_locale(headers: &HeaderMap) -> CommitPromptLocale {

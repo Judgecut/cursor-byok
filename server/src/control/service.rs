@@ -31,9 +31,9 @@ use crate::{
     provider::{ModelEvent, Provider},
     store::{
         normalize_string_array_filter, CallFinish, CatalogSearchResult, CommitSettings,
-        DesktopSettings, ExternalApiSettings, LlmCallFilter, PortSettings, ProxySettings,
-        ProxySettingsInput, SaveSupplierPricingInput, StatisticsStorage, Store,
-        SupplierPricingView, TabSettings, TimelineCallRef,
+        DesktopSettings, ExternalApiSettings, InterfaceSettings, InterfaceSettingsPatch,
+        LlmCallFilter, PortSettings, ProxySettings, ProxySettingsInput, SaveSupplierPricingInput,
+        StatisticsStorage, Store, SupplierPricingView, TabSettings, TimelineCallRef,
     },
     Error, Result,
 };
@@ -853,6 +853,17 @@ impl ControlService {
 
     pub async fn set_commit_settings(&self, settings: CommitSettings) -> Result<CommitSettings> {
         self.store.set_commit_settings(settings).await
+    }
+
+    pub async fn interface_settings(&self) -> Result<InterfaceSettings> {
+        self.store.interface_settings().await
+    }
+
+    pub async fn update_interface_settings(
+        &self,
+        patch: InterfaceSettingsPatch,
+    ) -> Result<InterfaceSettings> {
+        self.store.update_interface_settings(patch).await
     }
 
     pub async fn pricing_catalog(

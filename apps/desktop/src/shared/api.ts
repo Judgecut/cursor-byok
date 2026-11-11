@@ -1,5 +1,7 @@
 import type { AdRuntime } from "../shell/ads/types";
-import type { CommitPromptLocale, Locale } from "../i18n/runtime";
+import type { CommitPromptLocale, Locale, LocalePreference } from "../i18n/runtime";
+import type { ThemeId } from "./theme/theme";
+import type { DisplayCurrency } from "./utils/costFormat";
 
 export type ModelType = "openai" | "anthropic";
 
@@ -201,6 +203,29 @@ export interface CommitSettings {
 
 export interface CommitSettingsView extends CommitSettings {
   default_prompt: string;
+}
+
+export type OverviewChartMode = "tokens" | "cost";
+export type OverviewChartType = "bar" | "line";
+
+export interface InterfaceSettings {
+  locale: LocalePreference;
+  theme: ThemeId;
+  currency: DisplayCurrency;
+  cny_rate: string | null;
+  overview_chart_mode: OverviewChartMode;
+  overview_chart_type: OverviewChartType;
+  home_refresh_interval_seconds: number;
+}
+
+export interface InterfaceSettingsPatch {
+  locale?: LocalePreference;
+  theme?: ThemeId;
+  currency?: DisplayCurrency;
+  cny_rate?: string | null;
+  overview_chart_mode?: OverviewChartMode;
+  overview_chart_type?: OverviewChartType;
+  home_refresh_interval_seconds?: number;
 }
 
 export type PricingSource = "custom" | "catalog" | "unpriced";
@@ -839,6 +864,8 @@ export const api = {
   setDesktopSettings: (settings: DesktopSettings) => request<DesktopSettings>("/settings/desktop", { method: "PUT", body: JSON.stringify(settings) }),
   commitSettings: (locale: Locale) => request<CommitSettingsView>("/settings/commit", { headers: { "accept-language": locale } }),
   setCommitSettings: (settings: CommitSettings) => request<CommitSettingsView>("/settings/commit", { method: "PUT", body: JSON.stringify(settings) }),
+  interfaceSettings: () => request<InterfaceSettings>("/settings/interface"),
+  updateInterfaceSettings: (patch: InterfaceSettingsPatch) => request<InterfaceSettings>("/settings/interface", { method: "PUT", body: JSON.stringify(patch) }),
   pricingCatalog: (filter?: { query?: string; providerId?: string; limit?: number; offset?: number }) => {
     const params = new URLSearchParams();
     if (filter?.query) params.set("query", filter.query);

@@ -15,7 +15,7 @@ import { ConfirmDialog } from "../../shared/ui/ConfirmDialog";
 import { FormField, TextInput } from "../../shared/ui/FormControls";
 import { Select } from "../../shared/ui/Select";
 import { TitledCard } from "../../shared/ui/TitledCard";
-import { setLocalePreference, useI18n, type LocalePreference } from "../../i18n/store";
+import { useI18n, type LocalePreference } from "../../i18n/store";
 import { useMessage } from "../../shared/ui/message";
 import {
   appStore,
@@ -24,7 +24,7 @@ import {
   useAppStore,
 } from "../../shared/store/appStore";
 import { themeOptions, type ThemeId } from "../../shared/theme/theme";
-import type { DisplayCurrency } from "../../shared/utils/costFormat";
+import { normalizeExchangeRate, type DisplayCurrency } from "../../shared/utils/costFormat";
 import styles from "./SettingsPage.module.scss";
 
 function themeLabel(id: ThemeId): string {
@@ -56,8 +56,10 @@ export function SettingsPage() {
   const [savingTab, setSavingTab] = useState(false);
   const [rateDraft, setRateDraft] = useState(cnyRate ?? "");
   const [rateError, setRateError] = useState<string | null>(null);
+  const [savingRate, setSavingRate] = useState(false);
   const [refreshIntervalDraft, setRefreshIntervalDraft] = useState(String(homeRefreshIntervalSeconds));
   const [refreshIntervalError, setRefreshIntervalError] = useState<string | null>(null);
+  const [savingRefreshInterval, setSavingRefreshInterval] = useState(false);
   const refreshIntervalInputId = useId();
   const refreshIntervalInputRef = useRef<HTMLInputElement | null>(null);
   const currencyCardRef = useRef<HTMLDivElement | null>(null);
@@ -211,32 +213,52 @@ export function SettingsPage() {
     }
     setRateError(null);
   };
-  const saveCnyRate = () => {
+  const saveCnyRate = async () => {
+    if (savingRate) return;
     const trimmed = rateDraft.trim();
     if (!trimmed) {
       setRateError(t("请输入大于 0 的汇率；如需移除已保存汇率请点击“清除汇率”"));
       rateInputRef.current?.focus();
       return;
     }
-    const saved = appStore.setCnyRate(trimmed);
-    if (!saved) {
+    const normalized = normalizeExchangeRate(trimmed);
+    if (!normalized) {
       setRateError(t("汇率必须是大于 0 的数字，例如 7.25"));
       rateInputRef.current?.focus();
       rateInputRef.current?.select();
       return;
     }
-    setRateDraft(saved);
-    setRateError(null);
-    message(t("汇率已保存（1 USD = {rate} CNY）", { rate: saved }));
+    setSavingRate(true);
+    try {
+      const saved = await appStore.saveCnyRate(normalized);
+      if (!saved) {
+        return;
+      }
+      setRateDraft(saved);
+      setRateError(null);
+      message(t("汇率已保存（1 USD = {rate} CNY）", { rate: saved }));
+    } finally {
+      setSavingRate(false);
+    }
   };
-  const clearCnyRate = () => {
+  const clearCnyRate = async () => {
+    if (savingRate) return;
     const wasCny = currency === "CNY";
-    appStore.setCnyRate("");
-    setRateDraft("");
-    setRateError(null);
-    message(wasCny ? t("人民币汇率已清除，已切回美元显示") : t("人民币汇率已清除"));
+    setSavingRate(true);
+    try {
+      const saved = await appStore.clearCnyRate();
+      if (!saved) {
+        return;
+      }
+      setRateDraft("");
+      setRateError(null);
+      message(wasCny ? t("人民币汇率已清除，已切回美元显示") : t("人民币汇率已清除"));
+    } finally {
+      setSavingRate(false);
+    }
   };
-  const saveHomeRefreshInterval = () => {
+  const saveHomeRefreshInterval = async () => {
+    if (savingRefreshInterval) return;
     const trimmed = refreshIntervalDraft.trim();
     if (!trimmed) {
       setRefreshIntervalError(t("请输入大于 0 的整数秒数"));
@@ -258,14 +280,18 @@ export function SettingsPage() {
       refreshIntervalInputRef.current?.select();
       return;
     }
-    const saved = appStore.setHomeRefreshIntervalSeconds(parsed);
-    if (saved === null) {
-      setRefreshIntervalError(t("主页自动刷新间隔必须是大于 0 的整数秒数"));
-      return;
+    setSavingRefreshInterval(true);
+    try {
+      const saved = await appStore.saveHomeRefreshIntervalSeconds(parsed);
+      if (saved === null) {
+        return;
+      }
+      setRefreshIntervalDraft(String(saved));
+      setRefreshIntervalError(null);
+      message(t("主页自动刷新间隔已保存（每 {seconds} 秒）", { seconds: saved }));
+    } finally {
+      setSavingRefreshInterval(false);
     }
-    setRefreshIntervalDraft(String(saved));
-    setRefreshIntervalError(null);
-    message(t("主页自动刷新间隔已保存（每 {seconds} 秒）", { seconds: saved }));
   };
   const clearTitle = clearScope === "all" ? t("确定要清理全部统计数据吗？") : t("确定要清理详细记录吗？");
   const clearDescription = clearScope === "all"
@@ -303,7 +329,7 @@ export function SettingsPage() {
               className={styles.refreshIntervalForm}
               onSubmit={(event) => {
                 event.preventDefault();
-                saveHomeRefreshInterval();
+                void saveHomeRefreshInterval();
               }}
             >
               <div className={styles.intervalInputWrap}>
@@ -323,7 +349,9 @@ export function SettingsPage() {
                 />
               </div>
               <span className={styles.intervalUnit}>{t("秒")}</span>
-              <Button variant="primary" size="small" type="submit">{t("保存")}</Button>
+              <Button variant="primary" size="small" type="submit" disabled={savingRefreshInterval}>
+                {savingRefreshInterval ? t("保存中…") : t("保存")}
+              </Button>
             </form>
           </div>
           {refreshIntervalError && <div className={styles.rateError} role="alert">{refreshIntervalError}</div>}
@@ -413,7 +441,7 @@ export function SettingsPage() {
                 { value: "en-US", label: "English" },
                 { value: "pt-BR", label: "Português (Brasil)" },
               ]}
-              onChange={(value) => setLocalePreference(value as LocalePreference)}
+              onChange={(value) => appStore.selectLocalePreference(value as LocalePreference)}
             />
           </div>
         </div>
@@ -476,7 +504,7 @@ export function SettingsPage() {
                 className={styles.currencyRateForm}
                 onSubmit={(event) => {
                   event.preventDefault();
-                  saveCnyRate();
+                  void saveCnyRate();
                 }}
               >
                 <span className={styles.ratePrefix}>1 USD =</span>
@@ -496,9 +524,11 @@ export function SettingsPage() {
                   />
                 </div>
                 <span className={styles.rateSuffix}>CNY</span>
-                <Button variant="primary" size="small" type="submit">{t("保存")}</Button>
+                <Button variant="primary" size="small" type="submit" disabled={savingRate}>
+                  {savingRate ? t("保存中…") : t("保存")}
+                </Button>
                 {cnyRate && (
-                  <Button size="small" onClick={clearCnyRate}>{t("清除汇率")}</Button>
+                  <Button size="small" disabled={savingRate} onClick={() => void clearCnyRate()}>{t("清除汇率")}</Button>
                 )}
               </form>
               {rateError && <div className={styles.rateError} role="alert">{rateError}</div>}

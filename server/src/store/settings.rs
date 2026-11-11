@@ -13,6 +13,9 @@ const DESKTOP_SETTINGS_KEY: &str = "desktop_lifecycle";
 const COMMIT_SETTINGS_KEY: &str = "commit_settings";
 const CURSOR_TAKEOVER_ENABLED_KEY: &str = "cursor_takeover_enabled";
 const EXTERNAL_API_SETTINGS_KEY: &str = "external_api";
+const INTERFACE_SETTINGS_KEY: &str = "interface_settings";
+
+pub const DEFAULT_HOME_REFRESH_INTERVAL_SECONDS: u64 = 30;
 
 /// Embedded default system prompts for commit message generation.
 pub const DEFAULT_COMMIT_PROMPT_ZH_CN: &str = include_str!("../../prompt/cursor/commit/zh-CN.md");
@@ -180,6 +183,177 @@ pub(crate) struct ProxySettingsSecret {
     pub auth_enabled: bool,
     pub username: String,
     pub password: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub enum InterfaceLocale {
+    #[default]
+    #[serde(rename = "system")]
+    System,
+    #[serde(rename = "zh-CN")]
+    ZhCn,
+    #[serde(rename = "en-US")]
+    EnUs,
+    #[serde(rename = "pt-BR")]
+    PtBr,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub enum InterfaceTheme {
+    #[serde(rename = "system")]
+    System,
+    #[default]
+    #[serde(rename = "default-dark")]
+    DefaultDark,
+    #[serde(rename = "default-light")]
+    DefaultLight,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub enum DisplayCurrency {
+    #[default]
+    #[serde(rename = "USD")]
+    Usd,
+    #[serde(rename = "CNY")]
+    Cny,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OverviewChartMode {
+    #[default]
+    Tokens,
+    Cost,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OverviewChartType {
+    #[default]
+    Bar,
+    Line,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct InterfaceSettings {
+    #[serde(default)]
+    pub locale: InterfaceLocale,
+    #[serde(default)]
+    pub theme: InterfaceTheme,
+    #[serde(default)]
+    pub currency: DisplayCurrency,
+    #[serde(default)]
+    pub cny_rate: Option<String>,
+    #[serde(default)]
+    pub overview_chart_mode: OverviewChartMode,
+    #[serde(default)]
+    pub overview_chart_type: OverviewChartType,
+    #[serde(default = "default_home_refresh_interval_seconds")]
+    pub home_refresh_interval_seconds: u64,
+}
+
+impl Default for InterfaceSettings {
+    fn default() -> Self {
+        Self {
+            locale: InterfaceLocale::default(),
+            theme: InterfaceTheme::default(),
+            currency: DisplayCurrency::default(),
+            cny_rate: None,
+            overview_chart_mode: OverviewChartMode::default(),
+            overview_chart_type: OverviewChartType::default(),
+            home_refresh_interval_seconds: DEFAULT_HOME_REFRESH_INTERVAL_SECONDS,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+pub struct InterfaceSettingsPatch {
+    #[serde(default)]
+    pub locale: Option<InterfaceLocale>,
+    #[serde(default)]
+    pub theme: Option<InterfaceTheme>,
+    #[serde(default)]
+    pub currency: Option<DisplayCurrency>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable_string")]
+    pub cny_rate: Option<Option<String>>,
+    #[serde(default)]
+    pub overview_chart_mode: Option<OverviewChartMode>,
+    #[serde(default)]
+    pub overview_chart_type: Option<OverviewChartType>,
+    #[serde(default)]
+    pub home_refresh_interval_seconds: Option<u64>,
+}
+
+fn default_home_refresh_interval_seconds() -> u64 {
+    DEFAULT_HOME_REFRESH_INTERVAL_SECONDS
+}
+
+fn deserialize_optional_nullable_string<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<Option<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(Some)
+}
+
+fn normalize_cny_rate(raw: &str) -> Result<Option<String>> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if trimmed.len() > 64 {
+        return Err(crate::Error::Config("CNY exchange rate is too long".into()));
+    }
+    if trimmed.starts_with('-') {
+        return Err(crate::Error::Config(
+            "CNY exchange rate must be greater than 0".into(),
+        ));
+    }
+    let unsigned = trimmed.strip_prefix('+').unwrap_or(trimmed);
+    let (raw_int, raw_frac) = match unsigned.split_once('.') {
+        Some((int_part, frac_part)) => (int_part, frac_part),
+        None => (unsigned, ""),
+    };
+    if (raw_int.is_empty() && raw_frac.is_empty())
+        || !raw_int.bytes().all(|byte| byte.is_ascii_digit())
+        || !raw_frac.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(crate::Error::Config(format!(
+            "invalid CNY exchange rate: {raw}"
+        )));
+    }
+    let trimmed_int = raw_int.trim_start_matches('0');
+    let int_part = if trimmed_int.is_empty() {
+        "0"
+    } else {
+        trimmed_int
+    };
+    let frac_part = raw_frac.trim_end_matches('0');
+    if int_part == "0" && frac_part.is_empty() {
+        return Err(crate::Error::Config(
+            "CNY exchange rate must be greater than 0".into(),
+        ));
+    }
+    Ok(Some(if frac_part.is_empty() {
+        int_part.to_owned()
+    } else {
+        format!("{int_part}.{frac_part}")
+    }))
+}
+
+fn normalize_loaded_interface_settings(mut settings: InterfaceSettings) -> InterfaceSettings {
+    settings.cny_rate = settings
+        .cny_rate
+        .as_deref()
+        .and_then(|rate| normalize_cny_rate(rate).ok().flatten());
+    if settings.cny_rate.is_none() {
+        settings.currency = DisplayCurrency::Usd;
+    }
+    if settings.home_refresh_interval_seconds == 0 {
+        settings.home_refresh_interval_seconds = DEFAULT_HOME_REFRESH_INTERVAL_SECONDS;
+    }
+    settings
 }
 
 /// Reads the persisted outbound proxy row, falling back to "no proxy" when it
@@ -481,14 +655,88 @@ impl Store {
         .await?;
         Ok(settings)
     }
+
+    pub async fn interface_settings(&self) -> Result<InterfaceSettings> {
+        read_interface_settings(&self.pool).await
+    }
+
+    pub async fn update_interface_settings(
+        &self,
+        patch: InterfaceSettingsPatch,
+    ) -> Result<InterfaceSettings> {
+        let _write = self.writes.lock().await;
+        let mut settings = read_interface_settings(&self.pool).await?;
+        if let Some(locale) = patch.locale {
+            settings.locale = locale;
+        }
+        if let Some(theme) = patch.theme {
+            settings.theme = theme;
+        }
+        if let Some(overview_chart_mode) = patch.overview_chart_mode {
+            settings.overview_chart_mode = overview_chart_mode;
+        }
+        if let Some(overview_chart_type) = patch.overview_chart_type {
+            settings.overview_chart_type = overview_chart_type;
+        }
+        if let Some(interval) = patch.home_refresh_interval_seconds {
+            if interval == 0 {
+                return Err(crate::Error::Config(
+                    "home refresh interval must be greater than 0 seconds".into(),
+                ));
+            }
+            settings.home_refresh_interval_seconds = interval;
+        }
+        if let Some(rate_patch) = patch.cny_rate {
+            settings.cny_rate = match rate_patch {
+                None => None,
+                Some(raw) => normalize_cny_rate(&raw)?,
+            };
+        }
+        if let Some(currency) = patch.currency {
+            if currency == DisplayCurrency::Cny && settings.cny_rate.is_none() {
+                return Err(crate::Error::Config(
+                    "CNY exchange rate must be configured before selecting CNY display".into(),
+                ));
+            }
+            settings.currency = currency;
+        } else if settings.cny_rate.is_none() {
+            settings.currency = DisplayCurrency::Usd;
+        }
+        let value_json = serde_json::to_string(&settings)?;
+        sqlx::query(
+            "INSERT INTO service_settings(setting_key, value_json, updated_at_ms) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET value_json = excluded.value_json, updated_at_ms = excluded.updated_at_ms",
+        )
+        .bind(INTERFACE_SETTINGS_KEY)
+        .bind(value_json)
+        .bind(now_ms())
+        .execute(&self.pool)
+        .await?;
+        Ok(settings)
+    }
+}
+
+async fn read_interface_settings(pool: &sqlx::SqlitePool) -> Result<InterfaceSettings> {
+    let value = sqlx::query_scalar::<_, String>(
+        "SELECT value_json FROM service_settings WHERE setting_key = ?",
+    )
+    .bind(INTERFACE_SETTINGS_KEY)
+    .fetch_optional(pool)
+    .await?;
+    let settings = match value {
+        Some(value) => serde_json::from_str(&value)?,
+        None => InterfaceSettings::default(),
+    };
+    Ok(normalize_loaded_interface_settings(settings))
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        read_proxy_settings, CommitPromptLocale, CommitSettings, ExternalApiSettings, ProxyMode,
-        ProxySettingsInput, ProxySettingsSecret, Store, DEFAULT_COMMIT_PROMPT_EN_US,
-        DEFAULT_COMMIT_PROMPT_ZH_CN, PROXY_SETTINGS_KEY,
+        read_proxy_settings, CommitPromptLocale, CommitSettings, DisplayCurrency,
+        ExternalApiSettings, InterfaceLocale, InterfaceSettings, InterfaceSettingsPatch,
+        InterfaceTheme, OverviewChartMode, OverviewChartType, ProxyMode, ProxySettingsInput,
+        ProxySettingsSecret, Store, DEFAULT_COMMIT_PROMPT_EN_US, DEFAULT_COMMIT_PROMPT_ZH_CN,
+        DEFAULT_HOME_REFRESH_INTERVAL_SECONDS, PROXY_SETTINGS_KEY,
     };
 
     /// The `outbound_proxy` row exactly as builds before the `system` -> `default`
@@ -638,5 +886,118 @@ mod tests {
                 .unwrap(),
             settings
         );
+    }
+
+    #[test]
+    fn interface_settings_patch_distinguishes_omitted_null_and_string_cny_rate() {
+        let omitted: InterfaceSettingsPatch =
+            serde_json::from_str(r#"{"theme":"system"}"#).unwrap();
+        assert_eq!(omitted.cny_rate, None);
+
+        let cleared: InterfaceSettingsPatch = serde_json::from_str(r#"{"cny_rate":null}"#).unwrap();
+        assert_eq!(cleared.cny_rate, Some(None));
+
+        let updated: InterfaceSettingsPatch =
+            serde_json::from_str(r#"{"cny_rate":"7.20"}"#).unwrap();
+        assert_eq!(updated.cny_rate, Some(Some("7.20".into())));
+    }
+
+    #[tokio::test]
+    async fn interface_settings_persist_partially_and_enforce_currency_and_rate_rules() {
+        let directory = tempfile::tempdir().unwrap();
+        let url = format!("sqlite://{}", directory.path().join("test.db").display());
+        let store = Store::connect(&url).await.unwrap();
+
+        assert_eq!(
+            store.interface_settings().await.unwrap(),
+            InterfaceSettings {
+                locale: InterfaceLocale::System,
+                theme: InterfaceTheme::DefaultDark,
+                currency: DisplayCurrency::Usd,
+                cny_rate: None,
+                overview_chart_mode: OverviewChartMode::Tokens,
+                overview_chart_type: OverviewChartType::Bar,
+                home_refresh_interval_seconds: DEFAULT_HOME_REFRESH_INTERVAL_SECONDS,
+            }
+        );
+
+        // Cannot switch to CNY before configuring a positive rate.
+        assert!(store
+            .update_interface_settings(InterfaceSettingsPatch {
+                currency: Some(DisplayCurrency::Cny),
+                ..InterfaceSettingsPatch::default()
+            })
+            .await
+            .is_err());
+
+        // Reject zero/negative/invalid rates and zero refresh interval.
+        for bad_rate in ["0", "0.00", "-7.2", "abc", ".", "+"] {
+            assert!(
+                store
+                    .update_interface_settings(InterfaceSettingsPatch {
+                        cny_rate: Some(Some(bad_rate.into())),
+                        ..InterfaceSettingsPatch::default()
+                    })
+                    .await
+                    .is_err(),
+                "expected rate {bad_rate:?} to be rejected"
+            );
+        }
+        assert!(store
+            .update_interface_settings(InterfaceSettingsPatch {
+                home_refresh_interval_seconds: Some(0),
+                ..InterfaceSettingsPatch::default()
+            })
+            .await
+            .is_err());
+
+        // Partial updates preserve previous fields and normalize decimals.
+        let saved = store
+            .update_interface_settings(InterfaceSettingsPatch {
+                theme: Some(InterfaceTheme::System),
+                cny_rate: Some(Some("07.20".into())),
+                ..InterfaceSettingsPatch::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(saved.theme, InterfaceTheme::System);
+        assert_eq!(saved.cny_rate.as_deref(), Some("7.2"));
+
+        let saved = store
+            .update_interface_settings(InterfaceSettingsPatch {
+                locale: Some(InterfaceLocale::EnUs),
+                currency: Some(DisplayCurrency::Cny),
+                overview_chart_mode: Some(OverviewChartMode::Cost),
+                overview_chart_type: Some(OverviewChartType::Line),
+                home_refresh_interval_seconds: Some(15),
+                ..InterfaceSettingsPatch::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(saved.locale, InterfaceLocale::EnUs);
+        assert_eq!(saved.theme, InterfaceTheme::System);
+        assert_eq!(saved.currency, DisplayCurrency::Cny);
+        assert_eq!(saved.cny_rate.as_deref(), Some("7.2"));
+        assert_eq!(saved.overview_chart_mode, OverviewChartMode::Cost);
+        assert_eq!(saved.overview_chart_type, OverviewChartType::Line);
+        assert_eq!(saved.home_refresh_interval_seconds, 15);
+
+        // Reconnecting to SQLite preserves every field.
+        let reopened = Store::connect(&url).await.unwrap();
+        assert_eq!(reopened.interface_settings().await.unwrap(), saved);
+
+        // Clearing the rate automatically switches CNY back to USD while leaving other fields intact.
+        let cleared = reopened
+            .update_interface_settings(InterfaceSettingsPatch {
+                cny_rate: Some(None),
+                ..InterfaceSettingsPatch::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(cleared.cny_rate, None);
+        assert_eq!(cleared.currency, DisplayCurrency::Usd);
+        assert_eq!(cleared.theme, InterfaceTheme::System);
+        assert_eq!(cleared.locale, InterfaceLocale::EnUs);
+        assert_eq!(cleared.home_refresh_interval_seconds, 15);
     }
 }

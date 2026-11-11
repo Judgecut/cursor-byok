@@ -223,6 +223,10 @@ pub fn api_router(service: ControlService) -> Router {
             get(settings::get_commit).put(settings::update_commit),
         )
         .route(
+            "/__byok-api__/api/settings/interface",
+            get(settings::get_interface).put(settings::update_interface),
+        )
+        .route(
             "/__byok-api__/api/pricing/catalog",
             get(pricing::get_catalog),
         )

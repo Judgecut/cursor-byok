@@ -1,11 +1,20 @@
 import { useSyncExternalStore } from "react";
 import {
+  applyLocalePreference,
+  getLocalePreference,
+  type LocalePreference,
+} from "../../i18n/store";
+import {
   api,
   type CursorHarnessStatus,
+  type InterfaceSettings,
+  type InterfaceSettingsPatch,
   type LlmCall,
   type Model,
   type ModelInput,
   type Overview,
+  type OverviewChartMode,
+  type OverviewChartType,
   type PluginDescriptor,
   type PluginRuntimeStatus,
   type PortSettings,
@@ -14,15 +23,24 @@ import {
   type SpeedAggregate,
   type SupplierPricingView,
 } from "../api";
-import { applyTheme, isThemeId, type ThemeId } from "../theme/theme";
+import { applyTheme, type ThemeId } from "../theme/theme";
 import { isValidExchangeRate, normalizeExchangeRate, type DisplayCurrency } from "../utils/costFormat";
 
-export type OverviewChartMode = "tokens" | "cost";
-export type OverviewChartType = "bar" | "line";
+export type { OverviewChartMode, OverviewChartType } from "../api";
 export type OverviewRangePresetValue = "ten-minutes" | "hour" | "today" | "week" | "month" | "custom";
 export type OverviewQuickPresetValue = "four-hours" | "twenty-four-hours";
 
 export const DEFAULT_HOME_REFRESH_INTERVAL_SECONDS = 30;
+
+const DEFAULT_INTERFACE_SETTINGS: InterfaceSettings = {
+  locale: "system",
+  theme: "default-dark",
+  currency: "USD",
+  cny_rate: null,
+  overview_chart_mode: "tokens",
+  overview_chart_type: "bar",
+  home_refresh_interval_seconds: DEFAULT_HOME_REFRESH_INTERVAL_SECONDS,
+};
 
 export function parseHomeRefreshIntervalSeconds(raw: string): number | null {
   const trimmed = raw.trim();
@@ -68,66 +86,6 @@ export type AppSnapshot = {
   plugins: PluginDescriptor[];
 };
 
-const THEME_STORAGE_KEY = "cursor-byok.theme";
-const CURRENCY_STORAGE_KEY = "cursor-byok.currency";
-const CNY_RATE_STORAGE_KEY = "cursor-byok.cny-rate";
-const CHART_MODE_STORAGE_KEY = "cursor-byok.chart-mode";
-const CHART_TYPE_STORAGE_KEY = "cursor-byok.chart-type";
-const HOME_REFRESH_INTERVAL_STORAGE_KEY = "cursor-byok.home-refresh-interval-seconds";
-
-const savedTheme = (): ThemeId => {
-  try {
-    const saved = localStorage.getItem(THEME_STORAGE_KEY);
-    return isThemeId(saved) ? saved : "default-dark";
-  } catch {
-    return "default-dark";
-  }
-};
-
-const savedCnyRate = (): string | null => {
-  try {
-    const raw = localStorage.getItem(CNY_RATE_STORAGE_KEY);
-    return raw ? normalizeExchangeRate(raw) : null;
-  } catch {
-    return null;
-  }
-};
-
-const savedCurrency = (rate: string | null): DisplayCurrency => {
-  try {
-    const raw = localStorage.getItem(CURRENCY_STORAGE_KEY);
-    if (raw === "CNY" && isValidExchangeRate(rate)) return "CNY";
-  } catch {
-    // Fallback to USD when localStorage is unavailable.
-  }
-  return "USD";
-};
-
-const savedChartMode = (): OverviewChartMode => {
-  try {
-    return localStorage.getItem(CHART_MODE_STORAGE_KEY) === "cost" ? "cost" : "tokens";
-  } catch {
-    return "tokens";
-  }
-};
-
-const savedChartType = (): OverviewChartType => {
-  try {
-    return localStorage.getItem(CHART_TYPE_STORAGE_KEY) === "line" ? "line" : "bar";
-  } catch {
-    return "bar";
-  }
-};
-
-const savedHomeRefreshIntervalSeconds = (): number => {
-  try {
-    const raw = localStorage.getItem(HOME_REFRESH_INTERVAL_STORAGE_KEY);
-    return raw ? (parseHomeRefreshIntervalSeconds(raw) ?? DEFAULT_HOME_REFRESH_INTERVAL_SECONDS) : DEFAULT_HOME_REFRESH_INTERVAL_SECONDS;
-  } catch {
-    return DEFAULT_HOME_REFRESH_INTERVAL_SECONDS;
-  }
-};
-
 const emptySpeed = (): SpeedAggregate => ({
   average_tokens_per_second: null,
   status: "unavailable",
@@ -136,8 +94,10 @@ const emptySpeed = (): SpeedAggregate => ({
   first_output_median_ms: null,
 });
 
-const initialRate = savedCnyRate();
 let handoffSeed = 0;
+let persistedInterface: InterfaceSettings = { ...DEFAULT_INTERFACE_SETTINGS };
+let interfaceRevision = 0;
+let interfaceWriteQueue: Promise<void> = Promise.resolve();
 
 let snapshot: AppSnapshot = {
   models: [],
@@ -179,12 +139,12 @@ let snapshot: AppSnapshot = {
   pricingSync: null,
   busy: false,
   error: null,
-  theme: savedTheme(),
-  currency: savedCurrency(initialRate),
-  cnyRate: initialRate,
-  overviewChartMode: savedChartMode(),
-  overviewChartType: savedChartType(),
-  homeRefreshIntervalSeconds: savedHomeRefreshIntervalSeconds(),
+  theme: DEFAULT_INTERFACE_SETTINGS.theme,
+  currency: DEFAULT_INTERFACE_SETTINGS.currency,
+  cnyRate: DEFAULT_INTERFACE_SETTINGS.cny_rate,
+  overviewChartMode: DEFAULT_INTERFACE_SETTINGS.overview_chart_mode,
+  overviewChartType: DEFAULT_INTERFACE_SETTINGS.overview_chart_type,
+  homeRefreshIntervalSeconds: DEFAULT_INTERFACE_SETTINGS.home_refresh_interval_seconds,
   refreshTick: 0,
   pendingCallsFilter: null,
   cursorHarness: null,
@@ -198,6 +158,80 @@ const listeners = new Set<() => void>();
 function update(patch: Partial<AppSnapshot>) {
   snapshot = { ...snapshot, ...patch };
   listeners.forEach((listener) => listener());
+}
+
+function applyInterfaceSettings(
+  next: InterfaceSettings,
+  options?: { forceApplyTheme?: boolean; forceApplyLocale?: boolean; extra?: Partial<AppSnapshot> },
+) {
+  const themeChanged = options?.forceApplyTheme || snapshot.theme !== next.theme;
+  const localeChanged = options?.forceApplyLocale || getLocalePreference() !== next.locale;
+  persistedInterface = next;
+  if (themeChanged) applyTheme(next.theme);
+  if (localeChanged) applyLocalePreference(next.locale);
+  update({
+    theme: next.theme,
+    currency: next.currency,
+    cnyRate: next.cny_rate,
+    overviewChartMode: next.overview_chart_mode,
+    overviewChartType: next.overview_chart_type,
+    homeRefreshIntervalSeconds: next.home_refresh_interval_seconds,
+    ...options?.extra,
+  });
+}
+
+function enqueueInterfaceWrite<T>(task: () => Promise<T>): Promise<T> {
+  const run = interfaceWriteQueue.then(task);
+  interfaceWriteQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+async function persistInterfacePatch(
+  patch: InterfaceSettingsPatch,
+  options: { optimistic: boolean },
+): Promise<InterfaceSettings | null> {
+  const revision = interfaceRevision + 1;
+  interfaceRevision = revision;
+
+  if (options.optimistic) {
+    const optimisticPatch: Partial<AppSnapshot> = { error: null };
+    if (patch.theme !== undefined) {
+      if (snapshot.theme !== patch.theme) applyTheme(patch.theme);
+      optimisticPatch.theme = patch.theme;
+    }
+    if (patch.locale !== undefined && getLocalePreference() !== patch.locale) {
+      applyLocalePreference(patch.locale);
+    }
+    if (patch.currency !== undefined) optimisticPatch.currency = patch.currency;
+    if (patch.cny_rate !== undefined) optimisticPatch.cnyRate = patch.cny_rate;
+    if (patch.overview_chart_mode !== undefined) optimisticPatch.overviewChartMode = patch.overview_chart_mode;
+    if (patch.overview_chart_type !== undefined) optimisticPatch.overviewChartType = patch.overview_chart_type;
+    if (patch.home_refresh_interval_seconds !== undefined) {
+      optimisticPatch.homeRefreshIntervalSeconds = patch.home_refresh_interval_seconds;
+    }
+    update(optimisticPatch);
+  } else {
+    update({ error: null });
+  }
+
+  try {
+    const saved = await enqueueInterfaceWrite(() => api.updateInterfaceSettings(patch));
+    if (interfaceRevision === revision) {
+      applyInterfaceSettings(saved);
+    }
+    return saved;
+  } catch (cause) {
+    const error = cause instanceof Error ? cause.message : String(cause);
+    if (interfaceRevision === revision) {
+      applyInterfaceSettings(persistedInterface, { extra: { error } });
+    } else {
+      update({ error });
+    }
+    return null;
+  }
 }
 
 async function perform(task: () => Promise<void>) {
@@ -216,22 +250,42 @@ export const appStore = {
   },
   getSnapshot: () => snapshot,
 
+  async hydrateInterfaceSettings() {
+    const revisionBefore = interfaceRevision;
+    try {
+      const settings = await api.interfaceSettings();
+      if (interfaceRevision === revisionBefore) {
+        applyInterfaceSettings(settings, {
+          forceApplyTheme: true,
+          forceApplyLocale: true,
+        });
+        return;
+      }
+    } catch {
+      // Keep default theme and system locale when management API is unreachable; refresh() surfaces errors.
+    }
+    applyTheme(snapshot.theme);
+    applyLocalePreference(getLocalePreference());
+  },
+
   async refresh() {
     update({ busy: true, error: null });
+    const interfaceRevisionBefore = interfaceRevision;
     try {
-      const [models, callsResult, overview, settings, ports, pricingModels, pricingSync, cursorHarness, pluginRuntime, plugins] = await Promise.all([
+      const [models, callsResult, overview, settings, ports, interfaceSettings, pricingModels, pricingSync, cursorHarness, pluginRuntime, plugins] = await Promise.all([
         api.models(),
         api.calls({ limit: 20, offset: 0 }),
         api.overview(),
         api.observability(),
         api.ports(),
+        api.interfaceSettings(),
         api.pricingModels(),
         api.pricingSync(),
         api.cursorHarness(),
         api.pluginRuntime(),
         api.plugins(),
       ]);
-      update({
+      const patch: Partial<AppSnapshot> = {
         models,
         calls: callsResult.items,
         callsTotal: callsResult.total,
@@ -244,7 +298,12 @@ export const appStore = {
         pluginRuntime,
         plugins,
         refreshTick: snapshot.refreshTick + 1,
-      });
+      };
+      if (interfaceRevision === interfaceRevisionBefore) {
+        applyInterfaceSettings(interfaceSettings, { extra: patch });
+      } else {
+        update(patch);
+      }
     } catch (cause) {
       update({ error: cause instanceof Error ? cause.message : String(cause) });
     } finally {
@@ -470,84 +529,56 @@ export const appStore = {
       return null;
     }
   },
+  selectLocalePreference(locale: LocalePreference) {
+    if (getLocalePreference() === locale && persistedInterface.locale === locale) return;
+    void persistInterfacePatch({ locale }, { optimistic: true });
+  },
   selectTheme(theme: ThemeId) {
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, theme);
-    } catch {
-      // Theme still applies for the current session when storage is unavailable.
-    }
-    applyTheme(theme);
-    update({ theme });
+    if (snapshot.theme === theme && persistedInterface.theme === theme) return;
+    void persistInterfacePatch({ theme }, { optimistic: true });
   },
   selectCurrency(currency: DisplayCurrency): boolean {
     if (currency === "CNY" && !isValidExchangeRate(snapshot.cnyRate)) {
       return false;
     }
-    try {
-      localStorage.setItem(CURRENCY_STORAGE_KEY, currency);
-    } catch {
-      // Currency still updates in memory for the active session.
+    if (snapshot.currency === currency && persistedInterface.currency === currency) {
+      return true;
     }
-    update({ currency });
+    void persistInterfacePatch({ currency }, { optimistic: true });
     return true;
   },
-  setCnyRate(rawRate: string): string | null {
-    const trimmed = rawRate.trim();
-    if (!trimmed) {
-      try {
-        localStorage.removeItem(CNY_RATE_STORAGE_KEY);
-        if (snapshot.currency === "CNY") localStorage.setItem(CURRENCY_STORAGE_KEY, "USD");
-      } catch {
-        // Ignore storage restrictions.
-      }
-      update({
-        cnyRate: null,
-        currency: "USD",
-      });
-      return null;
-    }
-    const normalized = normalizeExchangeRate(trimmed);
+  async saveCnyRate(rawRate: string): Promise<string | null> {
+    const normalized = normalizeExchangeRate(rawRate);
     if (!normalized) {
       return null;
     }
-    try {
-      localStorage.setItem(CNY_RATE_STORAGE_KEY, normalized);
-    } catch {
-      // Ignore storage restrictions.
-    }
-    update({ cnyRate: normalized });
-    return normalized;
+    const saved = await persistInterfacePatch({ cny_rate: normalized }, { optimistic: false });
+    return saved?.cny_rate ?? null;
+  },
+  async clearCnyRate(): Promise<InterfaceSettings | null> {
+    return persistInterfacePatch({ cny_rate: null }, { optimistic: false });
   },
   selectOverviewChartMode(overviewChartMode: OverviewChartMode) {
-    try {
-      localStorage.setItem(CHART_MODE_STORAGE_KEY, overviewChartMode);
-    } catch {
-      // Ignore storage restrictions.
+    if (snapshot.overviewChartMode === overviewChartMode && persistedInterface.overview_chart_mode === overviewChartMode) {
+      return;
     }
-    update({ overviewChartMode });
+    void persistInterfacePatch({ overview_chart_mode: overviewChartMode }, { optimistic: true });
   },
   selectOverviewChartType(overviewChartType: OverviewChartType) {
-    try {
-      localStorage.setItem(CHART_TYPE_STORAGE_KEY, overviewChartType);
-    } catch {
-      // Ignore storage restrictions.
+    if (snapshot.overviewChartType === overviewChartType && persistedInterface.overview_chart_type === overviewChartType) {
+      return;
     }
-    update({ overviewChartType });
+    void persistInterfacePatch({ overview_chart_type: overviewChartType }, { optimistic: true });
   },
-  setHomeRefreshIntervalSeconds(rawInterval: string | number): number | null {
+  async saveHomeRefreshIntervalSeconds(rawInterval: string | number): Promise<number | null> {
     const parsed = typeof rawInterval === "number"
       ? (Number.isSafeInteger(rawInterval) && rawInterval >= 1 ? rawInterval : null)
       : parseHomeRefreshIntervalSeconds(rawInterval);
     if (parsed === null) {
       return null;
     }
-    try {
-      localStorage.setItem(HOME_REFRESH_INTERVAL_STORAGE_KEY, String(parsed));
-    } catch {
-      // Setting remains active in memory for the current session when storage is unavailable.
-    }
-    update({ homeRefreshIntervalSeconds: parsed });
-    return parsed;
+    const saved = await persistInterfacePatch({ home_refresh_interval_seconds: parsed }, { optimistic: false });
+    return saved?.home_refresh_interval_seconds ?? null;
   },
   handoffCallsFilter(filter: Omit<CallsFilterHandoff, "nonce">) {
     handoffSeed += 1;
@@ -566,26 +597,6 @@ export const appStore = {
     }
   },
 };
-
-if (typeof window !== "undefined") {
-  window.addEventListener("storage", (event) => {
-    if (event.key === THEME_STORAGE_KEY) {
-      const nextTheme = savedTheme();
-      applyTheme(nextTheme);
-      update({ theme: nextTheme });
-    } else if (event.key === CNY_RATE_STORAGE_KEY || event.key === CURRENCY_STORAGE_KEY) {
-      const nextRate = savedCnyRate();
-      const nextCurrency = savedCurrency(nextRate);
-      update({ cnyRate: nextRate, currency: nextCurrency });
-    } else if (event.key === CHART_MODE_STORAGE_KEY) {
-      update({ overviewChartMode: savedChartMode() });
-    } else if (event.key === CHART_TYPE_STORAGE_KEY) {
-      update({ overviewChartType: savedChartType() });
-    } else if (event.key === HOME_REFRESH_INTERVAL_STORAGE_KEY) {
-      update({ homeRefreshIntervalSeconds: savedHomeRefreshIntervalSeconds() });
-    }
-  });
-}
 
 export function useAppStore() {
   return useSyncExternalStore(appStore.subscribe, appStore.getSnapshot);

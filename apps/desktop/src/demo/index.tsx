@@ -1,14 +1,18 @@
 import { installDemoApi } from "./api";
-
-installDemoApi();
+import type { LocalePreference } from "../i18n/runtime";
+import type { ThemeId } from "../shared/theme/theme";
 
 const params = new URLSearchParams(window.location.search);
-const locale = params.get("locale") === "en-US" ? "en-US" : "zh-CN";
+const rawLocale = params.get("locale");
+const locale: LocalePreference = rawLocale === "en-US" || rawLocale === "pt-BR" || rawLocale === "system"
+  ? rawLocale
+  : "zh-CN";
 const rawTheme = params.get("theme");
-const theme = rawTheme === "system" || rawTheme === "default-light" || rawTheme === "default-dark" ? rawTheme : "default-dark";
+const theme: ThemeId = rawTheme === "system" || rawTheme === "default-light" || rawTheme === "default-dark"
+  ? rawTheme
+  : "default-dark";
 
 document.documentElement.dataset.platform = "macos";
-localStorage.setItem("cursor-byok.locale", locale);
-localStorage.setItem("cursor-byok.theme", theme);
+installDemoApi({ locale, theme });
 
 void import("../index");

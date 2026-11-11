@@ -7,6 +7,8 @@ import type {
   CatalogSearchResult,
   CursorHarnessStatus,
   ExternalApiSettings,
+  InterfaceSettings,
+  InterfaceSettingsPatch,
   LlmCall,
   Model,
   Overview,
@@ -28,6 +30,7 @@ import type {
   SupplierPricingView,
   TabSettings,
 } from "../shared/api";
+import { isValidExchangeRate, normalizeExchangeRate } from "../shared/utils/costFormat";
 
 const API_ROOT = "/__byok-api__/api";
 const DEMO_NOW = Date.now();
@@ -239,8 +242,22 @@ let proxySettings: ProxySettings = {
 };
 let tabSettings: TabSettings = { mode: "public", address: "" };
 let storage: StatisticsStorage = { call_count: calls.length, trace_count: calls.length };
+let interfaceSettings: InterfaceSettings = {
+  locale: "system",
+  theme: "default-dark",
+  currency: "USD",
+  cny_rate: null,
+  overview_chart_mode: "tokens",
+  overview_chart_type: "bar",
+  home_refresh_interval_seconds: 30,
+};
 
-export function installDemoApi() {
+export function installDemoApi(initialInterface?: Partial<Pick<InterfaceSettings, "locale" | "theme">>) {
+  interfaceSettings = {
+    ...interfaceSettings,
+    ...(initialInterface?.locale ? { locale: initialInterface.locale } : {}),
+    ...(initialInterface?.theme ? { theme: initialInterface.theme } : {}),
+  };
   const nativeFetch = window.fetch.bind(window);
 
   window.fetch = async (input, init) => {
@@ -351,6 +368,13 @@ export function installDemoApi() {
     }
     if (path === "/settings/commit") {
       return json({ model_id: "", prompt: "", prompt_locale: "zh", default_prompt: "" });
+    }
+    if (path === "/settings/interface" && method === "GET") return json(interfaceSettings);
+    if (path === "/settings/interface" && method === "PUT") {
+      const result = applyDemoInterfacePatch(body as InterfaceSettingsPatch | null);
+      if ("error" in result) return json({ message: result.error }, 400);
+      interfaceSettings = result.settings;
+      return json(interfaceSettings);
     }
     if (path === "/settings/desktop" && method === "GET") return json({ silent_start: false, show_dock_icon: true });
     if (path === "/settings/desktop") return json(body);
@@ -905,6 +929,78 @@ function json(value: unknown, status = 200) {
     status,
     headers: { "content-type": "application/json" },
   });
+}
+
+function applyDemoInterfacePatch(
+  patch: InterfaceSettingsPatch | null,
+): { settings: InterfaceSettings } | { error: string } {
+  if (!patch || typeof patch !== "object") {
+    return { settings: interfaceSettings };
+  }
+  const next: InterfaceSettings = { ...interfaceSettings };
+  if (patch.locale !== undefined) {
+    if (!["system", "zh-CN", "en-US", "pt-BR"].includes(patch.locale)) {
+      return { error: "invalid interface locale" };
+    }
+    next.locale = patch.locale;
+  }
+  if (patch.theme !== undefined) {
+    if (!["system", "default-dark", "default-light"].includes(patch.theme)) {
+      return { error: "invalid interface theme" };
+    }
+    next.theme = patch.theme;
+  }
+  if (patch.overview_chart_mode !== undefined) {
+    if (!["tokens", "cost"].includes(patch.overview_chart_mode)) {
+      return { error: "invalid overview chart mode" };
+    }
+    next.overview_chart_mode = patch.overview_chart_mode;
+  }
+  if (patch.overview_chart_type !== undefined) {
+    if (!["bar", "line"].includes(patch.overview_chart_type)) {
+      return { error: "invalid overview chart type" };
+    }
+    next.overview_chart_type = patch.overview_chart_type;
+  }
+  if (patch.home_refresh_interval_seconds !== undefined) {
+    if (
+      typeof patch.home_refresh_interval_seconds !== "number"
+      || !Number.isSafeInteger(patch.home_refresh_interval_seconds)
+      || patch.home_refresh_interval_seconds < 1
+    ) {
+      return { error: "home refresh interval must be at least 1 second" };
+    }
+    next.home_refresh_interval_seconds = patch.home_refresh_interval_seconds;
+  }
+  if ("cny_rate" in patch) {
+    if (patch.cny_rate == null || patch.cny_rate.trim() === "") {
+      next.cny_rate = null;
+      if (patch.currency === undefined && next.currency === "CNY") {
+        next.currency = "USD";
+      }
+    } else if (typeof patch.cny_rate === "string") {
+      if (patch.cny_rate.trim().length > 64) {
+        return { error: "CNY exchange rate is too long" };
+      }
+      const normalized = normalizeExchangeRate(patch.cny_rate);
+      if (!normalized) {
+        return { error: "CNY exchange rate must be greater than 0" };
+      }
+      next.cny_rate = normalized;
+    } else {
+      return { error: "invalid CNY exchange rate" };
+    }
+  }
+  if (patch.currency !== undefined) {
+    if (!["USD", "CNY"].includes(patch.currency)) {
+      return { error: "invalid display currency" };
+    }
+    next.currency = patch.currency;
+  }
+  if (next.currency === "CNY" && !isValidExchangeRate(next.cny_rate)) {
+    return { error: "CNY display requires a positive exchange rate" };
+  }
+  return { settings: next };
 }
 
 function empty() {

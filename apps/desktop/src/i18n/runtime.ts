@@ -3,6 +3,7 @@ import enUS from "./locales/en-US.json";
 import ptBR from "./locales/pt-BR.json";
 
 export type Locale = "zh-CN" | "en-US" | "pt-BR";
+export type LocalePreference = "system" | Locale;
 export type CommitPromptLocale = "zh-CN" | "en-US";
 
 export function commitPromptLocale(locale: Locale): CommitPromptLocale {
