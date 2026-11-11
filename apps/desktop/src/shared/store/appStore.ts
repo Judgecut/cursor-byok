@@ -24,7 +24,7 @@ import {
   type SupplierPricingView,
 } from "../api";
 import { applyTheme, type ThemeId } from "../theme/theme";
-import { isValidExchangeRate, normalizeExchangeRate, type DisplayCurrency } from "../utils/costFormat";
+import { normalizeExchangeRate, type DisplayCurrency } from "../utils/costFormat";
 
 export type { OverviewChartMode, OverviewChartType } from "../api";
 export type OverviewRangePresetValue = "ten-minutes" | "hour" | "today" | "week" | "month" | "custom";
@@ -97,6 +97,7 @@ const emptySpeed = (): SpeedAggregate => ({
 let handoffSeed = 0;
 let persistedInterface: InterfaceSettings = { ...DEFAULT_INTERFACE_SETTINGS };
 let interfaceRevision = 0;
+let pendingInterfaceWrites = 0;
 let interfaceWriteQueue: Promise<void> = Promise.resolve();
 
 let snapshot: AppSnapshot = {
@@ -195,6 +196,7 @@ async function persistInterfacePatch(
 ): Promise<InterfaceSettings | null> {
   const revision = interfaceRevision + 1;
   interfaceRevision = revision;
+  pendingInterfaceWrites += 1;
 
   if (options.optimistic) {
     const optimisticPatch: Partial<AppSnapshot> = { error: null };
@@ -219,6 +221,8 @@ async function persistInterfacePatch(
 
   try {
     const saved = await enqueueInterfaceWrite(() => api.updateInterfaceSettings(patch));
+    // Every successful response advances the rollback state, even when newer writes are queued.
+    persistedInterface = saved;
     if (interfaceRevision === revision) {
       applyInterfaceSettings(saved);
     }
@@ -231,6 +235,10 @@ async function persistInterfacePatch(
       update({ error });
     }
     return null;
+  }
+  finally
+  {
+    pendingInterfaceWrites -= 1;
   }
 }
 
@@ -252,9 +260,12 @@ export const appStore = {
 
   async hydrateInterfaceSettings() {
     const revisionBefore = interfaceRevision;
+    // A read started during a write can return stale settings after that write completes.
+    const canApplyInterfaceSettings = pendingInterfaceWrites === 0;
     try {
       const settings = await api.interfaceSettings();
-      if (interfaceRevision === revisionBefore) {
+      if (canApplyInterfaceSettings && interfaceRevision === revisionBefore)
+      {
         applyInterfaceSettings(settings, {
           forceApplyTheme: true,
           forceApplyLocale: true,
@@ -271,6 +282,7 @@ export const appStore = {
   async refresh() {
     update({ busy: true, error: null });
     const interfaceRevisionBefore = interfaceRevision;
+    const canApplyInterfaceSettings = pendingInterfaceWrites === 0;
     try {
       const [models, callsResult, overview, settings, ports, interfaceSettings, pricingModels, pricingSync, cursorHarness, pluginRuntime, plugins] = await Promise.all([
         api.models(),
@@ -299,7 +311,8 @@ export const appStore = {
         plugins,
         refreshTick: snapshot.refreshTick + 1,
       };
-      if (interfaceRevision === interfaceRevisionBefore) {
+      if (canApplyInterfaceSettings && interfaceRevision === interfaceRevisionBefore)
+      {
         applyInterfaceSettings(interfaceSettings, { extra: patch });
       } else {
         update(patch);
@@ -537,15 +550,11 @@ export const appStore = {
     if (snapshot.theme === theme && persistedInterface.theme === theme) return;
     void persistInterfacePatch({ theme }, { optimistic: true });
   },
-  selectCurrency(currency: DisplayCurrency): boolean {
-    if (currency === "CNY" && !isValidExchangeRate(snapshot.cnyRate)) {
-      return false;
-    }
+  selectCurrency(currency: DisplayCurrency) {
     if (snapshot.currency === currency && persistedInterface.currency === currency) {
-      return true;
+      return;
     }
     void persistInterfacePatch({ currency }, { optimistic: true });
-    return true;
   },
   async saveCnyRate(rawRate: string): Promise<string | null> {
     const normalized = normalizeExchangeRate(rawRate);

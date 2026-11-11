@@ -1,5 +1,7 @@
 export type DisplayCurrency = "USD" | "CNY";
 
+export const DEFAULT_CNY_RATE = "6.8";
+
 type DecimalParts = {
   negative: boolean;
   intPart: string;
@@ -60,6 +62,16 @@ export function normalizeExchangeRate(raw: string): string | null {
   return trimDecimalString(raw);
 }
 
+export function resolveExchangeRate(cnyRate: string | null | undefined): {
+  rate: string;
+  isDefault: boolean;
+} {
+  if (isValidExchangeRate(cnyRate)) {
+    return { rate: trimDecimalString(cnyRate), isDefault: false };
+  }
+  return { rate: DEFAULT_CNY_RATE, isDefault: true };
+}
+
 export function addUsdStrings(left: string | null | undefined, right: string | null | undefined): string {
   const aParts = left ? normalizeDecimalParts(left) : null;
   const bParts = right ? normalizeDecimalParts(right) : null;
@@ -102,11 +114,11 @@ export function convertUsdToDisplayDecimal(
   cnyRate: string | null | undefined,
 ): { currency: DisplayCurrency; amount: string; rateUsed: string | null } {
   const normalizedUsd = usdValue ? trimDecimalString(usdValue) : "0";
-  if (currency === "CNY" && isValidExchangeRate(cnyRate)) {
-    const normalizedRate = trimDecimalString(cnyRate);
-    const converted = multiplyDecimalStrings(normalizedUsd, normalizedRate);
+  if (currency === "CNY") {
+    const { rate } = resolveExchangeRate(cnyRate);
+    const converted = multiplyDecimalStrings(normalizedUsd, rate);
     if (converted !== null) {
-      return { currency: "CNY", amount: converted, rateUsed: normalizedRate };
+      return { currency: "CNY", amount: converted, rateUsed: rate };
     }
   }
   return { currency: "USD", amount: normalizedUsd, rateUsed: null };
@@ -170,14 +182,6 @@ function formatDecimalExactWithSymbol(value: string | null | undefined, symbol: 
   return frac.length === 1 ? `${sign}${symbol}${formattedInt}.${frac}0` : `${sign}${symbol}${formattedInt}.${frac}`;
 }
 
-export function currencySymbol(currency: DisplayCurrency, cnyRate?: string | null): string {
-  return currency === "CNY" && isValidExchangeRate(cnyRate) ? "¥" : "$";
-}
-
-export function effectiveCurrency(currency: DisplayCurrency, cnyRate?: string | null): DisplayCurrency {
-  return currency === "CNY" && isValidExchangeRate(cnyRate) ? "CNY" : "USD";
-}
-
 export function formatUsd(value: string | null | undefined): string {
   return formatDecimalWithSymbol(value, "$");
 }
@@ -207,33 +211,19 @@ export function formatDisplayCostExact(
 export function formatAxisCost(
   amount: number,
   currency: DisplayCurrency,
-  cnyRate: string | null | undefined,
 ): string {
-  const symbol = currencySymbol(currency, cnyRate);
+  const symbol = currency === "CNY" ? "¥" : "$";
   if (!Number.isFinite(amount) || amount === 0) return `${symbol}0`;
   const decimalText = Math.abs(amount) < 1e-4 ? amount.toFixed(10) : amount.toFixed(6);
   return formatDecimalWithSymbol(decimalText, symbol);
 }
 
-export function formatCostTooltipWithOrigin(
-  usdValue: string | null | undefined,
-  currency: DisplayCurrency,
-  cnyRate: string | null | undefined,
-): string {
-  const resolved = convertUsdToDisplayDecimal(usdValue, currency, cnyRate);
-  if (resolved.currency === "CNY" && resolved.rateUsed) {
-    return [
-      formatDecimalExactWithSymbol(resolved.amount, "¥"),
-      t("原美元金额：{cost}", { cost: formatUsdExact(usdValue) }),
-      t("按设置汇率折算（1 USD = {rate} CNY）", { rate: resolved.rateUsed }),
-    ].join("\n");
-  }
-  return formatUsdExact(usdValue);
-}
-
 export function formatConversionNote(currency: DisplayCurrency, cnyRate: string | null | undefined): string | null {
-  if (currency !== "CNY" || !isValidExchangeRate(cnyRate)) return null;
-  return t("按设置汇率折算（1 USD = {rate} CNY）", { rate: trimDecimalString(cnyRate) });
+  if (currency !== "CNY") return null;
+  const resolved = resolveExchangeRate(cnyRate);
+  return resolved.isDefault
+    ? t("按默认汇率折算（1 USD = {rate} CNY）", { rate: resolved.rate })
+    : t("按设置汇率折算（1 USD = {rate} CNY）", { rate: resolved.rate });
 }
 
 export function formatRatePerMillion(value: string | null | undefined): string {

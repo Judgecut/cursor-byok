@@ -722,13 +722,6 @@ export function HomePage() {
     }
   };
 
-  const switchCurrency = (nextCurrency: "USD" | "CNY") => {
-    if (!appStore.selectCurrency(nextCurrency)) {
-      showMessage(t("尚未配置有效人民币汇率，请先在设置中配置大于 0 的汇率"), { duration: 4_000 });
-      navigate("/settings", { state: { focusCurrencyRate: Date.now() } });
-    }
-  };
-
   const openAllCalls = () => {
     const activeQuickRange = preset === "custom" && quick ? quickPresetRange(quick) : null;
     appStore.handoffCallsFilter({
@@ -862,12 +855,12 @@ export function HomePage() {
         <button
           type="button"
           aria-pressed={currency === "USD"}
-          onClick={() => switchCurrency("USD")}
+          onClick={() => appStore.selectCurrency("USD")}
         >USD</button>
         <button
           type="button"
           aria-pressed={currency === "CNY"}
-          onClick={() => switchCurrency("CNY")}
+          onClick={() => appStore.selectCurrency("CNY")}
         >CNY</button>
       </div>
       <div className={styles.segmentGroup} role="group" aria-label={t("趋势统计维度")}>

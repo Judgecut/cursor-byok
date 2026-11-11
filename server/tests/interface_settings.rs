@@ -83,15 +83,17 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
         })
     );
 
-    // Rejects switching to CNY without an exchange rate.
-    let (status, _) = send(
+    // Allows switching to CNY without configuring a custom exchange rate (default rate is used).
+    let (status, cny_default) = send(
         router.clone(),
         "PUT",
         "/__byok-api__/api/settings/interface",
         Some(json!({ "currency": "CNY" })),
     )
     .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(cny_default["currency"], "CNY");
+    assert_eq!(cny_default["cny_rate"], Value::Null);
 
     // Rejects invalid rate and zero interval.
     let (status, _) = send(
@@ -164,7 +166,7 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(loaded, updated);
 
-    // Clearing the exchange rate resets currency back to USD while preserving other preferences.
+    // Clearing the exchange rate keeps CNY selected (default rate applies) while preserving other preferences.
     let (status, cleared) = send(
         reopened_router,
         "PUT",
@@ -178,7 +180,7 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
         json!({
             "locale": "en-US",
             "theme": "default-light",
-            "currency": "USD",
+            "currency": "CNY",
             "cny_rate": null,
             "overview_chart_mode": "cost",
             "overview_chart_type": "line",

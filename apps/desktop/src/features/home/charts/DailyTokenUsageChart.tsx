@@ -4,7 +4,6 @@ import type { TokenUsageGranularity } from "../../../shared/api";
 import type { OverviewChartMode, OverviewChartType } from "../../../shared/store/appStore";
 import {
   convertUsdToDisplayNumber,
-  effectiveCurrency,
   formatAxisCost,
   formatConversionNote,
   formatDisplayCost,
@@ -103,7 +102,6 @@ export function DailyTokenUsageChart({
   error?: string | null;
 }) {
   const [hovered, setHovered] = useState(false);
-  const resolvedCurrency = effectiveCurrency(currency, cnyRate);
   const conversionNote = mode === "cost" ? formatConversionNote(currency, cnyRate) : null;
 
   const totals = useMemo(
@@ -123,7 +121,7 @@ export function DailyTokenUsageChart({
 
   const unitLabel = mode === "tokens"
     ? t("单位：Token")
-    : resolvedCurrency === "CNY"
+    : currency === "CNY"
       ? t("单位：CNY (¥)")
       : t("单位：USD ($)");
 
@@ -323,7 +321,7 @@ export function DailyTokenUsageChart({
           fontFamily: "HFKos",
           formatter: (value: number) => mode === "tokens"
             ? formatCompactInteger(value)
-            : formatAxisCost(value, currency, cnyRate),
+            : formatAxisCost(value, currency),
         },
       },
       series: chartType === "line" ? lineSeries : barSeries,

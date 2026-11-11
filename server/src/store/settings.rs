@@ -347,9 +347,6 @@ fn normalize_loaded_interface_settings(mut settings: InterfaceSettings) -> Inter
         .cny_rate
         .as_deref()
         .and_then(|rate| normalize_cny_rate(rate).ok().flatten());
-    if settings.cny_rate.is_none() {
-        settings.currency = DisplayCurrency::Usd;
-    }
     if settings.home_refresh_interval_seconds == 0 {
         settings.home_refresh_interval_seconds = DEFAULT_HOME_REFRESH_INTERVAL_SECONDS;
     }
@@ -693,14 +690,7 @@ impl Store {
             };
         }
         if let Some(currency) = patch.currency {
-            if currency == DisplayCurrency::Cny && settings.cny_rate.is_none() {
-                return Err(crate::Error::Config(
-                    "CNY exchange rate must be configured before selecting CNY display".into(),
-                ));
-            }
             settings.currency = currency;
-        } else if settings.cny_rate.is_none() {
-            settings.currency = DisplayCurrency::Usd;
         }
         let value_json = serde_json::to_string(&settings)?;
         sqlx::query(
@@ -921,14 +911,22 @@ mod tests {
             }
         );
 
-        // Cannot switch to CNY before configuring a positive rate.
-        assert!(store
+        // Can switch to CNY before configuring a custom rate (display uses the default rate).
+        let cny_with_default = store
             .update_interface_settings(InterfaceSettingsPatch {
                 currency: Some(DisplayCurrency::Cny),
                 ..InterfaceSettingsPatch::default()
             })
             .await
-            .is_err());
+            .unwrap();
+        assert_eq!(cny_with_default.currency, DisplayCurrency::Cny);
+        assert_eq!(cny_with_default.cny_rate, None);
+
+        let reopened_default_rate = Store::connect(&url).await.unwrap();
+        assert_eq!(
+            reopened_default_rate.interface_settings().await.unwrap(),
+            cny_with_default
+        );
 
         // Reject zero/negative/invalid rates and zero refresh interval.
         for bad_rate in ["0", "0.00", "-7.2", "abc", ".", "+"] {
@@ -986,7 +984,7 @@ mod tests {
         let reopened = Store::connect(&url).await.unwrap();
         assert_eq!(reopened.interface_settings().await.unwrap(), saved);
 
-        // Clearing the rate automatically switches CNY back to USD while leaving other fields intact.
+        // Clearing the rate restores unconfigured state (default rate) while preserving currency and other fields.
         let cleared = reopened
             .update_interface_settings(InterfaceSettingsPatch {
                 cny_rate: Some(None),
@@ -995,7 +993,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(cleared.cny_rate, None);
-        assert_eq!(cleared.currency, DisplayCurrency::Usd);
+        assert_eq!(cleared.currency, DisplayCurrency::Cny);
         assert_eq!(cleared.theme, InterfaceTheme::System);
         assert_eq!(cleared.locale, InterfaceLocale::EnUs);
         assert_eq!(cleared.home_refresh_interval_seconds, 15);

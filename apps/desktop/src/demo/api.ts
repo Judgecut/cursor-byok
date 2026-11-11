@@ -30,7 +30,7 @@ import type {
   SupplierPricingView,
   TabSettings,
 } from "../shared/api";
-import { isValidExchangeRate, normalizeExchangeRate } from "../shared/utils/costFormat";
+import { normalizeExchangeRate } from "../shared/utils/costFormat";
 
 const API_ROOT = "/__byok-api__/api";
 const DEMO_NOW = Date.now();
@@ -973,20 +973,21 @@ function applyDemoInterfacePatch(
     next.home_refresh_interval_seconds = patch.home_refresh_interval_seconds;
   }
   if ("cny_rate" in patch) {
-    if (patch.cny_rate == null || patch.cny_rate.trim() === "") {
+    if (patch.cny_rate == null) {
       next.cny_rate = null;
-      if (patch.currency === undefined && next.currency === "CNY") {
-        next.currency = "USD";
-      }
     } else if (typeof patch.cny_rate === "string") {
-      if (patch.cny_rate.trim().length > 64) {
+      const trimmed = patch.cny_rate.trim();
+      if (trimmed === "") {
+        next.cny_rate = null;
+      } else if (trimmed.length > 64) {
         return { error: "CNY exchange rate is too long" };
+      } else {
+        const normalized = normalizeExchangeRate(trimmed);
+        if (!normalized) {
+          return { error: "CNY exchange rate must be greater than 0" };
+        }
+        next.cny_rate = normalized;
       }
-      const normalized = normalizeExchangeRate(patch.cny_rate);
-      if (!normalized) {
-        return { error: "CNY exchange rate must be greater than 0" };
-      }
-      next.cny_rate = normalized;
     } else {
       return { error: "invalid CNY exchange rate" };
     }
@@ -996,9 +997,6 @@ function applyDemoInterfacePatch(
       return { error: "invalid display currency" };
     }
     next.currency = patch.currency;
-  }
-  if (next.currency === "CNY" && !isValidExchangeRate(next.cny_rate)) {
-    return { error: "CNY display requires a positive exchange rate" };
   }
   return { settings: next };
 }
