@@ -207,6 +207,137 @@ async fn client_loop_receives_ready_text_tool_call_and_completion() {
 }
 
 #[tokio::test]
+async fn client_loop_inherits_run_reasoning_without_leaking_invocation_overrides() {
+    let (_directory, store) = temp_store().await;
+    let model = store.create_model(&model_input()).await.unwrap();
+    let provider = FakeProvider::default();
+    let (_router_directory, router) = router(store, provider.clone());
+    for run_effort in ["high", "xhigh"] {
+        let request_id = format!("reasoning-{run_effort}");
+        append(
+            &router,
+            &request_id,
+            0,
+            pb::RunInferenceClientMessage {
+                message: Some(pb::run_inference_client_message::Message::RunRequest(
+                    pb::RunInferenceRunRequest {
+                        conversation_id: "reasoning-conversation".into(),
+                        requested_model: Some(pb::InferenceRequestedModel {
+                            model_id: model.model_hash.clone(),
+                            parameters: vec![pb::InferenceModelParameterValue {
+                                id: "reasoning".into(),
+                                value: run_effort.into(),
+                            }],
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                )),
+            },
+        )
+        .await;
+        let response = router
+            .clone()
+            .oneshot(
+                Request::post("/aiserver.v1.InferenceService/RunInferenceSSE")
+                    .header(header::CONTENT_TYPE, "application/proto")
+                    .body(Body::from(
+                        connect::encode_message(&agent::BidiRequestId {
+                            request_id: request_id.clone(),
+                        })
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let mut stream = response.into_body().into_data_stream();
+        let ready = next_message(&mut stream).await;
+        let Some(pb::run_inference_server_message::Message::RunReady(ready)) = ready.message else {
+            panic!("expected run_ready");
+        };
+        assert_eq!(
+            ready.resolved_model.unwrap().parameters[0].value,
+            run_effort
+        );
+        for (index, (requested_model, expected)) in [
+            (None, run_effort),
+            (
+                Some(pb::InferenceRequestedModel {
+                    parameters: vec![pb::InferenceModelParameterValue {
+                        id: "effort".into(),
+                        value: "low".into(),
+                    }],
+                    ..Default::default()
+                }),
+                "low",
+            ),
+            (Some(pb::InferenceRequestedModel::default()), run_effort),
+            (None, run_effort),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            provider.push(vec![
+                ModelEvent::TextStart,
+                ModelEvent::TextDelta("ok".into()),
+                ModelEvent::TextEnd,
+                ModelEvent::Done(FinishReason::Stop),
+            ]);
+            let invocation_id = format!("{request_id}-{index}");
+            append(
+                &router,
+                &request_id,
+                index as i64 + 1,
+                pb::RunInferenceClientMessage {
+                    message: Some(pb::run_inference_client_message::Message::InvokeModel(
+                        pb::RunInferenceInvokeModel {
+                            invocation_id: invocation_id.clone(),
+                            request: Some(pb::InferenceStreamRequest {
+                                requested_model,
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        },
+                    )),
+                },
+            )
+            .await;
+            loop {
+                let message = next_message(&mut stream).await;
+                if let Some(pb::run_inference_server_message::Message::InvocationEnd(end)) =
+                    message.message
+                {
+                    assert_eq!(end.invocation_id, invocation_id);
+                    assert!(end.error.is_none());
+                    break;
+                }
+            }
+            let requests = provider.requests();
+            let request = requests.last().unwrap();
+            assert_eq!(request.model.reasoning.effort.as_deref(), Some(expected));
+            assert!(request.model.reasoning.enabled);
+        }
+        append(
+            &router,
+            &request_id,
+            5,
+            pb::RunInferenceClientMessage {
+                message: Some(pb::run_inference_client_message::Message::FinishRun(
+                    pb::RunInferenceFinishRun { aborted: false },
+                )),
+            },
+        )
+        .await;
+        let end = stream.next().await.unwrap().unwrap();
+        assert_eq!(
+            connect::decode_frames(&end).unwrap()[0].0,
+            connect::END_STREAM_FLAG
+        );
+    }
+}
+
+#[tokio::test]
 async fn run_inference_accepts_binary_append_and_arbitrary_non_uuid_conversation_ids() {
     let (_directory, store) = temp_store().await;
     let model = store.create_model(&model_input()).await.unwrap();

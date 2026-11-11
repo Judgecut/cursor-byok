@@ -12,8 +12,11 @@ use crate::{
     Error, Result,
 };
 
-pub(crate) fn project(input: &pb::InferenceStreamRequest, model_id: &str) -> Result<ModelRequest> {
-    let mut model = ModelSpec::new(model_id);
+pub(crate) fn project(
+    input: &pb::InferenceStreamRequest,
+    run_model: &pb::InferenceRequestedModel,
+) -> Result<ModelRequest> {
+    let mut model = ModelSpec::new(&run_model.model_id);
     if let Some(config) = &input.model_config {
         model.max_output_tokens = config
             .max_tokens
@@ -30,8 +33,10 @@ pub(crate) fn project(input: &pb::InferenceStreamRequest, model_id: &str) -> Res
         }
         model.extra_params = Value::Object(extra);
     }
-    if let Some(requested) = &input.requested_model {
-        model.reasoning.enabled = requested.max_mode;
+    // Cursor strips requested_model from InvokeModel after sending it in RunRequest.
+    // Apply this run's selection first, then any invocation-specific parameters.
+    for requested in std::iter::once(run_model).chain(input.requested_model.as_ref()) {
+        model.reasoning.enabled |= requested.max_mode;
         for parameter in &requested.parameters {
             if matches!(parameter.id.as_str(), "effort" | "reasoning") {
                 model.reasoning.effort = Some(parameter.value.clone());
@@ -263,13 +268,23 @@ mod tests {
             messages: vec![text(4, "You are an assistant"), text(1, "First question")],
             ..Default::default()
         };
-        let first = project(&input, "test-model").unwrap();
+        let model = pb::InferenceRequestedModel {
+            model_id: "test-model".into(),
+            parameters: vec![pb::InferenceModelParameterValue {
+                id: "reasoning".into(),
+                value: "high".into(),
+            }],
+            ..Default::default()
+        };
+        let first = project(&input, &model).unwrap();
         input.messages.push(text(2, "First answer"));
         input.messages.push(text(1, "Second question"));
-        let second = project(&input, "test-model").unwrap();
+        let second = project(&input, &model).unwrap();
 
         assert_eq!(first.prompt.instructions, second.prompt.instructions);
         assert_eq!(first.history, second.history[..first.history.len()]);
+        assert_eq!(first.model.reasoning.effort.as_deref(), Some("high"));
+        assert_eq!(first.model, second.model);
     }
 
     #[test]
@@ -302,7 +317,14 @@ mod tests {
             ..Default::default()
         };
 
-        let request = project(&input, "test-model").unwrap();
+        let request = project(
+            &input,
+            &pb::InferenceRequestedModel {
+                model_id: "test-model".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(
             request.prompt.tools[0].parameters,
             serde_json::json!({"type":"object"})

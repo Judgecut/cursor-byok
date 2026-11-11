@@ -82,12 +82,12 @@ impl InferenceService {
                 "first RunInference message must start a run".into(),
             ));
         };
-        let model_id = request
+        let requested_model = request
             .requested_model
             .as_ref()
-            .map(|model| model.model_id.as_str())
-            .filter(|model| !model.is_empty())
+            .filter(|model| !model.model_id.is_empty())
             .ok_or_else(|| Error::Protocol("RunInference model is required".into()))?;
+        let model_id = requested_model.model_id.as_str();
         if request.conversation_id.is_empty() {
             return Err(Error::Protocol(
                 "RunInference conversation ID is required".into(),
@@ -114,7 +114,7 @@ impl InferenceService {
                 self.registry.provider(),
                 request_id.into(),
                 request.conversation_id.clone(),
-                model_id.into(),
+                requested_model.clone(),
                 configured.map(|model| (model.display_name, model.model_type)),
             ));
             InferenceRoute::Local(run)
@@ -172,7 +172,7 @@ async fn serve(
     provider: Arc<dyn Provider>,
     run_id: String,
     conversation_id: String,
-    model_id: String,
+    requested_model: pb::InferenceRequestedModel,
     model_info: Option<(String, ModelType)>,
 ) {
     let invocations = Arc::new(Mutex::new(HashMap::<String, CancellationToken>::new()));
@@ -203,7 +203,7 @@ async fn serve(
                     );
                     continue;
                 }
-                let request = match project(&request, &model_id) {
+                let request = match project(&request, &requested_model) {
                     Ok(request) => request,
                     Err(error) => {
                         invocation_error(&output, id, &error.to_string());
