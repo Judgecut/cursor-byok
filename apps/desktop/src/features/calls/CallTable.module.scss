@@ -1,5 +1,17 @@
 @use "../../styles/typography" as type;
 
+@property --call-update-strength
+{
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+.updateRow > td
+{
+  box-shadow: inset 0 0 0 9999px color-mix(in srgb, var(--vscode-focusBorder) calc(var(--call-update-strength) * 16%), transparent);
+}
+
 .status {
   padding: 3px 7px;
   color: var(--vscode-descriptionForeground);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode, type RefCallback } from "react";
 import { ScrollableContent } from "../virtual/ScrollableContent";
 import { Pagination } from "./Pagination";
 import styles from "./DataTable.module.scss";
@@ -24,6 +24,8 @@ export function DataTable<T>({
   rows,
   columns,
   rowKey,
+  rowClassName,
+  rowRef,
   minWidth,
   emptyText = t("暂无数据"),
   loading = false,
@@ -33,6 +35,8 @@ export function DataTable<T>({
   rows: T[];
   columns: DataTableColumn<T>[];
   rowKey: (row: T) => string | number;
+  rowClassName?: (row: T) => string;
+  rowRef?: (row: T) => RefCallback<HTMLTableRowElement>;
   minWidth?: number | string;
   emptyText?: ReactNode;
   loading?: boolean;
@@ -75,7 +79,7 @@ export function DataTable<T>({
             </tr>
           </thead>
           <tbody>
-            {pageRows.map((row) => <tr key={rowKey(row)}>
+            {pageRows.map((row) => <tr key={rowKey(row)} className={rowClassName?.(row)} ref={rowRef?.(row)}>
               {columns.map((column) => (
                 <td key={column.key} className={columnClass(column)} title={column.title?.(row)}>
                   {column.render(row)}

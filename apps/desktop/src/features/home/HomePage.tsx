@@ -805,6 +805,8 @@ export function HomePage() {
         calls={callsItems}
         callsTotal={callsTotal}
         callsReady={hasMatchingCallsFilter && !effectiveCallsError}
+        callsQueryKey={callsQueryKey}
+        callsPageReady={hasMatchingCallsPage && !effectiveCallsError}
         callsPagination={{
           page: callsPage,
           pageSize: callsPageSize,

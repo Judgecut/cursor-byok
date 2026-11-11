@@ -15,6 +15,7 @@ import {
 } from "../../shared/utils/costFormat";
 import { formatFirstOutput, formatSpeed, performanceTooltip } from "../../shared/utils/speedFormat";
 import styles from "./CallTable.module.scss";
+import { useCallHighlights } from "./useCallHighlights";
 
 const value = (input: string | number | null) => input ?? "-";
 
@@ -57,18 +58,23 @@ function costTitle(call: LlmCall, currency: DisplayCurrency, cnyRate: string | n
 
 export function CallTable({
   calls,
+  queryKey,
+  ready,
   onDetails,
   serverPagination,
   loading = false,
   emptyText,
 }: {
   calls: LlmCall[];
+  queryKey: string;
+  ready: boolean;
   onDetails: (call: LlmCall) => void;
   serverPagination?: ServerPagination;
   loading?: boolean;
   emptyText?: ReactNode;
 }) {
   const { currency, cnyRate } = useAppStore();
+  const rowRef = useCallHighlights(calls, queryKey, ready);
   const columns: DataTableColumn<LlmCall>[] = [
     {
       key: "status",
@@ -250,6 +256,8 @@ export function CallTable({
     rows={calls}
     columns={columns}
     rowKey={(call) => call.call_id}
+    rowClassName={() => styles.updateRow}
+    rowRef={rowRef}
     minWidth={4340}
     serverPagination={serverPagination}
     loading={loading}

@@ -252,6 +252,8 @@ export function CallsPage() {
   const content = <div className={styles.page}>
     <CallTable
       calls={calls}
+      queryKey={`${filterKey}|${page}|${pageSize}`}
+      ready={hasMatchingCallsPage && !error}
       onDetails={(call) => void appStore.openCallDetails(call.call_id)}
       loading={callsTableLoading}
       emptyText={emptyText}

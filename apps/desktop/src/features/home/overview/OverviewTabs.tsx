@@ -20,6 +20,8 @@ export function OverviewTabs({
   calls,
   callsTotal,
   callsReady,
+  callsQueryKey,
+  callsPageReady,
   callsPagination,
   callsLoading,
   callsError,
@@ -40,6 +42,8 @@ export function OverviewTabs({
   calls: LlmCall[];
   callsTotal: number;
   callsReady: boolean;
+  callsQueryKey: string;
+  callsPageReady: boolean;
   callsPagination: ServerPagination;
   callsLoading: boolean;
   callsError: string | null;
@@ -62,6 +66,8 @@ export function OverviewTabs({
       badge: callsReady ? callsTotal : undefined,
       content: <CallTable
         calls={calls}
+        queryKey={callsQueryKey}
+        ready={callsPageReady}
         onDetails={onCallDetails}
         serverPagination={callsPagination}
         loading={callsLoading}
