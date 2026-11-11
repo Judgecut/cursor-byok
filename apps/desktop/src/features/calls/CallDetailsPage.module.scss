@@ -13,8 +13,8 @@
 }
 
 .content {
-  width: calc(100% - 36px);
-  max-width: var(--app-page-max-width);
+  width: calc(100% - var(--app-page-padding) * 2);
+  min-width: 0;
   padding: 28px 0 40px;
   margin-right: auto;
   margin-left: auto;
@@ -23,5 +23,17 @@
     margin: 0 0 20px;
     font-size: type.$font-size-lg;
     font-weight: 630;
+    overflow-wrap: anywhere;
   }
+}
+
+@media (max-width: 680px) {
+  .content {
+    padding: 20px 0 32px;
+  }
+}
+
+.stateMessage {
+  padding: 16px;
+  overflow-wrap: anywhere;
 }

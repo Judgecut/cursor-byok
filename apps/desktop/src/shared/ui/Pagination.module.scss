@@ -4,9 +4,10 @@
   flex: 0 0 auto;
   min-height: 34px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 8px 12px;
   padding: 0px 0 6px 0;
   color: var(--vscode-descriptionForeground);
   font-size: type.$font-size-xs;
@@ -25,7 +26,8 @@
 }
 
 .pageSize {
-  width: 92px;
+  min-width: 112px;
+  width: auto;
   margin-right: 4px;
 
   > button {

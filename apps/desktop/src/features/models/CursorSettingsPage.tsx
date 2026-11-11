@@ -294,11 +294,6 @@ export function CursorSettingsPage() {
 
   const editorTestState = editing ? modelTestResults.get(editing.model_hash) : undefined;
   const editorTesting = Boolean(editing && testingModelHashes.has(editing.model_hash));
-  const activeGroups = grouping === "provider" ? providerGroups : typeGroups;
-  const pluginSectionHeight = pluginModels.length > 0 ? 60 + pluginModels.length * 56 : 0;
-  const estimatedModelHeight = grouping === "flat"
-    ? Math.max(380, Math.ceil(models.length / 3) * 196 + pluginSectionHeight)
-    : Math.max(380, activeGroups.reduce((height, group) => height + 60 + group.models.length * 56, 0) + Math.max(0, activeGroups.length - 1) * 20 + pluginSectionHeight);
 
   return <>
     <PageActions position="left">
@@ -324,7 +319,7 @@ export function CursorSettingsPage() {
       </div>
     </PageActions>
     <PageActions><TooltipTrigger label={caReady ? t("添加模型") : t("请先初始化 CA")}><button className={controls.iconButton} aria-label={t("添加模型")} disabled={!caReady || cursorBusy} onClick={openNew}><Icon icon={addIcon} size="1.1em" /></button></TooltipTrigger></PageActions>
-    <PageContent title="Cursor" sections={[{ key: "cursor-settings", estimatedHeight: estimatedModelHeight, content }]} />
+    <PageContent title="Cursor" sections={[{ key: "cursor-settings", estimatedHeight: 380, content }]} />
     <ConfirmDialog
       open={confirmDisableTakeover}
       title={t("关闭接管Cursor？")}

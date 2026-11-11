@@ -13,7 +13,7 @@
   position: absolute;
   z-index: 21;
   top: var(--app-content-top);
-  left: max(var(--app-page-padding), calc((100% - var(--app-page-max-width)) / 2));
+  left: var(--app-page-padding);
   margin: 0;
   padding-left:0;
   font-size: type.$font-size-xxl;
@@ -21,7 +21,6 @@
   transform: translateY(-150%);
   -webkit-user-select: none;
   user-select: none;
-  -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
   -webkit-touch-callout: none;
@@ -31,7 +30,6 @@
 
 .fixedContent {
   width: calc(100% - var(--app-page-padding) * 2);
-  max-width: var(--app-page-max-width);
   padding-top: var(--app-content-top);
   margin-right: auto;
   margin-left: auto;

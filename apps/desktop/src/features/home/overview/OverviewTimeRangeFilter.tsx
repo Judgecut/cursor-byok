@@ -2,7 +2,7 @@ import { autoUpdate, computePosition, flip, offset, shift, size } from "@floatin
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { parseTimeInput } from "../../../shared/utils/parseTimeInput";
-import type { OverviewRangePreset, QuickPreset } from "../../../shared/utils/timeRange";
+import { quickPresetDurationMs, type OverviewRangePreset, type QuickPreset } from "../../../shared/utils/timeRange";
 import controls from "../../../shared/ui/Controls.module.scss";
 import { ModelSelect, type ModelSelectOption } from "../../../shared/ui/ModelSelect";
 import styles from "./OverviewTimeRangeFilter.module.scss";
@@ -133,7 +133,7 @@ export function OverviewTimeRangeFilter({
           key={preset.value}
           type="button"
           aria-pressed={quick === preset.value}
-          onClick={() => onQuickSelect(preset.value === "four-hours" ? 4 * 60 * 60_000 : 24 * 60 * 60_000)}
+          onClick={() => onQuickSelect(quickPresetDurationMs(preset.value))}
         >{preset.label}</button>)}
       </div>
       <label><span>{t("开始时间")}</span><input type="text" placeholder={t("如：2026-08-23 09:00、1小时前")} value={customStart} onChange={(event) => onCustomStartChange(event.target.value)} /></label>

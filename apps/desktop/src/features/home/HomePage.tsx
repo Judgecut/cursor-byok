@@ -1,5 +1,6 @@
+import { useKeepAliveContext } from "keepalive-for-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useI18n } from "../../i18n/store";
 import {
   api,
@@ -17,7 +18,7 @@ import { refreshIcon } from "../../shared/ui/icons";
 import { useMessage } from "../../shared/ui/message";
 import { formatTimeInput, parseTimeInput } from "../../shared/utils/parseTimeInput";
 import { buildModelFilterOptions, buildSupplierFilterOptions } from "../../shared/utils/supplierOptions";
-import { presetRange, type OverviewRangePreset, type QuickPreset, type TimeRange } from "../../shared/utils/timeRange";
+import { quickPresetDurationMs, quickPresetRange, resolveTimeRange, type OverviewRangePreset, type QuickPreset, type TimeRange } from "../../shared/utils/timeRange";
 import { PageActions } from "../../shell/PageActions";
 import { PageContent } from "../../shell/layout/PageContent";
 import type { VirtualPageSection } from "../../shell/layout/VirtualPage";
@@ -28,6 +29,9 @@ import { OverviewTabs, type OverviewTabId } from "./overview/OverviewTabs";
 import { OverviewTimeRangeFilter } from "./overview/OverviewTimeRangeFilter";
 import styles from "./HomePage.module.scss";
 
+const DEFAULT_HOME_CALLS_PAGE_SIZE = 20;
+const REFRESH_TIMER_CHUNK_MS = 2_000_000_000;
+
 export function HomePage() {
   const {
     overview,
@@ -37,12 +41,18 @@ export function HomePage() {
     cnyRate,
     overviewChartMode,
     overviewChartType,
+    homeRefreshIntervalSeconds,
     refreshTick,
   } = useAppStore();
   const { locale } = useI18n();
+  const location = useLocation();
   const navigate = useNavigate();
   const showMessage = useMessage();
+  const keepAlive = useKeepAliveContext();
 
+  const [isDocumentVisible, setIsDocumentVisible] = useState(
+    () => typeof document === "undefined" || document.visibilityState === "visible",
+  );
   const [activeTab, setActiveTab] = useState<OverviewTabId>("models");
   const [preset, setPreset] = useState<OverviewRangePreset>("month");
   const [quick, setQuick] = useState<QuickPreset | null>(null);
@@ -53,16 +63,16 @@ export function HomePage() {
   const [selectedSuppliers, setSelectedSuppliers] = useState<string[]>([]);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [appliedModels, setAppliedModels] = useState<string[]>([]);
-  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
 
   const [rangeState, setRangeState] = useState<{ filterKey: string; overview: Overview } | null>(null);
   const [rangeBusy, setRangeBusy] = useState(true);
-  const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [overviewErrorState, setOverviewErrorState] = useState<{ filterKey: string; message: string } | null>(null);
   const [supplierCatalog, setSupplierCatalog] = useState<OverviewFilterSupplier[]>([]);
   const [modelCatalog, setModelCatalog] = useState<OverviewFilterModel[]>([]);
 
   const [callsPage, setCallsPage] = useState(1);
-  const [callsPageSize, setCallsPageSize] = useState(20);
+  const [callsPageSize, setCallsPageSize] = useState(DEFAULT_HOME_CALLS_PAGE_SIZE);
   const [callsState, setCallsState] = useState<{
     filterKey: string;
     page: number;
@@ -71,15 +81,15 @@ export function HomePage() {
     total: number;
   } | null>(null);
   const [callsLoading, setCallsLoading] = useState(true);
-  const [callsError, setCallsError] = useState<string | null>(null);
+  const [callsErrorState, setCallsErrorState] = useState<{
+    filterKey: string;
+    page: number;
+    pageSize: number;
+    message: string;
+  } | null>(null);
 
-  const overviewSeq = useRef(0);
-  const callsSeq = useRef(0);
-
-  const selectedRange = useMemo(
-    () => (preset === "custom" ? customRange : presetRange(preset)),
-    [customRange, preset, refreshTick, refreshVersion],
-  );
+  const isHomeRoute = (keepAlive._cacheKey ? keepAlive.active : true) && location.pathname === "/";
+  const isHomeActive = isHomeRoute && isDocumentVisible;
 
   const filterKey = useMemo(
     () => JSON.stringify({
@@ -92,6 +102,92 @@ export function HomePage() {
     }),
     [appliedModels, customRange?.endMs, customRange?.startMs, preset, quick, selectedSuppliers],
   );
+  const callsQueryKey = `${filterKey}|${callsPage}|${callsPageSize}`;
+
+  const rangeStateRef = useRef(rangeState);
+  rangeStateRef.current = rangeState;
+  const callsStateRef = useRef(callsState);
+  callsStateRef.current = callsState;
+
+  const latestQueryRef = useRef({
+    preset,
+    quick,
+    customRange,
+    selectedSuppliers,
+    appliedModels,
+    filterKey,
+    callsPage,
+    callsPageSize,
+  });
+  latestQueryRef.current = {
+    preset,
+    quick,
+    customRange,
+    selectedSuppliers,
+    appliedModels,
+    filterKey,
+    callsPage,
+    callsPageSize,
+  };
+
+  const overviewSeq = useRef(0);
+  const callsSeq = useRef(0);
+  const roundSeqRef = useRef(0);
+  const overviewInFlightRef = useRef<{
+    filterKey: string;
+    startMs: number;
+    endMs: number;
+    seq: number;
+    controller: AbortController;
+    promise: Promise<void>;
+  } | null>(null);
+  const callsInFlightRef = useRef<{
+    filterKey: string;
+    page: number;
+    pageSize: number;
+    startMs: number;
+    endMs: number;
+    seq: number;
+    controller: AbortController;
+    promise: Promise<void>;
+  } | null>(null);
+  const activeRoundRef = useRef<{
+    filterKey: string;
+    range: TimeRange;
+    seq: number;
+    promise: Promise<void>;
+  } | null>(null);
+  const lastFilterRangeRef = useRef<{
+    filterKey: string;
+    range: TimeRange;
+  } | null>(null);
+
+  const lastOverviewFetchKeyRef = useRef<string | null>(null);
+  const lastCallsFetchKeyRef = useRef<string | null>(null);
+  const wasInactiveRef = useRef(false);
+  const hasInitializedMountRef = useRef(false);
+  const prevRefreshTickRef = useRef(refreshTick);
+  const manualRefreshPendingTickRef = useRef<number | null>(null);
+  const lastRefreshErrorToastRef = useRef<{ message: string; at: number } | null>(null);
+
+  const reportRefreshFailure = useCallback((errorMessage: string) => {
+    const now = Date.now();
+    const last = lastRefreshErrorToastRef.current;
+    if (last && last.message === errorMessage && now - last.at < 1_000) return;
+    lastRefreshErrorToastRef.current = { message: errorMessage, at: now };
+    showMessage(t("概览数据刷新失败：{error}", { error: errorMessage }), { duration: 4_000 });
+  }, [showMessage]);
+
+  useEffect(() => {
+    const syncVisibility = () => {
+      setIsDocumentVisible(document.visibilityState === "visible");
+    };
+    syncVisibility();
+    document.addEventListener("visibilitychange", syncVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", syncVisibility);
+    };
+  }, []);
 
   // Preserve full supplier & model lists even if a specific filter yields zero calls.
   useEffect(() => {
@@ -120,81 +216,386 @@ export function HomePage() {
     setCallsPage(1);
   }, []);
 
-  useEffect(() => {
-    if (!selectedRange) return;
+  const abortAllQueries = useCallback(() => {
+    activeRoundRef.current = null;
+    overviewInFlightRef.current?.controller.abort();
+    overviewInFlightRef.current = null;
+    callsInFlightRef.current?.controller.abort();
+    callsInFlightRef.current = null;
+  }, []);
+
+  const fetchOverview = useCallback((options?: { range?: TimeRange | null; notifyOnRefreshError?: boolean }) => {
+    const {
+      preset: currentPreset,
+      quick: currentQuick,
+      customRange: currentCustomRange,
+      selectedSuppliers: currentSuppliers,
+      appliedModels: currentModels,
+      filterKey: requestFilterKey,
+    } = latestQueryRef.current;
+
+    const range = options?.range !== undefined
+      ? options.range
+      : resolveTimeRange(currentPreset, currentQuick, currentCustomRange);
+    if (!range) return Promise.resolve();
+
+    const existing = overviewInFlightRef.current;
+    if (
+      existing
+      && existing.filterKey === requestFilterKey
+      && existing.startMs === range.startMs
+      && existing.endMs === range.endMs
+    ) {
+      return existing.promise;
+    }
+    if (existing) {
+      existing.controller.abort();
+      overviewInFlightRef.current = null;
+    }
+
     const seq = ++overviewSeq.current;
-    const requestFilterKey = filterKey;
     const controller = new AbortController();
+    const hasExistingMatch = rangeStateRef.current?.filterKey === requestFilterKey;
     setRangeBusy(true);
-    setOverviewError(null);
-    void api.overview({
-      startMs: selectedRange.startMs,
-      endMs: selectedRange.endMs,
-      suppliers: selectedSuppliers,
-      supplierKeys: appliedModels,
+    if (!hasExistingMatch) {
+      setOverviewErrorState((current) => (current?.filterKey === requestFilterKey ? current : null));
+    }
+
+    const entry = {
+      filterKey: requestFilterKey,
+      startMs: range.startMs,
+      endMs: range.endMs,
+      seq,
+      controller,
+      promise: Promise.resolve(),
+    };
+
+    entry.promise = api.overview({
+      startMs: range.startMs,
+      endMs: range.endMs,
+      suppliers: currentSuppliers,
+      supplierKeys: currentModels,
     }, { signal: controller.signal }).then((next) => {
-      if (seq !== overviewSeq.current) return;
-      setRangeState({ filterKey: requestFilterKey, overview: next });
-      setOverviewError(null);
+      if (seq !== overviewSeq.current || controller.signal.aborted) return;
+      const nextState = { filterKey: requestFilterKey, overview: next };
+      rangeStateRef.current = nextState;
+      setRangeState(nextState);
+      setOverviewErrorState((current) => (current?.filterKey === requestFilterKey ? null : current));
     }).catch((cause) => {
       if (seq !== overviewSeq.current || controller.signal.aborted) return;
-      setOverviewError(cause instanceof Error ? cause.message : String(cause));
+      const errorMsg = cause instanceof Error ? cause.message : String(cause);
+      if (hasExistingMatch) {
+        if (options?.notifyOnRefreshError) {
+          reportRefreshFailure(errorMsg);
+        }
+      } else {
+        setOverviewErrorState({ filterKey: requestFilterKey, message: errorMsg });
+      }
     }).finally(() => {
-      if (seq === overviewSeq.current) setRangeBusy(false);
+      if (overviewInFlightRef.current?.seq === seq) {
+        overviewInFlightRef.current = null;
+      }
+      if (seq === overviewSeq.current) {
+        setRangeBusy(false);
+      }
     });
-    return () => {
-      controller.abort();
-    };
-  }, [appliedModels, filterKey, refreshTick, refreshVersion, selectedRange, selectedSuppliers]);
 
-  useEffect(() => {
-    if (!selectedRange) return;
+    overviewInFlightRef.current = entry;
+    return entry.promise;
+  }, [reportRefreshFailure]);
+
+  const fetchCalls = useCallback((options?: { range?: TimeRange | null; notifyOnRefreshError?: boolean }) => {
+    const {
+      preset: currentPreset,
+      quick: currentQuick,
+      customRange: currentCustomRange,
+      selectedSuppliers: currentSuppliers,
+      appliedModels: currentModels,
+      filterKey: requestFilterKey,
+      callsPage: requestPage,
+      callsPageSize: requestPageSize,
+    } = latestQueryRef.current;
+
+    const range = options?.range !== undefined
+      ? options.range
+      : resolveTimeRange(currentPreset, currentQuick, currentCustomRange);
+    if (!range) return Promise.resolve();
+
+    const existing = callsInFlightRef.current;
+    if (
+      existing
+      && existing.filterKey === requestFilterKey
+      && existing.page === requestPage
+      && existing.pageSize === requestPageSize
+      && existing.startMs === range.startMs
+      && existing.endMs === range.endMs
+    ) {
+      return existing.promise;
+    }
+    if (existing) {
+      existing.controller.abort();
+      callsInFlightRef.current = null;
+    }
+
     const seq = ++callsSeq.current;
-    const requestFilterKey = filterKey;
-    const requestPage = callsPage;
-    const requestPageSize = callsPageSize;
     const controller = new AbortController();
+    const currentSnapshot = callsStateRef.current;
+    const hasExistingMatch = currentSnapshot?.filterKey === requestFilterKey
+      && currentSnapshot.page === requestPage
+      && currentSnapshot.pageSize === requestPageSize;
     setCallsLoading(true);
-    setCallsError(null);
-    void api.calls({
-      startMs: selectedRange.startMs,
-      endMs: selectedRange.endMs,
-      suppliers: selectedSuppliers,
-      supplierKeys: appliedModels,
+    if (!hasExistingMatch) {
+      setCallsErrorState((current) => (
+        current?.filterKey === requestFilterKey
+          && current.page === requestPage
+          && current.pageSize === requestPageSize
+          ? current
+          : null
+      ));
+    }
+
+    const entry = {
+      filterKey: requestFilterKey,
+      page: requestPage,
+      pageSize: requestPageSize,
+      startMs: range.startMs,
+      endMs: range.endMs,
+      seq,
+      controller,
+      promise: Promise.resolve(),
+    };
+
+    entry.promise = api.calls({
+      startMs: range.startMs,
+      endMs: range.endMs,
+      suppliers: currentSuppliers,
+      supplierKeys: currentModels,
       limit: requestPageSize,
       offset: (requestPage - 1) * requestPageSize,
     }, { signal: controller.signal }).then((result) => {
-      if (seq !== callsSeq.current) return;
-      setCallsState({
+      if (seq !== callsSeq.current || controller.signal.aborted) return;
+      const nextState = {
         filterKey: requestFilterKey,
         page: requestPage,
         pageSize: requestPageSize,
         items: result.items,
         total: result.total,
-      });
-      setCallsError(null);
+      };
+      callsStateRef.current = nextState;
+      setCallsState(nextState);
+      setCallsErrorState((current) => (
+        current?.filterKey === requestFilterKey
+          && current.page === requestPage
+          && current.pageSize === requestPageSize
+          ? null
+          : current
+      ));
     }).catch((cause) => {
       if (seq !== callsSeq.current || controller.signal.aborted) return;
-      setCallsError(cause instanceof Error ? cause.message : String(cause));
+      const errorMsg = cause instanceof Error ? cause.message : String(cause);
+      if (hasExistingMatch) {
+        if (options?.notifyOnRefreshError) {
+          reportRefreshFailure(errorMsg);
+        }
+      } else {
+        setCallsErrorState({
+          filterKey: requestFilterKey,
+          page: requestPage,
+          pageSize: requestPageSize,
+          message: errorMsg,
+        });
+      }
     }).finally(() => {
-      if (seq === callsSeq.current) setCallsLoading(false);
+      if (callsInFlightRef.current?.seq === seq) {
+        callsInFlightRef.current = null;
+      }
+      if (seq === callsSeq.current) {
+        setCallsLoading(false);
+      }
     });
-    return () => {
-      controller.abort();
+
+    callsInFlightRef.current = entry;
+    return entry.promise;
+  }, [reportRefreshFailure]);
+
+  const refreshHomeData = useCallback((options?: { notifyOnRefreshError?: boolean }) => {
+    const {
+      preset: currentPreset,
+      quick: currentQuick,
+      customRange: currentCustomRange,
+      filterKey: currentFilterKey,
+      callsPage: currentPage,
+      callsPageSize: currentPageSize,
+    } = latestQueryRef.current;
+
+    const existingRound = activeRoundRef.current;
+    const currentOverview = overviewInFlightRef.current;
+    const currentCalls = callsInFlightRef.current;
+
+    if (
+      (existingRound && existingRound.filterKey !== currentFilterKey)
+      || (currentOverview && currentOverview.filterKey !== currentFilterKey)
+      || (currentCalls && currentCalls.filterKey !== currentFilterKey)
+    ) {
+      abortAllQueries();
+    } else {
+      const samePageCallsInFlight = currentCalls
+        && currentCalls.filterKey === currentFilterKey
+        && currentCalls.page === currentPage
+        && currentCalls.pageSize === currentPageSize
+        ? currentCalls
+        : null;
+
+      if (existingRound) {
+        if (samePageCallsInFlight) {
+          return Promise.all([existingRound.promise, samePageCallsInFlight.promise]).then(() => undefined);
+        }
+        return existingRound.promise;
+      }
+
+      if (samePageCallsInFlight) {
+        return samePageCallsInFlight.promise;
+      }
+    }
+
+    const sharedRange = resolveTimeRange(currentPreset, currentQuick, currentCustomRange, new Date());
+    if (!sharedRange) return Promise.resolve();
+
+    lastOverviewFetchKeyRef.current = currentFilterKey;
+    lastCallsFetchKeyRef.current = `${currentFilterKey}|${currentPage}|${currentPageSize}`;
+    lastFilterRangeRef.current = { filterKey: currentFilterKey, range: sharedRange };
+
+    const roundSeq = ++roundSeqRef.current;
+    const overviewPromise = fetchOverview({ range: sharedRange, notifyOnRefreshError: options?.notifyOnRefreshError });
+    const callsPromise = fetchCalls({ range: sharedRange, notifyOnRefreshError: options?.notifyOnRefreshError });
+    const roundPromise = Promise.all([overviewPromise, callsPromise]).then(() => undefined).finally(() => {
+      if (activeRoundRef.current?.seq === roundSeq) {
+        activeRoundRef.current = null;
+      }
+    });
+
+    activeRoundRef.current = {
+      filterKey: currentFilterKey,
+      range: sharedRange,
+      seq: roundSeq,
+      promise: roundPromise,
     };
-  }, [appliedModels, callsPage, callsPageSize, filterKey, refreshTick, refreshVersion, selectedRange, selectedSuppliers]);
+    return roundPromise;
+  }, [abortAllQueries, fetchCalls, fetchOverview]);
+
+  // Synchronize initial load, return-from-inactive refresh, and filter/page query changes.
+  useEffect(() => {
+    if (!isHomeActive) {
+      wasInactiveRef.current = true;
+      abortAllQueries();
+      return;
+    }
+
+    hasInitializedMountRef.current = true;
+    const resumed = wasInactiveRef.current;
+    wasInactiveRef.current = false;
+
+    if (resumed) {
+      void refreshHomeData({ notifyOnRefreshError: true });
+      return;
+    }
+
+    const overviewChanged = lastOverviewFetchKeyRef.current !== filterKey;
+    const callsChanged = lastCallsFetchKeyRef.current !== callsQueryKey;
+    if (!overviewChanged && !callsChanged) return;
+
+    if (overviewChanged) {
+      void refreshHomeData();
+      return;
+    }
+
+    const paginationRange = activeRoundRef.current?.filterKey === filterKey
+      ? activeRoundRef.current.range
+      : lastFilterRangeRef.current?.filterKey === filterKey
+        ? lastFilterRangeRef.current.range
+        : resolveTimeRange(
+          latestQueryRef.current.preset,
+          latestQueryRef.current.quick,
+          latestQueryRef.current.customRange,
+          new Date(),
+        );
+    lastCallsFetchKeyRef.current = callsQueryKey;
+    void fetchCalls({ range: paginationRange });
+  }, [abortAllQueries, callsQueryKey, fetchCalls, filterKey, isHomeActive, refreshHomeData]);
+
+  // Manage a single route- and visibility-aware auto-refresh timer without blur pauses or drift pileups.
+  useEffect(() => {
+    if (!isHomeActive) return;
+    let disposed = false;
+    let timerId: number | null = null;
+    const intervalMs = Math.max(1, homeRefreshIntervalSeconds) * 1000;
+
+    const scheduleAfter = (remainingMs: number) => {
+      if (disposed) return;
+      const stepMs = Math.min(remainingMs, REFRESH_TIMER_CHUNK_MS);
+      timerId = window.setTimeout(() => {
+        timerId = null;
+        if (disposed) return;
+        const nextRemaining = remainingMs - stepMs;
+        if (nextRemaining > 0) {
+          scheduleAfter(nextRemaining);
+          return;
+        }
+        if (document.visibilityState === "visible") {
+          void refreshHomeData({ notifyOnRefreshError: true });
+        }
+        scheduleAfter(intervalMs);
+      }, stepMs);
+    };
+
+    scheduleAfter(intervalMs);
+    return () => {
+      disposed = true;
+      if (timerId !== null) window.clearTimeout(timerId);
+    };
+  }, [homeRefreshIntervalSeconds, isHomeActive, refreshHomeData]);
+
+  // Propagate external store refreshes (e.g. model pricing changes or storage clear).
+  useEffect(() => {
+    if (refreshTick === prevRefreshTickRef.current) return;
+    const previousTick = prevRefreshTickRef.current;
+    prevRefreshTickRef.current = refreshTick;
+    if (manualRefreshPendingTickRef.current === refreshTick) {
+      manualRefreshPendingTickRef.current = null;
+      return;
+    }
+    if (previousTick === 0 && refreshTick === 1 && hasInitializedMountRef.current) {
+      return;
+    }
+    if (!isHomeActive) {
+      wasInactiveRef.current = true;
+      return;
+    }
+    void refreshHomeData({ notifyOnRefreshError: true });
+  }, [isHomeActive, refreshHomeData, refreshTick]);
+
+  // Ensure in-flight Home queries abort when the component fully unmounts.
+  useEffect(() => abortAllQueries, [abortAllQueries]);
 
   const hasMatchingOverview = rangeState?.filterKey === filterKey;
   const filteredOverview = hasMatchingOverview ? rangeState.overview : null;
-  const effectiveOverviewError = overviewError;
+  const effectiveOverviewError = !hasMatchingOverview && overviewErrorState?.filterKey === filterKey
+    ? overviewErrorState.message
+    : null;
 
   const hasMatchingCallsFilter = callsState?.filterKey === filterKey;
   const hasMatchingCallsPage = hasMatchingCallsFilter
     && callsState.page === callsPage
     && callsState.pageSize === callsPageSize;
-  const callsItems = hasMatchingCallsPage && !callsError ? callsState.items : [];
-  const callsTotal = hasMatchingCallsFilter && !callsError ? callsState.total : 0;
-  const callsTableLoading = !callsError && (callsLoading || !hasMatchingCallsPage);
+  const callsItems = hasMatchingCallsPage ? callsState.items : [];
+  const callsTotal = hasMatchingCallsFilter ? callsState.total : 0;
+  const effectiveCallsError = !hasMatchingCallsPage
+    && callsErrorState?.filterKey === filterKey
+    && callsErrorState.page === callsPage
+    && callsErrorState.pageSize === callsPageSize
+    ? callsErrorState.message
+    : null;
+  const callsTableLoading = !hasMatchingCallsPage && !effectiveCallsError && callsLoading;
 
   const dailyTokenUsage = useMemo(
     () => (filteredOverview?.token_usage_series ?? []).map((bucket) => ({
@@ -248,7 +649,11 @@ export function HomePage() {
   const openCustom = (open: boolean) => {
     if (open) {
       setSelectedModels(appliedModels);
-      if (!customStart && !customEnd) {
+      if (preset === "custom" && quick) {
+        const range = quickPresetRange(quick);
+        setCustomEnd(formatTimeInput(new Date(range.endMs)));
+        setCustomStart(formatTimeInput(new Date(range.startMs)));
+      } else if (!customStart && !customEnd) {
         const now = new Date();
         setCustomEnd(formatTimeInput(now));
         setCustomStart(formatTimeInput(new Date(now.getTime() - 60 * 60_000)));
@@ -270,16 +675,28 @@ export function HomePage() {
   };
 
   const selectQuick = (durationMs: number) => {
-    const end = new Date();
-    const start = new Date(end.getTime() - durationMs);
-    setCustomStart(formatTimeInput(start));
-    setCustomEnd(formatTimeInput(end));
-    setCustomRange({ startMs: start.getTime(), endMs: end.getTime() });
+    const nextQuick: QuickPreset = durationMs === quickPresetDurationMs("four-hours")
+      ? "four-hours"
+      : "twenty-four-hours";
+    const range = quickPresetRange(nextQuick);
+    const modelsChanged = appliedModels.length !== selectedModels.length
+      || appliedModels.some((model, index) => model !== selectedModels[index]);
+    const filterUnchanged = preset === "custom"
+      && quick === nextQuick
+      && customRange === null
+      && !modelsChanged
+      && callsPage === 1;
+    setCustomStart(formatTimeInput(new Date(range.startMs)));
+    setCustomEnd(formatTimeInput(new Date(range.endMs)));
+    setCustomRange(null);
     setAppliedModels(selectedModels);
-    setQuick(durationMs === 4 * 60 * 60_000 ? "four-hours" : "twenty-four-hours");
+    setQuick(nextQuick);
     setPreset("custom");
     setCustomOpen(false);
     setCallsPage(1);
+    if (filterUnchanged) {
+      void refreshHomeData();
+    }
   };
 
   const selectPreset = (value: Exclude<OverviewRangePreset, "custom">) => {
@@ -290,8 +707,19 @@ export function HomePage() {
   };
 
   const refresh = async () => {
-    await appStore.refresh();
-    setRefreshVersion((version) => version + 1);
+    const tickBefore = appStore.getSnapshot().refreshTick;
+    setManualRefreshing(true);
+    try {
+      manualRefreshPendingTickRef.current = tickBefore + 1;
+      const homePromise = refreshHomeData({ notifyOnRefreshError: true });
+      const storePromise = appStore.getSnapshot().busy ? Promise.resolve() : appStore.refresh();
+      await Promise.all([homePromise, storePromise]);
+    } finally {
+      if (appStore.getSnapshot().refreshTick <= tickBefore) {
+        manualRefreshPendingTickRef.current = null;
+      }
+      setManualRefreshing(false);
+    }
   };
 
   const switchCurrency = (nextCurrency: "USD" | "CNY") => {
@@ -302,12 +730,13 @@ export function HomePage() {
   };
 
   const openAllCalls = () => {
+    const activeQuickRange = preset === "custom" && quick ? quickPresetRange(quick) : null;
     appStore.handoffCallsFilter({
       preset,
       quick,
       customRange,
-      customStart,
-      customEnd,
+      customStart: activeQuickRange ? formatTimeInput(new Date(activeQuickRange.startMs)) : customStart,
+      customEnd: activeQuickRange ? formatTimeInput(new Date(activeQuickRange.endMs)) : customEnd,
       suppliers: selectedSuppliers,
       models: appliedModels,
     });
@@ -369,13 +798,13 @@ export function HomePage() {
     },
     {
       key: "tabs",
-      estimatedHeight: Math.max(220, 88 + Math.max(filteredOverview?.models.length ?? 0, filteredOverview?.suppliers.length ?? 0, callsItems.length) * 44),
+      estimatedHeight: 360,
       content: <OverviewTabs
         activeTab={activeTab}
         onTabChange={setActiveTab}
         calls={callsItems}
         callsTotal={callsTotal}
-        callsReady={hasMatchingCallsFilter && !callsError}
+        callsReady={hasMatchingCallsFilter && !effectiveCallsError}
         callsPagination={{
           page: callsPage,
           pageSize: callsPageSize,
@@ -387,7 +816,7 @@ export function HomePage() {
           },
         }}
         callsLoading={callsTableLoading}
-        callsError={callsError}
+        callsError={effectiveCallsError}
         onCallDetails={(call) => void appStore.openCallDetails(call.call_id)}
         onOpenAllCalls={openAllCalls}
         suppliers={filteredOverview?.suppliers ?? []}
@@ -468,10 +897,10 @@ export function HomePage() {
           type="button"
           className={controls.iconButton}
           aria-label={t("刷新")}
-          disabled={busy || rangeBusy}
+          disabled={busy || manualRefreshing}
           onClick={() => void refresh()}
         >
-          <Icon className={(busy || rangeBusy) ? controls.spin : ""} icon={refreshIcon} size="1.1em" />
+          <Icon className={(busy || manualRefreshing) ? controls.spin : ""} icon={refreshIcon} size="1.1em" />
         </button>
       </TooltipTrigger>
     </PageActions>

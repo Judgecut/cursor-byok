@@ -10,13 +10,14 @@ import { appStore, useAppStore } from "../../shared/store/appStore";
 import { SupplierFilter } from "../../shared/ui/SupplierFilter";
 import { formatTimeInput, parseTimeInput } from "../../shared/utils/parseTimeInput";
 import { buildModelFilterOptions, buildSupplierFilterOptions } from "../../shared/utils/supplierOptions";
-import { presetRange, type OverviewRangePreset, type QuickPreset, type TimeRange } from "../../shared/utils/timeRange";
+import { quickPresetDurationMs, quickPresetRange, resolveTimeRange, type OverviewRangePreset, type QuickPreset, type TimeRange } from "../../shared/utils/timeRange";
 import { PageActions } from "../../shell/PageActions";
 import { PageContent } from "../../shell/layout/PageContent";
 import { OverviewTimeRangeFilter } from "../home/overview/OverviewTimeRangeFilter";
 import { CallTable } from "./CallTable";
 import styles from "./CallsPage.module.scss";
 
+const DEFAULT_CALLS_PAGE_SIZE = 100;
 const CALL_REFRESH_INTERVAL_MS = 2_000;
 
 export function CallsPage() {
@@ -32,7 +33,7 @@ export function CallsPage() {
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [appliedModels, setAppliedModels] = useState<string[]>([]);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(DEFAULT_CALLS_PAGE_SIZE);
   const [callsResult, setCallsResult] = useState<{
     filterKey: string;
     page: number;
@@ -86,9 +87,8 @@ export function CallsPage() {
 
   const activeRange = useMemo(() => {
     if (preset === "all") return undefined;
-    if (preset === "custom") return customRange ?? undefined;
-    return presetRange(preset);
-  }, [customRange, preset]);
+    return resolveTimeRange(preset, quick, customRange) ?? undefined;
+  }, [customRange, preset, quick]);
 
   const loadCalls = useCallback((signal?: AbortSignal, showLoadingState = true) => {
     const seq = ++fetchSeq.current;
@@ -97,9 +97,7 @@ export function CallsPage() {
     const requestPageSize = pageSize;
     const range = preset === "all"
       ? undefined
-      : preset === "custom"
-        ? (customRange ?? undefined)
-        : presetRange(preset);
+      : (resolveTimeRange(preset, quick, customRange) ?? undefined);
     if (showLoadingState) setLoading(true);
     setError(null);
     return api.calls({
@@ -125,7 +123,7 @@ export function CallsPage() {
     }).finally(() => {
       if (seq === fetchSeq.current) setLoading(false);
     });
-  }, [appliedModels, customRange, filterKey, page, pageSize, preset, selectedSuppliers]);
+  }, [appliedModels, customRange, filterKey, page, pageSize, preset, quick, selectedSuppliers]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -168,7 +166,11 @@ export function CallsPage() {
   const openCustom = (open: boolean) => {
     if (open) {
       setSelectedModels(appliedModels);
-      if (!customStart && !customEnd) {
+      if (preset === "custom" && quick) {
+        const range = quickPresetRange(quick);
+        setCustomEnd(formatTimeInput(new Date(range.endMs)));
+        setCustomStart(formatTimeInput(new Date(range.startMs)));
+      } else if (!customStart && !customEnd) {
         const now = new Date();
         setCustomEnd(formatTimeInput(now));
         setCustomStart(formatTimeInput(new Date(now.getTime() - 60 * 60_000)));
@@ -190,16 +192,28 @@ export function CallsPage() {
   };
 
   const selectQuick = (durationMs: number) => {
-    const end = new Date();
-    const start = new Date(end.getTime() - durationMs);
-    setCustomStart(formatTimeInput(start));
-    setCustomEnd(formatTimeInput(end));
-    setCustomRange({ startMs: start.getTime(), endMs: end.getTime() });
+    const nextQuick: QuickPreset = durationMs === quickPresetDurationMs("four-hours")
+      ? "four-hours"
+      : "twenty-four-hours";
+    const range = quickPresetRange(nextQuick);
+    const modelsChanged = appliedModels.length !== selectedModels.length
+      || appliedModels.some((model, index) => model !== selectedModels[index]);
+    const filterUnchanged = preset === "custom"
+      && quick === nextQuick
+      && customRange === null
+      && !modelsChanged
+      && page === 1;
+    setCustomStart(formatTimeInput(new Date(range.startMs)));
+    setCustomEnd(formatTimeInput(new Date(range.endMs)));
+    setCustomRange(null);
     setAppliedModels(selectedModels);
-    setQuick(durationMs === 4 * 60 * 60_000 ? "four-hours" : "twenty-four-hours");
+    setQuick(nextQuick);
     setPreset("custom");
     setCustomOpen(false);
     setPage(1);
+    if (filterUnchanged) {
+      void loadCalls(undefined, true);
+    }
   };
 
   const selectPreset = (nextPreset: Exclude<OverviewRangePreset, "custom">) => {

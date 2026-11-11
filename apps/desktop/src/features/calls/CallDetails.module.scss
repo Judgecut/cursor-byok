@@ -89,6 +89,7 @@
   background: var(--vscode-sideBar-border);
 
   > div {
+    min-width: 0;
     display: grid;
     gap: 4px;
     padding: 10px 12px;
@@ -104,6 +105,7 @@
     font-family: var(--oa-number-font);
     font-size: type.$font-size-base;
     font-weight: 600;
+    overflow-wrap: anywhere;
   }
 
   small {
@@ -119,10 +121,12 @@
   border-top: 1px solid var(--vscode-sideBar-border);
   color: var(--vscode-descriptionForeground);
   font-size: type.$font-size-xs;
+  overflow-wrap: anywhere;
 }
 
 .meta {
   margin-bottom: 10px;
+  overflow-wrap: anywhere;
 }
 
 .meta,
@@ -131,9 +135,19 @@
   font-size: type.$font-size-xs;
 }
 
+@media (min-width: 1560px) {
+  .details {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 780px) {
   .details {
     grid-template-columns: 1fr;
+
+    > div {
+      grid-template-columns: 112px minmax(0, 1fr);
+    }
   }
 
   .costGrid {

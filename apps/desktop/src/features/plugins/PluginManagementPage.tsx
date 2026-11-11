@@ -56,14 +56,11 @@ export function PluginManagementPage() {
   const content = pluginRuntime?.state === "ready"
     ? <PluginCards plugins={plugins} onOpen={(pluginId, mode) => setSelected({ pluginId, mode })} />
     : <RuntimeGate status={pluginRuntime} starting={starting} onInitialize={() => void initialize()} />;
-  const estimatedHeight = plugins.length > 0
-    ? Math.max(320, Math.ceil(plugins.length / 3) * 180)
-    : 320;
 
   return <>
     <PageContent
       title={t("插件配置")}
-      sections={[{ key: "installed-plugins", estimatedHeight, content }]}
+      sections={[{ key: "installed-plugins", estimatedHeight: 320, content }]}
     />
     <RuntimeProgressModal
       open={progressOpen}

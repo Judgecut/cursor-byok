@@ -49,10 +49,12 @@ export function ExternalApiSettingsCard({ servicePort }: { servicePort: number }
         <Switch label={t("开启外部 API")} checked={draft.enabled} disabled={!saved || saving}
           onChange={(enabled) => setDraft((current) => ({ ...current, enabled }))} />
       </div>
-      <FormField label={t("API 密钥")} hint={t("开启后，所有外部请求都必须提供此密钥。")}> 
-        <SecretTextInput value={draft.api_key} autoComplete="off" disabled={!saved || saving}
-          onChange={(event) => setDraft((current) => ({ ...current, api_key: event.target.value }))} />
-      </FormField>
+      <div className={styles.apiKeyField}>
+        <FormField label={t("API 密钥")} hint={t("开启后，所有外部请求都必须提供此密钥。")}>
+          <SecretTextInput value={draft.api_key} autoComplete="off" disabled={!saved || saving}
+            onChange={(event) => setDraft((current) => ({ ...current, api_key: event.target.value }))} />
+        </FormField>
+      </div>
       <div className={styles.address}>
         <strong>{t("基础地址")}</strong>
         <code>{address}</code>

@@ -21,7 +21,11 @@ export function EChart({ option, className = styles.root, onMouseEnter, onMouseL
     const node = element.current;
     if (!node) return;
     const chart = init(node, undefined, { renderer: "canvas" });
-    const observer = new ResizeObserver(() => chart.resize());
+    const observer = new ResizeObserver(() => {
+      if (node.clientWidth > 0 && node.clientHeight > 0) {
+        chart.resize();
+      }
+    });
     observer.observe(node);
     return () => {
       observer.disconnect();

@@ -46,6 +46,7 @@ const levelColors = [
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const CALENDAR_CONFIG = {
   cellAspectRatio: 0.9,
+  maxCellHeight: 24,
   cellGap: 3,
   resizeTransitionMs: 180,
   rowCount: 7,
@@ -149,7 +150,10 @@ export function ContributionCalendarChart({ data, loading = false, error = null 
       if (availableWidth <= 0 || (availableWidth === lastAvailableWidth && currentLayout === lastLayout)) return;
       const gapsWidth = (currentLayout.columnCount - 1) * CALENDAR_CONFIG.cellGap;
       const cellWidth = Math.max(0, (availableWidth - gapsWidth) / currentLayout.columnCount);
-      const cellHeight = cellWidth / CALENDAR_CONFIG.cellAspectRatio;
+      const cellHeight = Math.min(
+        CALENDAR_CONFIG.maxCellHeight,
+        cellWidth / CALENDAR_CONFIG.cellAspectRatio,
+      );
       const width = availableWidth;
       const height = CALENDAR_CONFIG.rowCount * cellHeight
         + (CALENDAR_CONFIG.rowCount - 1) * CALENDAR_CONFIG.cellGap;

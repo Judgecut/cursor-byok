@@ -22,6 +22,16 @@ export type OverviewChartType = "bar" | "line";
 export type OverviewRangePresetValue = "ten-minutes" | "hour" | "today" | "week" | "month" | "custom";
 export type OverviewQuickPresetValue = "four-hours" | "twenty-four-hours";
 
+export const DEFAULT_HOME_REFRESH_INTERVAL_SECONDS = 30;
+
+export function parseHomeRefreshIntervalSeconds(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) return null;
+  return parsed;
+}
+
 export type CallsFilterHandoff = {
   preset: OverviewRangePresetValue;
   quick: OverviewQuickPresetValue | null;
@@ -49,6 +59,7 @@ export type AppSnapshot = {
   cnyRate: string | null;
   overviewChartMode: OverviewChartMode;
   overviewChartType: OverviewChartType;
+  homeRefreshIntervalSeconds: number;
   refreshTick: number;
   pendingCallsFilter: CallsFilterHandoff | null;
   cursorHarness: CursorHarnessStatus | null;
@@ -62,6 +73,7 @@ const CURRENCY_STORAGE_KEY = "cursor-byok.currency";
 const CNY_RATE_STORAGE_KEY = "cursor-byok.cny-rate";
 const CHART_MODE_STORAGE_KEY = "cursor-byok.chart-mode";
 const CHART_TYPE_STORAGE_KEY = "cursor-byok.chart-type";
+const HOME_REFRESH_INTERVAL_STORAGE_KEY = "cursor-byok.home-refresh-interval-seconds";
 
 const savedTheme = (): ThemeId => {
   try {
@@ -104,6 +116,15 @@ const savedChartType = (): OverviewChartType => {
     return localStorage.getItem(CHART_TYPE_STORAGE_KEY) === "line" ? "line" : "bar";
   } catch {
     return "bar";
+  }
+};
+
+const savedHomeRefreshIntervalSeconds = (): number => {
+  try {
+    const raw = localStorage.getItem(HOME_REFRESH_INTERVAL_STORAGE_KEY);
+    return raw ? (parseHomeRefreshIntervalSeconds(raw) ?? DEFAULT_HOME_REFRESH_INTERVAL_SECONDS) : DEFAULT_HOME_REFRESH_INTERVAL_SECONDS;
+  } catch {
+    return DEFAULT_HOME_REFRESH_INTERVAL_SECONDS;
   }
 };
 
@@ -163,6 +184,7 @@ let snapshot: AppSnapshot = {
   cnyRate: initialRate,
   overviewChartMode: savedChartMode(),
   overviewChartType: savedChartType(),
+  homeRefreshIntervalSeconds: savedHomeRefreshIntervalSeconds(),
   refreshTick: 0,
   pendingCallsFilter: null,
   cursorHarness: null,
@@ -512,6 +534,21 @@ export const appStore = {
     }
     update({ overviewChartType });
   },
+  setHomeRefreshIntervalSeconds(rawInterval: string | number): number | null {
+    const parsed = typeof rawInterval === "number"
+      ? (Number.isSafeInteger(rawInterval) && rawInterval >= 1 ? rawInterval : null)
+      : parseHomeRefreshIntervalSeconds(rawInterval);
+    if (parsed === null) {
+      return null;
+    }
+    try {
+      localStorage.setItem(HOME_REFRESH_INTERVAL_STORAGE_KEY, String(parsed));
+    } catch {
+      // Setting remains active in memory for the current session when storage is unavailable.
+    }
+    update({ homeRefreshIntervalSeconds: parsed });
+    return parsed;
+  },
   handoffCallsFilter(filter: Omit<CallsFilterHandoff, "nonce">) {
     handoffSeed += 1;
     update({
@@ -544,6 +581,8 @@ if (typeof window !== "undefined") {
       update({ overviewChartMode: savedChartMode() });
     } else if (event.key === CHART_TYPE_STORAGE_KEY) {
       update({ overviewChartType: savedChartType() });
+    } else if (event.key === HOME_REFRESH_INTERVAL_STORAGE_KEY) {
+      update({ homeRefreshIntervalSeconds: savedHomeRefreshIntervalSeconds() });
     }
   });
 }

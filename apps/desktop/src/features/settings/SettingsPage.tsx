@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { api, type ProxySettings, type ProxySettingsInput, type StatisticsStorage, type StatisticsStorageScope, type TabSettings } from "../../shared/api";
 import { PageContent } from "../../shell/layout/PageContent";
@@ -17,7 +17,12 @@ import { Select } from "../../shared/ui/Select";
 import { TitledCard } from "../../shared/ui/TitledCard";
 import { setLocalePreference, useI18n, type LocalePreference } from "../../i18n/store";
 import { useMessage } from "../../shared/ui/message";
-import { appStore, useAppStore } from "../../shared/store/appStore";
+import {
+  appStore,
+  DEFAULT_HOME_REFRESH_INTERVAL_SECONDS,
+  parseHomeRefreshIntervalSeconds,
+  useAppStore,
+} from "../../shared/store/appStore";
 import { themeOptions, type ThemeId } from "../../shared/theme/theme";
 import type { DisplayCurrency } from "../../shared/utils/costFormat";
 import styles from "./SettingsPage.module.scss";
@@ -29,7 +34,7 @@ function themeLabel(id: ThemeId): string {
 }
 
 export function SettingsPage() {
-  const { detailed, ports, theme, currency, cnyRate } = useAppStore();
+  const { detailed, ports, theme, currency, cnyRate, homeRefreshIntervalSeconds } = useAppStore();
   const { preference, locale } = useI18n();
   const location = useLocation();
   const message = useMessage();
@@ -51,6 +56,10 @@ export function SettingsPage() {
   const [savingTab, setSavingTab] = useState(false);
   const [rateDraft, setRateDraft] = useState(cnyRate ?? "");
   const [rateError, setRateError] = useState<string | null>(null);
+  const [refreshIntervalDraft, setRefreshIntervalDraft] = useState(String(homeRefreshIntervalSeconds));
+  const [refreshIntervalError, setRefreshIntervalError] = useState<string | null>(null);
+  const refreshIntervalInputId = useId();
+  const refreshIntervalInputRef = useRef<HTMLInputElement | null>(null);
   const currencyCardRef = useRef<HTMLDivElement | null>(null);
   const rateInputRef = useRef<HTMLInputElement | null>(null);
   const handledFocusNonce = useRef<unknown>(null);
@@ -73,6 +82,10 @@ export function SettingsPage() {
   useEffect(() => {
     setRateDraft(cnyRate ?? "");
   }, [cnyRate]);
+  useEffect(() => {
+    setRefreshIntervalDraft(String(homeRefreshIntervalSeconds));
+    setRefreshIntervalError(null);
+  }, [homeRefreshIntervalSeconds]);
   useEffect(() => {
     if (location.pathname !== "/settings") return;
     const focusNonce = (location.state as { focusCurrencyRate?: unknown } | null)?.focusCurrencyRate;
@@ -223,6 +236,37 @@ export function SettingsPage() {
     setRateError(null);
     message(wasCny ? t("人民币汇率已清除，已切回美元显示") : t("人民币汇率已清除"));
   };
+  const saveHomeRefreshInterval = () => {
+    const trimmed = refreshIntervalDraft.trim();
+    if (!trimmed) {
+      setRefreshIntervalError(t("请输入大于 0 的整数秒数"));
+      refreshIntervalInputRef.current?.focus();
+      return;
+    }
+    if (!/^\d+$/.test(trimmed)) {
+      setRefreshIntervalError(t("主页自动刷新间隔必须是大于 0 的整数秒数"));
+      refreshIntervalInputRef.current?.focus();
+      refreshIntervalInputRef.current?.select();
+      return;
+    }
+    const parsed = parseHomeRefreshIntervalSeconds(trimmed);
+    if (parsed === null) {
+      setRefreshIntervalError(Number(trimmed) === 0
+        ? t("主页自动刷新间隔必须是大于 0 的整数秒数")
+        : t("主页自动刷新间隔超出有效整数范围"));
+      refreshIntervalInputRef.current?.focus();
+      refreshIntervalInputRef.current?.select();
+      return;
+    }
+    const saved = appStore.setHomeRefreshIntervalSeconds(parsed);
+    if (saved === null) {
+      setRefreshIntervalError(t("主页自动刷新间隔必须是大于 0 的整数秒数"));
+      return;
+    }
+    setRefreshIntervalDraft(String(saved));
+    setRefreshIntervalError(null);
+    message(t("主页自动刷新间隔已保存（每 {seconds} 秒）", { seconds: saved }));
+  };
   const clearTitle = clearScope === "all" ? t("确定要清理全部统计数据吗？") : t("确定要清理详细记录吗？");
   const clearDescription = clearScope === "all"
     ? t("所有调用汇总、详细内容和追踪记录都会被删除。模型配置、CA 和应用设置不会受到影响，此操作无法撤销。")
@@ -242,6 +286,47 @@ export function SettingsPage() {
             checked={detailed}
             onChange={(checked) => void appStore.updateDetailed(checked)}
           />
+        </div>
+      </TitledCard>
+      <TitledCard title={t("数据概览")}>
+        <div className={styles.refreshIntervalSection}>
+          <div className={styles.refreshIntervalRow}>
+            <div className={styles.refreshIntervalText}>
+              <label htmlFor={refreshIntervalInputId}>{t("主页自动刷新间隔（秒）")}</label>
+              <small>
+                {t("默认 {seconds} 秒。仅在数据概览页处于当前页面且窗口可见时按该间隔刷新。", {
+                  seconds: DEFAULT_HOME_REFRESH_INTERVAL_SECONDS,
+                })}
+              </small>
+            </div>
+            <form
+              className={styles.refreshIntervalForm}
+              onSubmit={(event) => {
+                event.preventDefault();
+                saveHomeRefreshInterval();
+              }}
+            >
+              <div className={styles.intervalInputWrap}>
+                <TextInput
+                  id={refreshIntervalInputId}
+                  ref={refreshIntervalInputRef}
+                  type="text"
+                  inputMode="numeric"
+                  value={refreshIntervalDraft}
+                  aria-label={t("主页自动刷新间隔（秒）")}
+                  aria-invalid={refreshIntervalError ? true : undefined}
+                  placeholder={String(DEFAULT_HOME_REFRESH_INTERVAL_SECONDS)}
+                  onChange={(event) => {
+                    setRefreshIntervalDraft(event.target.value);
+                    if (refreshIntervalError) setRefreshIntervalError(null);
+                  }}
+                />
+              </div>
+              <span className={styles.intervalUnit}>{t("秒")}</span>
+              <Button variant="primary" size="small" type="submit">{t("保存")}</Button>
+            </form>
+          </div>
+          {refreshIntervalError && <div className={styles.rateError} role="alert">{refreshIntervalError}</div>}
         </div>
       </TitledCard>
       <TitledCard title={t("端口设置")} action={editingPorts ? (

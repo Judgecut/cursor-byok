@@ -3,8 +3,6 @@
 .root {
   --app-region-gap: 16px;
   --app-toolbar-height: 36px;
-  --app-page-max-width: 1280px;
-  --app-page-padding: 18px;
   --app-content-left: calc(var(--app-edge) + var(--app-menu-width) );
   --app-content-top: calc(var(--window-safe-top) + var(--app-toolbar-height) + 10px );
   background: var(--vscode-editor-background);
@@ -159,8 +157,8 @@
   position: absolute;
   z-index: 12500;
   top: var(--window-safe-top);
-  right: max(var(--app-page-padding), calc((100% - var(--app-page-max-width)) / 2));
-  max-width: calc(100% - var(--app-page-padding) * 2 - 110px);
+  right: var(--app-page-padding);
+  max-width: calc(100% - var(--app-page-padding) * 2 - 128px);
   height: calc(var(--app-content-top) - var(--window-safe-top));
   display: flex;
   align-items: center;
