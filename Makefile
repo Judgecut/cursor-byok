@@ -1,6 +1,6 @@
 LOCAL_TAURI_SIGNING_KEY := $(CURDIR)/.tauri/cursor-byok.local.key
 
-.PHONY: check dev-web dev-server dev-desktop build-web build-server build-desktop build-docker
+.PHONY: check dev-web dev-server dev-desktop build-web build-server build-desktop build-docker update-local
 
 check:
 	node .github/scripts/check-release.mjs
@@ -31,6 +31,9 @@ $(LOCAL_TAURI_SIGNING_KEY):
 
 build-desktop: $(LOCAL_TAURI_SIGNING_KEY)
 	@node -e "const { spawnSync } = require('node:child_process'); const result = spawnSync(process.execPath, ['node_modules/@tauri-apps/cli/tauri.js', 'build', '--bundles', 'nsis'], { cwd: 'apps/desktop', stdio: 'inherit', env: { ...process.env, TAURI_SIGNING_PRIVATE_KEY: process.argv[1], TAURI_SIGNING_PRIVATE_KEY_PASSWORD: '' } }); process.exit(result.status ?? 1)" "$(LOCAL_TAURI_SIGNING_KEY)"
+
+update-local:
+	node scripts/update-local-desktop.mjs
 else
 $(LOCAL_TAURI_SIGNING_KEY):
 	@install -d -m 700 "$(dir $@)"
@@ -39,6 +42,9 @@ $(LOCAL_TAURI_SIGNING_KEY):
 
 build-desktop: $(LOCAL_TAURI_SIGNING_KEY)
 	TAURI_SIGNING_PRIVATE_KEY="$(LOCAL_TAURI_SIGNING_KEY)" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" npm --prefix apps/desktop run tauri:build
+
+update-local:
+	@echo "update-local is currently supported on Windows only" >&2; exit 1
 endif
 
 build-docker:
