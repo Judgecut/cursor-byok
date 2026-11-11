@@ -23,3 +23,9 @@
 - For stateful or concurrent behavior, show timing, ownership, state boundaries, and before/during/after behavior explicitly. Distinguish continuation within the same lifecycle from creation of a new lifecycle.
 - Prefer compact trees, flow diagrams, state matrices, and mappings when they communicate the structure more clearly than paragraphs.
 - Tie recommendations to the actual repository structure and code. Do not present a speculative target architecture as if it already exists.
+
+## Git Commit & Push
+
+- Before running `git commit` or `git push`, run a sanitization check across all staged/modified files and untracked files intended for commit (and the diff itself).
+- Check for and block any private/machine-specific absolute paths (e.g., `C:\Users\...`, `/Users/...`, `/home/...`, local drive workspace paths), hostnames, personal usernames/emails, internal IPs/endpoints, tokens, API keys, private keys, certificates, credentials, or unintended local artifacts.
+- Report the checked file list and sanitization result to the user; never run `git commit` or `git push` until the check passes and the user explicitly confirms.
