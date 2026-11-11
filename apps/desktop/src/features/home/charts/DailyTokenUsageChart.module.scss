@@ -1,7 +1,9 @@
 @use "../../../styles/typography" as type;
 
 .container {
+  min-width: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
 }
 
@@ -24,9 +26,14 @@
 }
 
 .root {
-  --daily-token-tooltip-font-size: #{type.$font-size-2xs};
   width: 100%;
+  min-width: 0;
   height: 210px;
+  overflow: hidden;
+}
+
+.tooltip {
+  --daily-token-tooltip-font-size: #{type.$font-size-2xs};
 }
 
 .state {

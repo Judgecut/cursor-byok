@@ -274,12 +274,12 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(
         const deltaY = normalizeWheelDelta(event, metrics.viewportHeight)
         if (deltaY === 0) return
 
-        event.preventDefault()
-        event.stopPropagation()
-
         const currentTop = viewport.scrollTop
         const nextTop = clamp(currentTop + deltaY, 0, metrics.maxScrollTop)
         if (nextTop === currentTop) return
+
+        event.preventDefault()
+        event.stopPropagation()
 
         scrollToNow(nextTop, true, metrics.maxScrollTop)
       }

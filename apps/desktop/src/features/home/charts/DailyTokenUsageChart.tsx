@@ -248,7 +248,7 @@ export function DailyTokenUsageChart({
       grid: { top: 10, right: 8, bottom: 26, left: 8, containLabel: true },
       tooltip: {
         trigger: "axis",
-        confine: true,
+        className: styles.tooltip,
         backgroundColor: "var(--vscode-editorHoverWidget-background)",
         borderColor: "var(--vscode-editorHoverWidget-border)",
         textStyle: { color: "var(--vscode-foreground)", fontFamily: "PingFang-Medium" },

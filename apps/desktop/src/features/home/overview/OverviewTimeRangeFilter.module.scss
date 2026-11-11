@@ -2,6 +2,8 @@
 
 .root,
 .presets {
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   align-items: center;
 }
@@ -13,6 +15,9 @@
 }
 
 .presets {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 3px;
   overflow: hidden;
   // border: 1px solid var(--vscode-sideBar-border);
   border-radius: 5px;
@@ -79,6 +84,7 @@
 
 .quickPresets {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 
   button {

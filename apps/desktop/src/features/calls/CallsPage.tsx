@@ -297,6 +297,6 @@ export function CallsPage() {
         onChange={changeSuppliers}
       />
     </PageActions>
-    <PageContent fixed title={t("调用")} contentClassName={styles.pageContent} sections={[{ key: "calls", estimatedHeight: 720, content }]} />
+    <PageContent fixed title={t("调用")} sections={[{ key: "calls", estimatedHeight: 720, content }]} />
   </>;
 }

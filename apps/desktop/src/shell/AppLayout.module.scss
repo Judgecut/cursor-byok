@@ -4,7 +4,7 @@
   --app-region-gap: 16px;
   --app-toolbar-height: 36px;
   --app-content-left: calc(var(--app-edge) + var(--app-menu-width) );
-  --app-content-top: calc(var(--window-safe-top) + var(--app-toolbar-height) + 10px );
+  --app-scroll-shadow-top: calc(var(--window-safe-top) + var(--app-toolbar-height) + 10px);
   background: var(--vscode-editor-background);
 }
 
@@ -136,13 +136,21 @@
 }
 
 .content {
+  --app-actions-height: var(--app-toolbar-height);
   width: calc(100% - var(--app-content-left));
   height: 100%;
   position: relative;
+  container-type: size;
   min-width: 0;
   min-height: 0;
   margin-left: var(--app-content-left);
   overflow: hidden;
+}
+
+.actionRegion,
+.keepAliveContainer {
+  --app-actions-top: calc(var(--window-safe-top) + 5px);
+  --app-content-top: calc(var(--app-actions-top) + var(--app-actions-height) + 5px);
 }
 
 .keepAliveContainer,
@@ -156,12 +164,12 @@
 .actionRegion {
   position: absolute;
   z-index: 12500;
-  top: var(--window-safe-top);
+  top: var(--app-actions-top);
   right: var(--app-page-padding);
   max-width: calc(100% - var(--app-page-padding) * 2 - 128px);
-  height: calc(var(--app-content-top) - var(--window-safe-top));
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  justify-content: flex-end;
   user-select: none;
   -webkit-user-select: none;
   -moz-user-select: none;
@@ -177,29 +185,46 @@
 
 .actions {
   max-width: 100%;
-  height: var(--app-toolbar-height);
+  min-height: var(--app-toolbar-height);
+  max-height: clamp(var(--app-toolbar-height), calc(100cqh - var(--app-actions-top) - 116px), 144px);
   min-width: var(--app-toolbar-height);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-start;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  padding: 6px 6px;
-  gap: 5px;
+  justify-content: flex-end;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
+  padding: 4px 6px;
+  gap: 4px 5px;
   box-shadow: 0 0px 6px 4px var(--vscode-editor-background);
   transform: translateX(6px);
 
   &::-webkit-scrollbar {
-    display: none;
+    width: 4px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--vscode-scrollbarSlider-background);
+    border-radius: 999px;
+  }
+}
+
+@container (max-width: 420px) {
+  .content > .actionRegion:has(.pageActions:not(:empty)),
+  .content:has(> .actionRegion .pageActions:not(:empty)) > .keepAliveContainer {
+    --app-actions-top: calc(var(--window-safe-top) + var(--app-toolbar-height) + 2px);
+  }
+
+  .content > .actionRegion:has(.pageActions:not(:empty)) {
+    max-width: calc(100% - var(--app-page-padding) * 2);
   }
 }
 
 .pageActions {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
+  display: contents;
 
   &:empty {
     display: none;

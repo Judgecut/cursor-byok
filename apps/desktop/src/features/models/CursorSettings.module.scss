@@ -1,13 +1,19 @@
 @use "../../styles/typography" as type;
 
 .page {
+  min-width: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 
 .takeoverActions {
+  min-width: 0;
+  max-width: 100%;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 7px;
 }
 
@@ -20,8 +26,13 @@
 }
 
 .groupActions {
+  min-width: 0;
+  max-width: 100%;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
+  row-gap: 3px;
   overflow: hidden;
   border-radius: 5px;
 
@@ -79,12 +90,14 @@
 
 }
 .modelGroups {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 20px;
   padding-top: 10px;
 }
 .groupCard {
+  min-width: 0;
   padding: 4px 12px 8px;
 }
 .groupHeader {
@@ -136,10 +149,12 @@
   white-space: nowrap;
 }
 .modelList {
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
 .modelRow {
+  min-width: 0;
   display: flex;
   align-items: center;
   flex-wrap: wrap;

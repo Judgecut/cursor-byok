@@ -7,6 +7,10 @@
   background: var(--vscode-sideBar-border);
 }
 
+:global([data-actions-wrapped="true"]) .divider {
+  visibility: hidden;
+}
+
 .segmentGroup {
   display: inline-flex;
   align-items: center;

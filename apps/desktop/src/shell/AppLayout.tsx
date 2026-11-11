@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { IconifyIcon } from "@iconify/react/offline";
 import KeepAliveRouteOutlet from "keepalive-for-react-router";
 import { NavLink, useLocation } from "react-router-dom";
@@ -49,6 +49,8 @@ export function AppLayout() {
   const { locale } = useI18n();
   const message = useMessage();
   const location = useLocation();
+  const contentRef = useRef<HTMLElement | null>(null);
+  const actionRegionRef = useRef<HTMLDivElement | null>(null);
   const [leftActionTarget, setLeftActionTarget] = useState<HTMLDivElement | null>(null);
   const [rightActionTarget, setRightActionTarget] = useState<HTMLDivElement | null>(null);
   const [ads, setAds] = useState<AdSlot[]>(() => loadCachedAds());
@@ -185,6 +187,42 @@ export function AppLayout() {
     });
   }, [dismissCandidate, dismissReason]);
 
+  useLayoutEffect(() => {
+    const content = contentRef.current;
+    const actionsCard = actionRegionRef.current?.firstElementChild;
+    if (!content || !(actionsCard instanceof HTMLElement)) return;
+
+    let lastHeight = -1;
+    let lastWrapped: boolean | null = null;
+    const syncActionsLayout = () => {
+      const nextHeight = Math.round(actionsCard.getBoundingClientRect().height);
+      if (nextHeight <= 0) return;
+      if (nextHeight !== lastHeight) {
+        lastHeight = nextHeight;
+        content.style.setProperty("--app-actions-height", `${nextHeight}px`);
+      }
+      const baseHeight = Number.parseFloat(getComputedStyle(content).getPropertyValue("--app-toolbar-height")) || 36;
+      const nextWrapped = nextHeight > baseHeight + 4;
+      if (nextWrapped !== lastWrapped) {
+        lastWrapped = nextWrapped;
+        if (nextWrapped) {
+          content.setAttribute("data-actions-wrapped", "true");
+        } else {
+          content.removeAttribute("data-actions-wrapped");
+        }
+      }
+    };
+
+    syncActionsLayout();
+    const observer = new ResizeObserver(syncActionsLayout);
+    try {
+      observer.observe(actionsCard, { box: "border-box" });
+    } catch {
+      observer.observe(actionsCard);
+    }
+    return () => observer.disconnect();
+  }, []);
+
   return <PageLayout className={styles.root}>
     <Card as="aside" className={styles.menuCard}>
       <nav className={styles.navigation} aria-label={t("主菜单")}>
@@ -263,8 +301,8 @@ export function AppLayout() {
         />
       </label>
     </ConfirmDialog>
-    <main className={styles.content}>
-      <div className={styles.actionRegion}>
+    <main ref={contentRef} className={styles.content}>
+      <div ref={actionRegionRef} className={styles.actionRegion}>
         <Card className={styles.actions}>
           <div ref={setLeftActionTarget} className={styles.pageActions} />
           {location.pathname !== "/" && <TooltipTrigger label={t("刷新")}><button className={controls.iconButton} aria-label={t("刷新")} disabled={busy} onClick={() => void appStore.refresh()}>

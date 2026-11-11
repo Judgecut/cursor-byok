@@ -75,13 +75,13 @@ button {
   -webkit-mask-image: linear-gradient(
     to bottom,
     transparent 0,
-    black var(--app-content-top) ,
+    black var(--app-scroll-shadow-top, var(--app-content-top)),
     black 100%
   );
   mask-image: linear-gradient(
     to bottom,
     transparent 0,
-    black var(--app-content-top),
+    black var(--app-scroll-shadow-top, var(--app-content-top)),
     black 100%
   );
 }

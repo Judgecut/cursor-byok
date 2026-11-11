@@ -218,7 +218,11 @@ export function VirtualList<TItem>(props: VirtualListProps<TItem>) {
 
     readContentInsets()
     const resizeObserver = new ResizeObserver(readContentInsets)
-    resizeObserver.observe(node)
+    try {
+      resizeObserver.observe(node, { box: "border-box" })
+    } catch {
+      resizeObserver.observe(node)
+    }
     const frame = requestAnimationFrame(readContentInsets)
 
     return () => {
