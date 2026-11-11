@@ -374,7 +374,7 @@
       "refs": [
         {
           "file": "features/calls/CallsPage.tsx",
-          "line": 236,
+          "line": 249,
           "column": 9
         },
         {
@@ -612,7 +612,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 168,
+          "line": 178,
           "column": 17
         }
       ]
@@ -918,6 +918,22 @@
         }
       ]
     },
+    "156adfcd31c29eb9": {
+      "source": "近 {days} 天累计 {total} · 活跃 {active} 天",
+      "kind": "template",
+      "placeholders": [
+        "days",
+        "total",
+        "active"
+      ],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 431,
+          "column": 16
+        }
+      ]
+    },
     "15730c19fd7eef51": {
       "source": "请求协议",
       "kind": "text",
@@ -1040,6 +1056,18 @@
         }
       ]
     },
+    "1940119f05716460": {
+      "source": "多",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 445,
+          "column": 20
+        }
+      ]
+    },
     "19658d9fa9aa8de4": {
       "source": "安装中…",
       "kind": "text",
@@ -1066,6 +1094,20 @@
           "file": "features/settings/CommitSettingsCard.tsx",
           "line": 207,
           "column": 16
+        }
+      ]
+    },
+    "1a009fb8a3326156": {
+      "source": "{count} 天",
+      "kind": "template",
+      "placeholders": [
+        "count"
+      ],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 516,
+          "column": 20
         }
       ]
     },
@@ -1245,7 +1287,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 784,
+          "line": 888,
           "column": 11
         }
       ]
@@ -1257,7 +1299,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 272,
+          "line": 414,
           "column": 67
         }
       ]
@@ -1604,6 +1646,20 @@
           "file": "features/home/metrics/HomeMetrics.tsx",
           "line": 139,
           "column": 5
+        }
+      ]
+    },
+    "2b3743723ec820a8": {
+      "source": "最长连续 {days} 天",
+      "kind": "template",
+      "placeholders": [
+        "days"
+      ],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 537,
+          "column": 23
         }
       ]
     },
@@ -2346,7 +2402,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 131,
+          "line": 233,
           "column": 16
         }
       ]
@@ -2788,7 +2844,7 @@
       "refs": [
         {
           "file": "features/calls/CallsPage.tsx",
-          "line": 237,
+          "line": 250,
           "column": 9
         },
         {
@@ -3160,7 +3216,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 767,
+          "line": 871,
           "column": 69
         }
       ]
@@ -3272,7 +3328,7 @@
       "refs": [
         {
           "file": "features/calls/CallsPage.tsx",
-          "line": 234,
+          "line": 247,
           "column": 7
         },
         {
@@ -3772,6 +3828,18 @@
         }
       ]
     },
+    "62f99c9a0c50d790": {
+      "source": "少",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 439,
+          "column": 20
+        }
+      ]
+    },
     "62fb87518b162db1": {
       "source": "速度与首 Token",
       "kind": "text",
@@ -3897,7 +3965,7 @@
       "refs": [
         {
           "file": "features/calls/CallsPage.tsx",
-          "line": 285,
+          "line": 298,
           "column": 31
         },
         {
@@ -4134,18 +4202,18 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 259,
-          "column": 18
+          "line": 401,
+          "column": 43
         },
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 270,
-          "column": 18
+          "line": 412,
+          "column": 43
         },
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 280,
-          "column": 16
+          "line": 427,
+          "column": 41
         }
       ]
     },
@@ -4688,7 +4756,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 777,
+          "line": 881,
           "column": 11
         }
       ]
@@ -4770,6 +4838,18 @@
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
           "line": 115,
           "column": 24
+        }
+      ]
+    },
+    "829827347a7f5f18": {
+      "source": "活跃天数",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 513,
+          "column": 53
         }
       ]
     },
@@ -5376,7 +5456,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 789,
+          "line": 893,
           "column": 11
         }
       ]
@@ -6228,7 +6308,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 624,
+          "line": 727,
           "column": 19
         }
       ]
@@ -6411,7 +6491,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 779,
+          "line": 883,
           "column": 69
         }
       ]
@@ -6584,12 +6664,12 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 791,
+          "line": 895,
           "column": 30
         },
         {
           "file": "features/home/HomePage.tsx",
-          "line": 795,
+          "line": 899,
           "column": 23
         },
         {
@@ -6850,6 +6930,20 @@
           "file": "features/settings/ModelPricingCard.tsx",
           "line": 297,
           "column": 22
+        }
+      ]
+    },
+    "b4128e588b7c3207": {
+      "source": "近 {days} 天累计",
+      "kind": "template",
+      "placeholders": [
+        "days"
+      ],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 501,
+          "column": 53
         }
       ]
     },
@@ -7312,6 +7406,18 @@
         }
       ]
     },
+    "bd8649c83676b69e": {
+      "source": "暂无用量记录",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 553,
+          "column": 61
+        }
+      ]
+    },
     "bda62ce1d5e4ace9": {
       "source": "可以告诉我们原因",
       "kind": "text",
@@ -7734,6 +7840,18 @@
         }
       ]
     },
+    "ccb89ebfd9d965ea": {
+      "source": "暂无活跃记录",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 521,
+          "column": 23
+        }
+      ]
+    },
     "cd7bee10c18c43d1": {
       "source": "美元 ($)",
       "kind": "text",
@@ -7916,6 +8034,18 @@
           "file": "features/settings/AppLifecycleSettingsCard.tsx",
           "line": 116,
           "column": 17
+        }
+      ]
+    },
+    "d368cdc6e1a74f26": {
+      "source": "单日峰值",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 544,
+          "column": 53
         }
       ]
     },
@@ -8243,7 +8373,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 261,
+          "line": 403,
           "column": 40
         }
       ]
@@ -8489,17 +8619,17 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 257,
+          "line": 399,
           "column": 52
         },
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 268,
+          "line": 410,
           "column": 52
         },
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 278,
+          "line": 425,
           "column": 50
         }
       ]
@@ -8561,6 +8691,18 @@
           "file": "features/plugins/PluginResourcePanels.tsx",
           "line": 139,
           "column": 34
+        }
+      ]
+    },
+    "e233f1a3c4cc7d7a": {
+      "source": "活跃日均",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 527,
+          "column": 53
         }
       ]
     },
@@ -8950,6 +9092,18 @@
         }
       ]
     },
+    "ed47472656ad91da": {
+      "source": "暂无连续活跃",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 538,
+          "column": 23
+        }
+      ]
+    },
     "edc70de18c6da1a6": {
       "source": "安装本地 CA",
       "kind": "text",
@@ -9024,6 +9178,20 @@
         }
       ]
     },
+    "ef0e06bb1a3c649d": {
+      "source": "活跃占比 {rate}",
+      "kind": "template",
+      "placeholders": [
+        "rate"
+      ],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 520,
+          "column": 23
+        }
+      ]
+    },
     "ef5d9908c45f4b88": {
       "source": "缓存读取价格（$/1M）",
       "kind": "text",
@@ -9043,7 +9211,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 272,
+          "line": 414,
           "column": 50
         }
       ]
@@ -9143,8 +9311,8 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 287,
-          "column": 23
+          "line": 481,
+          "column": 33
         }
       ]
     },
@@ -9208,7 +9376,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 755,
+          "line": 859,
           "column": 69
         },
         {
@@ -9677,7 +9845,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 803,
+          "line": 907,
           "column": 25
         }
       ]

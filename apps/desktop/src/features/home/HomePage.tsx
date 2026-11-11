@@ -789,7 +789,7 @@ export function HomePage() {
     },
     {
       key: "activity",
-      estimatedHeight: 132,
+      estimatedHeight: 210,
       content: <ContributionCalendarChart
         data={contribution}
         loading={rangeBusy && !hasMatchingOverview}

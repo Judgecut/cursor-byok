@@ -2,30 +2,141 @@
 
 .root {
   width: 100%;
-  display: grid;
-  gap: 6px;
+  overflow: hidden;
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-sideBar-border);
+  border-radius: var(--oa-overlay-radius);
 }
 
 .header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 15px;
+  border-bottom: 1px solid var(--vscode-sideBar-border);
   color: var(--vscode-descriptionForeground);
   font-size: type.$font-size-2xs;
 }
 
+.title {
+  min-width: 0;
+}
+
+.headerMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.inlineStats {
+  font-family: var(--oa-number-font);
+  white-space: nowrap;
+}
+
+.legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.legendSwatches {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.legendSwatch {
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgba(139, 148, 158, 0.14);
+  border-radius: 2px;
+}
+
+.body {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.bodyWide {
+  align-items: stretch;
+}
+
+.calendarPane {
+  min-width: 0;
+  padding: 14px 16px 12px;
+  display: flex;
+  align-items: center;
+}
+
 .scroller {
   width: 100%;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
+
+  &::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--vscode-scrollbarSlider-background);
+    border-radius: 3px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--vscode-scrollbarSlider-hoverBackground);
+  }
+}
+
+.canvasFrame {
+  width: fit-content;
+  margin-inline: auto;
+}
+
+.heatmapRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.weekdayAxis {
+  position: relative;
+  width: 32px;
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-2xs;
+
+  span {
+    position: absolute;
+    right: 0;
+    left: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    line-height: 1;
+    white-space: nowrap;
+  }
+}
+
+.gridColumn {
+  display: flex;
+  flex-direction: column;
 }
 
 .canvas {
-  width: 100%;
   flex: 0 0 auto;
 }
 
 .axis {
   position: relative;
-  width: 100%;
   height: 18px;
-  margin-top: 10px;
+  margin-top: 8px;
   color: var(--vscode-descriptionForeground);
   font-size: type.$font-size-2xs;
 
@@ -37,18 +148,73 @@
   }
 }
 
+.summaryPane {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  background: var(--vscode-sideBar-border);
+  border-left: 1px solid var(--vscode-sideBar-border);
+  font-family: var(--oa-metrics-font);
+}
+
+.summaryCell {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 15px;
+  background: var(--vscode-editor-background);
+}
+
+.summaryLabel {
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-xs;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summaryBody {
+  min-width: 0;
+}
+
+.summaryValue {
+  overflow: hidden;
+  color: var(--vscode-foreground);
+  font-family: var(--oa-number-font);
+  font-size: type.$font-size-xl;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summarySub {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-2xs;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .tooltipContent {
   display: flex;
   flex-direction: column;
 }
 
 .state {
-  min-height: 112px;
+  min-height: 148px;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 16px;
   color: var(--vscode-descriptionForeground);
-  border: 1px dashed var(--vscode-sideBar-border);
-  border-radius: var(--oa-overlay-radius);
   font-size: type.$font-size-xs;
+  text-align: center;
 }
