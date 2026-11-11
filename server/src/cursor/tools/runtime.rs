@@ -46,7 +46,7 @@ pub struct ExecContext {
     pub conversation_id: String,
     pub root_conversation_id: String,
     pub default_subagent_model: String,
-    pub subagent_model: Option<SubagentModel>,
+    pub subagent_models: HashMap<String, SubagentModel>,
     pub byok_models: Vec<ByokModel>,
     pub allow_subagents: bool,
     pub subagents_disabled: bool,
@@ -70,11 +70,24 @@ pub enum SubagentModel {
 }
 
 impl ExecContext {
+    fn selected_subagent_model(&self, call: &ToolCall) -> Option<&SubagentModel> {
+        let kind = call
+            .arguments
+            .get("subagent_type")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("generalPurpose");
+        self.subagent_models.get(kind)
+    }
+
     pub fn task_disabled(&self, call: &ToolCall) -> bool {
         if !call.name.eq_ignore_ascii_case("Task") {
             return false;
         }
-        self.subagents_disabled || matches!(self.subagent_model, Some(SubagentModel::Disabled))
+        self.subagents_disabled
+            || matches!(
+                self.selected_subagent_model(call),
+                Some(SubagentModel::Disabled)
+            )
     }
 
     pub fn prepare_call(&self, call: &ToolCall) -> Result<ToolCall> {
@@ -97,7 +110,7 @@ impl ExecContext {
             .and_then(serde_json::Value::as_str)
             .map(str::trim)
             .filter(|model| !model.is_empty() && *model != "inherit");
-        let model = match (explicit, &self.subagent_model) {
+        let model = match (explicit, self.selected_subagent_model(call)) {
             (Some(requested), _) => {
                 subagent_models::resolve(&self.byok_models, requested)?.to_string()
             }
@@ -394,7 +407,10 @@ mod tests {
     fn context(subagent_model: Option<SubagentModel>) -> ExecContext {
         ExecContext {
             default_subagent_model: "parent-hash".into(),
-            subagent_model,
+            subagent_models: subagent_model
+                .map(|model| ("generalPurpose".into(), model))
+                .into_iter()
+                .collect(),
             byok_models: vec![ByokModel {
                 hash: "aaaa".into(),
                 model_id: "gpt-x".into(),
@@ -461,5 +477,25 @@ mod tests {
         let call = task(serde_json::json!({ "model": "aaaa" }));
         assert!(context.task_disabled(&call));
         assert_eq!(context.prepare_call(&call).unwrap(), call);
+    }
+    #[test]
+    fn subagent_overrides_are_scoped_by_type() {
+        let mut context = context(None);
+        context
+            .subagent_models
+            .insert("explore".into(), SubagentModel::Disabled);
+        context
+            .subagent_models
+            .insert("review".into(), SubagentModel::Model("review-model".into()));
+        assert!(context.task_disabled(&task(serde_json::json!({"subagent_type": "explore"}))));
+        assert!(!context.task_disabled(&task(serde_json::json!({"subagent_type": "review"}))));
+        assert_eq!(
+            prepared_model(&context, serde_json::json!({"subagent_type": "review"})),
+            "review-model"
+        );
+        assert_eq!(
+            prepared_model(&context, serde_json::json!({})),
+            "parent-hash"
+        );
     }
 }

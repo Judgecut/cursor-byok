@@ -38,10 +38,20 @@ where
         _ = cancellation.cancelled() => return Ok(Attempt::Cancelled),
         bytes = response.bytes() => bytes,
     }?;
-    Err(Error::Provider(format!(
-        "{label} {status}: {}",
-        String::from_utf8_lossy(&bytes)
-    )))
+    let payload = serde_json::from_slice::<serde_json::Value>(&bytes).unwrap_or_default();
+    Err(Error::Upstream {
+        status: Some(status.as_u16()),
+        code: payload
+            .pointer("/error/code")
+            .or_else(|| payload.pointer("/error/type"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned),
+        message: payload
+            .pointer("/error/message")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("{label}: {}", String::from_utf8_lossy(&bytes))),
+    })
 }
 
 #[cfg(test)]
@@ -70,7 +80,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(error, Error::Provider(message) if message.contains("503") && message.contains("down"))
+            matches!(error, Error::Upstream { status: Some(503), message, .. } if message.contains("down"))
         );
     }
 

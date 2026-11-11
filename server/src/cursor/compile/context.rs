@@ -190,6 +190,9 @@ pub fn request_context(request: &pb::AgentRunRequest) -> Option<&pb::RequestCont
             pb::conversation_action::Action::ExecutePlanAction(action) => {
                 action.request_context.as_ref()
             }
+            pb::conversation_action::Action::ResumeAction(action) => {
+                action.request_context.as_ref()
+            }
             _ => None,
         })
 }
@@ -410,6 +413,15 @@ fn is_skill_rule(rule: &pb::CursorRule) -> bool {
 pub fn selected_context(user: &pb::UserMessage) -> Option<String> {
     let selected = user.selected_context.as_ref()?;
     let mut sections = selected.extra_context.clone();
+    if let Some(diff) = &selected.git_diff {
+        sections.push(format!("<git_diff>\n{}\n</git_diff>", diff.content));
+    }
+    if let Some(diff) = &selected.git_diff_from_branch_to_main {
+        sections.push(format!(
+            "<git_diff_from_branch_to_main>\n{}\n</git_diff_from_branch_to_main>",
+            diff.content
+        ));
+    }
     sections.extend(
         selected
             .files
@@ -586,6 +598,48 @@ fn xml(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selected_git_diffs_are_included() {
+        let user = pb::UserMessage {
+            selected_context: Some(pb::SelectedContext {
+                git_diff: Some(pb::SelectedGitDiff {
+                    content: "working diff".into(),
+                    ..Default::default()
+                }),
+                git_diff_from_branch_to_main: Some(pb::SelectedGitDiffFromBranchToMain {
+                    content: "branch diff".into(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let selected = selected_context(&user).unwrap();
+        assert!(selected.contains("working diff"));
+        assert!(selected.contains("branch diff"));
+    }
+
+    #[test]
+    fn resume_action_keeps_its_request_context() {
+        let context = pb::RequestContext {
+            admin_command_denylist: vec!["denied-command".into()],
+            ..Default::default()
+        };
+        let request = pb::AgentRunRequest {
+            action: Some(pb::ConversationAction {
+                action: Some(pb::conversation_action::Action::ResumeAction(
+                    pb::ResumeAction {
+                        request_context: Some(context.clone()),
+                        ..Default::default()
+                    },
+                )),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(request_context(&request), Some(&context));
+    }
 
     fn rule(content: &str) -> pb::CursorRule {
         pb::CursorRule {

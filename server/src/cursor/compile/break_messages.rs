@@ -193,6 +193,17 @@ async fn compile_with_timestamp(
     compiler: &PromptCompiler,
     blobs: &BlobSynchronizer,
 ) -> Result<CanonicalMessage> {
+    let mut resolved_user = user.clone();
+    if let Some(raw_id) = &user.text_blob_id {
+        let id = BlobId::from_bytes(raw_id)?;
+        let data = blobs
+            .get(&id)
+            .await?
+            .ok_or_else(|| Error::Protocol("user text Blob is missing".into()))?;
+        resolved_user.text = String::from_utf8(data)
+            .map_err(|_| Error::Protocol("user text Blob is not UTF-8".into()))?;
+    }
+    let user = &resolved_user;
     let mut values = BTreeMap::from([
         ("OPEN_FILES", section(open_files(user))),
         (

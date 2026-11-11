@@ -196,7 +196,7 @@ impl ModelConfig {
         if model.context_window_tokens.is_none() {
             model.context_window_tokens = self.context_window_tokens;
         }
-        if model.reasoning.effort.is_none() {
+        if model.reasoning.effort.is_none() && model.reasoning.enabled_override != Some(false) {
             model.reasoning.effort = match self.model_type {
                 ModelType::OpenAi => self.reasoning_effort.clone(),
                 ModelType::Anthropic => self.anthropic_thinking_effort.clone(),
@@ -439,6 +439,8 @@ fn empty_object_ref() -> &'static serde_json::Value {
 pub struct ReasoningSpec {
     pub enabled: bool,
     pub effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled_override: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]

@@ -82,11 +82,18 @@ impl Provider for ProviderRouter {
                     let provider_type = model.provider_type();
                     let request_url = model.request_url()?;
                     model.configure(&mut routed.request.model);
-                    routed.request.model.extra_params =
-                        super::request_template::render_json_strings(
-                            model.extra_params(),
-                            &invocation.conversation_id,
-                        );
+                    let mut extra_params = super::request_template::render_json_strings(model.extra_params(), &invocation.conversation_id);
+                    let configured_params = extra_params.as_object_mut().ok_or_else(|| Error::Config("model extra params must be an object".into()))?;
+                    let request_params = routed.request.model.extra_params.as_object().ok_or_else(|| Error::Protocol("request extra params must be an object".into()))?;
+                    configured_params.extend(request_params.iter().map(|(name, value)| (name.clone(), value.clone())));
+                    if provider_type == ProviderType::Anthropic
+                    {
+                        if let Some(stop) = configured_params.remove("stop")
+                        {
+                            configured_params.insert("stop_sequences".into(), stop);
+                        }
+                    }
+                    routed.request.model.extra_params = extra_params;
                     routed.request.model.model_id = model.model_id.clone();
                     let recorder = start_recorder(&store, &routed, &model.model_hash, &model.display_name, provider_type, &request_url, &model.model_id).await?;
                     let guard = recorder.cancel_on_drop();

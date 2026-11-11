@@ -92,6 +92,7 @@ message RunInferencePromptModelMetadata {
   bool is_opus5 = 20;
   bool is_gpt5_family = 23;
   optional string reasoning_effort = 30;
+  optional int32 agent_token_limit = 32;
   string persona = 35;
   string self_identity_name = 44;
   repeated RunInferenceAgentModeConfig agent_mode_configs = 46;
@@ -270,6 +271,7 @@ message InferenceExtendedUsageInfo {
   int32 cache_read_tokens = 3;
   int32 cache_write_tokens = 4;
   int32 max_tokens = 5;
+  optional int32 reasoning_tokens = 6;
 }
 
 message InferenceStreamError {

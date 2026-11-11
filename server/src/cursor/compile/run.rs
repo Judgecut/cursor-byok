@@ -147,11 +147,7 @@ pub(crate) async fn prepare(
     }
     let dynamic = context::dynamic_mcp(request, &request_context)?;
     let subagent_model_overrides = model::overrides(request)?;
-    let subagents_disabled = subagent_model_overrides
-        .first()
-        .is_some_and(|(_, selection)| {
-            matches!(selection, crate::model::SubagentModelOverride::Disabled)
-        });
+    let subagents_disabled = false;
     let byok_models = store
         .models()
         .await?
@@ -602,13 +598,25 @@ fn exec_context(
     )],
     byok_models: Vec<ByokModel>,
 ) -> ExecContext {
-    let subagent_model = overrides.first().map(|(_, value)| match value {
-        crate::model::SubagentModelOverride::Explicit(model) => {
-            SubagentModel::Model(model.model_id.clone())
-        }
-        crate::model::SubagentModelOverride::Inherit => SubagentModel::Model(model_id.into()),
-        crate::model::SubagentModelOverride::Disabled => SubagentModel::Disabled,
-    });
+    let subagent_models = overrides
+        .iter()
+        .map(|(kind, value)| {
+            let kind = match kind {
+                crate::model::SubagentKind::GeneralPurpose => "generalPurpose".to_owned(),
+                crate::model::SubagentKind::Named(name) => name.clone(),
+            };
+            let selection = match value {
+                crate::model::SubagentModelOverride::Explicit(model) => {
+                    SubagentModel::Model(model.model_id.clone())
+                }
+                crate::model::SubagentModelOverride::Inherit => {
+                    SubagentModel::Model(model_id.into())
+                }
+                crate::model::SubagentModelOverride::Disabled => SubagentModel::Disabled,
+            };
+            (kind, selection)
+        })
+        .collect();
     ExecContext {
         conversation_id: conversation_id.to_string(),
         root_conversation_id: request
@@ -616,7 +624,7 @@ fn exec_context(
             .clone()
             .unwrap_or_else(|| conversation_id.to_string()),
         default_subagent_model: model_id.into(),
-        subagent_model,
+        subagent_models,
         byok_models,
         allow_subagents: request.subagent_type_name.is_none() && !subagents_disabled,
         subagents_disabled,

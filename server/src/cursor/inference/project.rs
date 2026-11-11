@@ -6,9 +6,8 @@ use serde_json::{Map, Value};
 use crate::{
     cursor::protocol::proto::inference as pb,
     model::{
-        parse_token_count, ContentPart, ModelRequest, ModelSpec, ProjectedContent,
-        ProjectedMessage, PromptSpec, ProviderReplayState, Role, ToolCallContent, ToolDefinition,
-        ToolResultContent,
+        ContentPart, ModelRequest, ModelSpec, ProjectedContent, ProjectedMessage, PromptSpec,
+        ProviderReplayState, Role, ToolCallContent, ToolDefinition, ToolResultContent,
     },
     Error, Result,
 };
@@ -21,7 +20,13 @@ pub(crate) fn project(
     if let Some(config) = &input.model_config {
         model.max_output_tokens = config
             .max_tokens
-            .and_then(|value| u64::try_from(value).ok());
+            .map(|value| {
+                u64::try_from(value)
+                    .ok()
+                    .filter(|tokens| *tokens > 0)
+                    .ok_or_else(|| Error::Protocol("max_tokens must be positive".into()))
+            })
+            .transpose()?;
         let mut extra = Map::new();
         if let Some(value) = config.temperature {
             extra.insert("temperature".into(), Value::from(value));
@@ -38,27 +43,13 @@ pub(crate) fn project(
     // Apply this run's selection first, then any invocation-specific parameters.
     for requested in std::iter::once(run_model).chain(input.requested_model.as_ref()) {
         model.reasoning.enabled |= requested.max_mode;
-        for parameter in &requested.parameters {
-            match parameter.id.as_str() {
-                "effort" | "reasoning" => {
-                    model.reasoning.effort = Some(parameter.value.clone());
-                    model.reasoning.enabled = true;
-                }
-                "context" => {
-                    model.context_window_tokens = Some(
-                        parse_token_count(&parameter.value)
-                            .filter(|tokens| *tokens > 0)
-                            .ok_or_else(|| {
-                                Error::Protocol(format!(
-                                    "invalid Cursor context token count: {}",
-                                    parameter.value
-                                ))
-                            })?,
-                    );
-                }
-                _ => {}
-            }
-        }
+        crate::cursor::model_selection::apply(
+            &mut model,
+            requested
+                .parameters
+                .iter()
+                .map(|parameter| (parameter.id.as_str(), parameter.value.as_str())),
+        )?;
     }
 
     let tools = input
@@ -277,6 +268,78 @@ fn proto_value(value: &ProtoValue) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invocation_can_disable_inherited_thinking_and_fast() {
+        let run = pb::InferenceRequestedModel {
+            model_id: "model".into(),
+            parameters: vec![
+                pb::InferenceModelParameterValue {
+                    id: "reasoning".into(),
+                    value: "high".into(),
+                },
+                pb::InferenceModelParameterValue {
+                    id: "fast".into(),
+                    value: "true".into(),
+                },
+            ],
+            ..Default::default()
+        };
+        let inherited = project(&pb::InferenceStreamRequest::default(), &run).unwrap();
+        assert_eq!(inherited.model.latency, crate::model::ModelLatency::Fast);
+        let input = pb::InferenceStreamRequest {
+            requested_model: Some(pb::InferenceRequestedModel {
+                parameters: vec![
+                    pb::InferenceModelParameterValue {
+                        id: "thinking".into(),
+                        value: "false".into(),
+                    },
+                    pb::InferenceModelParameterValue {
+                        id: "fast".into(),
+                        value: "false".into(),
+                    },
+                ],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let overridden = project(&input, &run).unwrap();
+        assert!(!overridden.model.reasoning.enabled);
+        assert!(overridden.model.reasoning.effort.is_none());
+        assert_eq!(
+            overridden.model.latency,
+            crate::model::ModelLatency::Standard
+        );
+        assert_eq!(
+            project(&pb::InferenceStreamRequest::default(), &run)
+                .unwrap()
+                .model,
+            inherited.model
+        );
+    }
+
+    #[test]
+    fn invalid_model_parameters_are_rejected() {
+        for (id, value) in [
+            ("fast", "yes"),
+            ("thinking", "0"),
+            ("reasoning", ""),
+            ("context", "0"),
+        ] {
+            let run = pb::InferenceRequestedModel {
+                model_id: "model".into(),
+                parameters: vec![pb::InferenceModelParameterValue {
+                    id: id.into(),
+                    value: value.into(),
+                }],
+                ..Default::default()
+            };
+            assert!(
+                project(&pb::InferenceStreamRequest::default(), &run).is_err(),
+                "{id}={value}"
+            );
+        }
+    }
 
     #[test]
     fn unchanged_client_history_remains_an_exact_provider_prefix() {

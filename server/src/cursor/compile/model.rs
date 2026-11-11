@@ -1,10 +1,7 @@
 //! Resolves Cursor model selections to configured provider models.
 use crate::{
     cursor::protocol::proto::agent::v1 as pb,
-    model::{
-        parse_token_count, ModelLatency, ModelSpec, ReasoningSpec, SubagentKind,
-        SubagentModelOverride,
-    },
+    model::{ModelLatency, ModelSpec, ReasoningSpec, SubagentKind, SubagentModelOverride},
     Error, Result,
 };
 
@@ -24,6 +21,7 @@ pub fn requested_model(request: &pb::AgentRunRequest) -> Result<ModelSpec> {
             reasoning: ReasoningSpec {
                 enabled: details.is_some_and(|model| model.thinking_details.is_some()),
                 effort: None,
+                enabled_override: None,
             },
             latency: ModelLatency::Standard,
             max_output_tokens: None,
@@ -89,6 +87,7 @@ fn from_requested(
             enabled: model.max_mode
                 || details.is_some_and(|model| model.thinking_details.is_some()),
             effort: None,
+            enabled_override: None,
         },
         latency: ModelLatency::Standard,
         max_output_tokens: None,
@@ -96,44 +95,14 @@ fn from_requested(
         supports_image_generation: false,
         extra_params: serde_json::json!({}),
     };
-    for parameter in &model.parameters {
-        match parameter.id.as_str() {
-            "effort" | "reasoning" => {
-                let effort = parameter.value.trim();
-                spec.reasoning.effort =
-                    (effort != "none" && !effort.is_empty()).then(|| effort.to_string());
-                spec.reasoning.enabled |= spec.reasoning.effort.is_some();
-            }
-            "thinking" => spec.reasoning.enabled |= parse_bool(parameter)?,
-            "fast" => {
-                if parse_bool(parameter)? {
-                    spec.latency = ModelLatency::Fast;
-                }
-            }
-            "context" => {
-                spec.context_window_tokens =
-                    Some(parse_token_count(&parameter.value).ok_or_else(|| {
-                        Error::Protocol(format!(
-                            "invalid Cursor context token count: {}",
-                            parameter.value
-                        ))
-                    })?);
-            }
-            _ => {}
-        }
-    }
+    crate::cursor::model_selection::apply(
+        &mut spec,
+        model
+            .parameters
+            .iter()
+            .map(|parameter| (parameter.id.as_str(), parameter.value.as_str())),
+    )?;
     Ok(spec)
-}
-
-fn parse_bool(parameter: &pb::requested_model::ModelParameterValue) -> Result<bool> {
-    match parameter.value.as_str() {
-        "true" => Ok(true),
-        "false" => Ok(false),
-        _ => Err(Error::Protocol(format!(
-            "invalid Cursor boolean model parameter {}={}",
-            parameter.id, parameter.value
-        ))),
-    }
 }
 
 #[cfg(test)]

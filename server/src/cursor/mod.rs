@@ -4,6 +4,7 @@ pub mod checkpoint;
 pub mod compile;
 pub mod conversation;
 pub mod inference;
+pub(crate) mod model_selection;
 pub mod prompting;
 pub mod protocol;
 pub mod services;

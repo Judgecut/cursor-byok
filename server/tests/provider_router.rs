@@ -120,6 +120,7 @@ async fn recorded_reasoning_effort_matches_the_effective_request() {
             };
             let configured_model = store.create_model(&input).await.unwrap();
             let mut model = ModelSpec::new(&configured_model.model_hash);
+            model.extra_params = json!({"temperature": 0.25, "top_p": 0.8, "stop": ["done"]});
             model.reasoning.effort = requested.map(str::to_owned);
             let call_id = uuid::Uuid::new_v4().to_string();
             let invocation = ModelInvocation {
@@ -142,6 +143,16 @@ async fn recorded_reasoning_effort_matches_the_effective_request() {
                 event.unwrap();
             }
             let body = received.try_recv().unwrap();
+            assert_eq!(body["temperature"], 0.25);
+            assert_eq!(body["top_p"], 0.8);
+            assert_eq!(
+                body[if model_type == ModelType::Anthropic {
+                    "stop_sequences"
+                } else {
+                    "stop"
+                }],
+                json!(["done"])
+            );
             let sent_effort = body.pointer(effort_pointer).and_then(Value::as_str);
             assert_eq!(
                 sent_effort, expected,
@@ -155,5 +166,73 @@ async fn recorded_reasoning_effort_matches_the_effective_request() {
             );
         }
     }
+    server.abort();
+}
+
+#[tokio::test]
+async fn incomplete_responses_keep_usage_and_replay() {
+    use cursor_server::{
+        config::{ProviderConfig, ProviderKind},
+        provider::{FinishReason, ModelEvent, OpenAiResponsesProvider},
+    };
+    let app = Router::new().fallback(|| async
+    {
+        ([(header::CONTENT_TYPE, "text/event-stream")], "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"reasoning\",\"id\":\"reasoning-id\",\"encrypted_content\":\"opaque\"}}\n\ndata: {\"type\":\"response.incomplete\",\"response\":{\"usage\":{\"input_tokens\":100,\"output_tokens\":20,\"output_tokens_details\":{\"reasoning_tokens\":10}}}}\n\n")
+    });
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let provider = OpenAiResponsesProvider::new(
+        reqwest::Client::new(),
+        ProviderConfig {
+            kind: ProviderKind::OpenAiResponses,
+            request_url: format!("http://{address}/v1/responses"),
+            api_key: "test-key".into(),
+            custom_headers: Default::default(),
+            max_output_tokens: None,
+            request_timeout: Duration::from_secs(5),
+            allowed_body_fields: None,
+        },
+    );
+    let invocation = ModelInvocation {
+        call_id: "call".into(),
+        run_id: "run".into(),
+        conversation_id: "conversation".into(),
+        provider_call_index: 0,
+        origin: CallOrigin::Run,
+        request: ModelRequest {
+            prompt: PromptSpec {
+                instructions: String::new(),
+                tools: Vec::new(),
+            },
+            model: ModelSpec::new("test"),
+            history: Vec::new(),
+        },
+    };
+    let mut stream = provider.stream(invocation, CancellationToken::new());
+    let mut usage = None;
+    let mut replay = None;
+    let mut endings = 0;
+    while let Some(event) = stream.next().await {
+        match event.unwrap() {
+            ModelEvent::Usage(value) => usage = Some(value),
+            ModelEvent::ProviderReplayState(value) => replay = Some(value),
+            ModelEvent::Done(reason) => {
+                assert_eq!(reason, FinishReason::Length);
+                endings += 1;
+            }
+            _ => {}
+        }
+    }
+    let usage = usage.expect("missing terminal usage");
+    assert_eq!(usage.input_tokens, Some(100));
+    assert_eq!(usage.reasoning_tokens, Some(10));
+    assert_eq!(
+        replay.unwrap().value["items"][0]["encrypted_content"],
+        "opaque"
+    );
+    assert_eq!(endings, 1);
     server.abort();
 }

@@ -1,4 +1,5 @@
 //! Adapts Cursor's client-owned Agent loop to configured model providers.
+mod events;
 mod project;
 mod service;
 

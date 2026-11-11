@@ -49,6 +49,8 @@ struct ModelInfo {
     display_name: String,
     model_type: ModelType,
     context_window_tokens: Option<u64>,
+    model_id: String,
+    reasoning_effort: Option<String>,
 }
 
 impl InferenceService {
@@ -94,6 +96,7 @@ impl InferenceService {
             .filter(|model| !model.model_id.is_empty())
             .ok_or_else(|| Error::Protocol("RunInference model is required".into()))?;
         let model_id = requested_model.model_id.as_str();
+        project(&pb::InferenceStreamRequest::default(), requested_model)?;
         if request.conversation_id.is_empty() {
             return Err(Error::Protocol(
                 "RunInference conversation ID is required".into(),
@@ -125,6 +128,12 @@ impl InferenceService {
                     display_name: model.display_name,
                     model_type: model.model_type,
                     context_window_tokens: model.context_window_tokens,
+                    model_id: model.model_id,
+                    reasoning_effort: if model.model_type == ModelType::Anthropic {
+                        model.anthropic_thinking_effort
+                    } else {
+                        model.reasoning_effort
+                    },
                 }),
             ));
             InferenceRoute::Local(run)
@@ -278,7 +287,28 @@ fn run_ready(
         .map(|model| (model.display_name.clone(), model.model_type))
         .unwrap_or_else(|| (String::new(), ModelType::OpenAi));
     let anthropic = model_type == ModelType::Anthropic;
-    let name = display_name.to_ascii_lowercase();
+    let name = model_info
+        .map(|model| model.model_id.to_ascii_lowercase())
+        .unwrap_or_default();
+    let selection = requested_model
+        .as_ref()
+        .and_then(|model| project(&pb::InferenceStreamRequest::default(), model).ok())
+        .map(|request| request.model);
+    let reasoning_effort = if selection
+        .as_ref()
+        .is_some_and(|model| model.reasoning.enabled_override == Some(false))
+    {
+        None
+    } else {
+        selection
+            .as_ref()
+            .and_then(|model| model.reasoning.effort.clone())
+            .or_else(|| model_info.and_then(|model| model.reasoning_effort.clone()))
+    };
+    let context_limit = selection
+        .as_ref()
+        .and_then(|model| model.context_window_tokens)
+        .or_else(|| model_info.and_then(|model| model.context_window_tokens));
     let claude = anthropic && name.contains("claude");
     let gpt5 = !anthropic && name.starts_with("gpt-5");
     pb::RunInferenceRunReady {
@@ -287,6 +317,8 @@ fn run_ready(
         prompt_model_metadata: Some(pb::RunInferencePromptModelMetadata {
             vendor: if anthropic { "anthropic" } else { "openai" }.into(),
             prompt_version: "latest".into(),
+            reasoning_effort,
+            agent_token_limit: context_limit.map(|limit| count(Some(limit))),
             is_claude_4x: claude,
             is_sonnet4: claude && name.contains("sonnet"),
             is_gpt5_family: gpt5,
@@ -361,7 +393,22 @@ async fn serve_invocation(
                 }
             }
             Err(value) => {
-                error = Some(value.to_string());
+                let (code, failure) = super::events::failure(&value);
+                let message = failure.message.clone();
+                emit(
+                    &output,
+                    pb::run_inference_server_message::Message::InvocationResponse(
+                        pb::RunInferenceInvocationResponse {
+                            invocation_id: id.clone(),
+                            response: Some(pb::InferenceStreamResponse {
+                                response: Some(pb::inference_stream_response::Response::Error(
+                                    failure,
+                                )),
+                            }),
+                        },
+                    ),
+                );
+                error = Some(pb::RunInferenceInvocationError { code, message });
                 break;
             }
         }
@@ -369,7 +416,7 @@ async fn serve_invocation(
     invocations.lock().remove(&id);
     let message = pb::RunInferenceInvocationEnd {
         invocation_id: id,
-        error: error.map(|message| pb::RunInferenceInvocationError { code: 13, message }),
+        error,
         ..Default::default()
     };
     emit(
@@ -491,6 +538,7 @@ fn model_response(
             cache_read_tokens: count(usage.cache_read_tokens),
             cache_write_tokens: count(usage.cache_write_tokens),
             max_tokens: count(context_window_tokens),
+            reasoning_tokens: usage.reasoning_tokens.map(|tokens| count(Some(tokens))),
         }),
         ModelEvent::Start { model_call_id } => {
             Response::InvocationId(pb::InferenceInvocationIdInfo {

@@ -367,6 +367,7 @@ fn anthropic_messages(messages: &[ProjectedMessage]) -> Result<Vec<Value>> {
                         "type": "tool_result",
                         "tool_use_id": result.call_id,
                         "content": content,
+                        "is_error": result.is_error,
                     })],
                 );
             }
