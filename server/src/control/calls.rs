@@ -5,21 +5,35 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::Result;
+use crate::{store::LlmCallFilter, Result};
 
-use super::{CallDetail, CallSummary, ControlService};
+use super::{CallDetail, CallListResult, ControlService};
 
-#[derive(Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct CallQuery {
+    start_ms: Option<i64>,
+    end_ms: Option<i64>,
+    suppliers: Option<String>,
+    supplier_keys: Option<String>,
     #[serde(default = "default_limit")]
     limit: i64,
+    #[serde(default)]
+    offset: i64,
 }
 
 pub async fn list(
     State(service): State<ControlService>,
     Query(query): Query<CallQuery>,
-) -> Result<Json<Vec<CallSummary>>> {
-    Ok(Json(service.calls(query.limit).await?))
+) -> Result<Json<CallListResult>> {
+    let filter = LlmCallFilter {
+        start_ms: query.start_ms,
+        end_ms: query.end_ms,
+        suppliers: query.suppliers.as_deref(),
+        supplier_keys: query.supplier_keys.as_deref(),
+        limit: query.limit,
+        offset: query.offset,
+    };
+    Ok(Json(service.calls(&filter).await?))
 }
 
 pub async fn detail(

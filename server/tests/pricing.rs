@@ -23,9 +23,12 @@ use cursor_server::{
     },
     network::NetworkClients,
     plugin::{PluginRegistry, PluginRuntime},
-    pricing::{canonical_supplier_identity, BindingMode, PricingRates, PricingService, SourceKind},
+    pricing::{
+        canonical_supplier_id, canonical_supplier_identity, BindingMode, PricingRates,
+        PricingService, SourceKind,
+    },
     provider::ProviderRouter,
-    store::{CallFinish, ExternalApiSettings, SaveSupplierPricingInput},
+    store::{CallFinish, ExternalApiSettings, LlmCallFilter, SaveSupplierPricingInput},
 };
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
@@ -372,11 +375,12 @@ async fn same_model_across_suppliers_aggregates_cleanly_and_shares_identity_acro
         .await
         .unwrap();
 
-    let overview = store.overview(None, None, None, None).await.unwrap();
+    let overview = store.overview(None, None, None, None, None).await.unwrap();
     assert_eq!(overview.models.len(), 1);
     let gpt4o = &overview.models[0];
     assert_eq!(gpt4o.model_id, "gpt-4o");
-    assert_eq!(gpt4o.providers.len(), 2);
+    assert_eq!(gpt4o.supplier_count, 2);
+    assert_eq!(gpt4o.pricing_sources, vec!["catalog".to_string()]);
     assert_eq!(gpt4o.llm_calls, 3);
     assert_eq!(gpt4o.priced_calls, 3);
     // OpenAI c1: 500k*2.5/M + 500k*10/M + 500k*1.25/M = 1.25 + 5.0 + 0.625 = 6.875
@@ -386,29 +390,41 @@ async fn same_model_across_suppliers_aggregates_cleanly_and_shares_identity_acro
     assert_eq!(overview.metrics.total_cost, "11.925");
     assert_eq!(gpt4o.average_priced_cost.as_deref(), Some("3.975"));
 
-    let openai_summary = gpt4o
-        .providers
+    assert_eq!(overview.suppliers.len(), 2);
+    let openai_summary = overview
+        .suppliers
         .iter()
         .find(|p| p.endpoint_key == "https://api.openai.com/v1/responses")
         .unwrap();
     assert!(!openai_summary.active);
     assert_eq!(openai_summary.llm_calls, 2);
     assert_eq!(openai_summary.total_cost, "9.125");
+    assert_eq!(openai_summary.model_count, 1);
 
-    let or_summary = gpt4o
-        .providers
+    let or_summary = overview
+        .suppliers
         .iter()
         .find(|p| p.endpoint_key == "https://openrouter.ai/api/v1/chat/completions")
         .unwrap();
     assert!(or_summary.active);
     assert_eq!(or_summary.llm_calls, 1);
     assert_eq!(or_summary.total_cost, "2.8");
+    assert_eq!(or_summary.model_count, 1);
 
-    // Deleted supplier stays available in overview.available_models for filtering!
+    // Deleted supplier stays available in overview.available_suppliers and overview.available_models for filtering!
+    let openai_supplier_id =
+        canonical_supplier_id(SourceKind::Builtin, "https://api.openai.com/v1/responses");
+    assert!(overview
+        .available_suppliers
+        .iter()
+        .any(|s| s.supplier_id == openai_supplier_id && !s.active));
+    let openai_model_supplier_key =
+        canonical_supplier_identity(ProviderType::OpenAiResponses, &openai_url, &openai_url, "gpt-4o")
+            .supplier_key;
     assert!(overview
         .available_models
         .iter()
-        .any(|m| m.supplier_key == openai_summary.supplier_key && !m.active));
+        .any(|m| m.supplier_key == openai_model_supplier_key && !m.active));
 }
 
 #[tokio::test]
@@ -587,7 +603,7 @@ async fn protocol_billing_and_native_external_api_forwarding_agree() {
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
-    let calls = store.llm_calls(20).await.unwrap();
+    let calls = store.llm_calls(&LlmCallFilter::with_limit(20)).await.unwrap();
     assert_eq!(calls.len(), 3);
     for call in &calls {
         assert_eq!(call.cost_status.as_deref(), Some("priced"));
@@ -687,7 +703,7 @@ async fn running_call_keeps_frozen_snapshot_while_excluded_from_overview() {
     assert_eq!(detail_json["call"]["unit_input_per_million"], "10");
     assert_eq!(detail_json["call"]["status"], "running");
 
-    let overview_while_running = store.overview(None, None, None, None).await.unwrap();
+    let overview_while_running = store.overview(None, None, None, None, None).await.unwrap();
     assert_eq!(overview_while_running.metrics.llm_calls, 0);
     assert_eq!(overview_while_running.metrics.total_cost, "0");
 
@@ -755,7 +771,7 @@ async fn running_call_keeps_frozen_snapshot_while_excluded_from_overview() {
         .await
         .unwrap();
 
-    let overview_after = store.overview(None, None, None, None).await.unwrap();
+    let overview_after = store.overview(None, None, None, None, None).await.unwrap();
     assert_eq!(overview_after.metrics.llm_calls, 2);
     assert_eq!(overview_after.metrics.total_cost, "60");
     assert_eq!(
@@ -1030,7 +1046,7 @@ async fn failed_cancelled_zero_incomplete_and_unpriced_states_plus_retry_compact
         .await
         .unwrap();
 
-    let overview = store.overview(None, None, None, None).await.unwrap();
+    let overview = store.overview(None, None, None, None, None).await.unwrap();
     assert_eq!(overview.metrics.llm_calls, 5);
     assert_eq!(overview.metrics.priced_calls, 3); // retry-fail ($4) + retry-cancel ($4) + zero-cost ($0)
     assert_eq!(overview.metrics.unpriced_calls, 1);
@@ -1405,7 +1421,7 @@ async fn backfill_is_idempotent_and_clear_storage_preserves_costs_on_details_onl
     assert_eq!(d_status, StatusCode::OK);
     assert_eq!(
         store
-            .overview(None, None, None, None)
+            .overview(None, None, None, None, None)
             .await
             .unwrap()
             .metrics
@@ -1424,7 +1440,7 @@ async fn backfill_is_idempotent_and_clear_storage_preserves_costs_on_details_onl
     assert_eq!(a_status, StatusCode::OK);
     assert_eq!(
         store
-            .overview(None, None, None, None)
+            .overview(None, None, None, None, None)
             .await
             .unwrap()
             .metrics
@@ -1622,7 +1638,7 @@ async fn partial_custom_rates_fallback_to_catalog_across_views_calls_and_backfil
     assert_eq!(backfilled.total_cost.as_deref(), Some("7.8"));
     assert!(backfilled.cost_backfilled);
 
-    let overview = store.overview(None, None, None, None).await.unwrap();
+    let overview = store.overview(None, None, None, None, None).await.unwrap();
     assert_eq!(overview.metrics.priced_calls, 2);
     assert_eq!(overview.metrics.unpriced_calls, 0);
     assert_eq!(overview.metrics.total_cost, "13.3");
@@ -1791,8 +1807,173 @@ async fn default_creator_prices_preserve_cache_and_free_costs_in_live_calls_and_
     assert!(views.iter().all(|view| view.catalog_match_kind
         == cursor_server::pricing::CatalogMatchKind::AutoDefault
         && view.unpriced_call_count == 0));
-    let overview = store.overview(None, None, None, None).await.unwrap();
+    let overview = store.overview(None, None, None, None, None).await.unwrap();
     assert_eq!(overview.metrics.priced_calls, 4);
     assert_eq!(overview.metrics.unpriced_calls, 0);
     assert_eq!(overview.metrics.total_cost, "0.864");
+}
+
+#[tokio::test]
+async fn overview_and_calls_api_apply_supplier_and_time_filters_before_pagination() {
+    let (router, store, _pricing, _dir) =
+        setup_control_with_catalog("http://127.0.0.1:1/unused").await;
+    store
+        .replace_pricing_catalog_from_json(sample_models_dev_json().to_string().as_bytes(), 1_000)
+        .await
+        .unwrap();
+
+    let ep_a = "https://supplier-a.example.com/v1/chat/completions";
+    let ep_b = "https://supplier-b.example.com/v1/chat/completions";
+    let sid_a = canonical_supplier_id(SourceKind::Builtin, ep_a);
+
+    // Custom pricing for gpt-4o on supplier A; catalog pricing for gpt-4o on supplier B; unpriced custom-unpriced on A.
+    store
+        .save_supplier_pricing_config(
+            &SaveSupplierPricingInput {
+                source_kind: SourceKind::Builtin,
+                endpoint_key: ep_a.into(),
+                model_id: "gpt-4o".into(),
+                binding_mode: BindingMode::Auto,
+                catalog_provider_id: None,
+                catalog_model_id: None,
+                custom_rates: PricingRates {
+                    input_per_million: Some("2".into()),
+                    output_per_million: Some("4".into()),
+                    ..Default::default()
+                },
+            },
+            &[],
+        )
+        .await
+        .unwrap();
+
+    for (idx, (call_id, ep, model_id, ts, input, output)) in [
+        ("a-1", ep_a, "gpt-4o", 1_000_i64, 1_000_000_u64, 500_000_u64),
+        ("b-1", ep_b, "gpt-4o", 2_000_i64, 500_000_u64, 0_u64),
+        ("a-2", ep_a, "custom-unpriced", 3_000_i64, 200_000_u64, 100_000_u64),
+        ("a-3", ep_a, "gpt-4o", 4_000_i64, 500_000_u64, 0_u64),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        store
+            .start_llm_call(&NewLlmCall {
+                call_id: call_id.into(),
+                run_id: format!("run-{idx}"),
+                conversation_id: "conv".into(),
+                provider_call_index: 0,
+                model_hash: format!("mh-{model_id}"),
+                provider_type: ProviderType::OpenAiChat,
+                provider_url: ep.into(),
+                request_type: ProviderType::OpenAiChat,
+                request_url: ep.into(),
+                model_id: model_id.into(),
+                display_name: model_id.into(),
+                reasoning_effort: None,
+                fast: false,
+                message_count: 1,
+                tool_count: 0,
+                detailed: false,
+                origin: CallOrigin::Run,
+                streaming: true,
+            })
+            .await
+            .unwrap();
+        store
+            .record_llm_usage(
+                call_id,
+                Usage {
+                    input_tokens: Some(input),
+                    output_tokens: Some(output),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        store
+            .finish_llm_call(
+                call_id,
+                CallFinish {
+                    status: "completed",
+                    finish_reason: Some("stop"),
+                    elapsed_ms: 500,
+                    generation_ms: Some(400),
+                    error_kind: None,
+                    error_message: None,
+                },
+            )
+            .await
+            .unwrap();
+        sqlx::query("UPDATE llm_calls SET created_at_ms = ? WHERE call_id = ?")
+            .bind(ts)
+            .bind(call_id)
+            .execute(store.pool())
+            .await
+            .unwrap();
+    }
+
+    // Add an official cursor passthrough trace (must appear unfiltered, disappear when supplier filtered).
+    store.set_detailed_logging(true).await.unwrap();
+    store
+        .start_cursor_trace_if_detailed("official-1", Some("conv"), "cursor_official", Some("default"))
+        .await
+        .unwrap();
+    sqlx::query("UPDATE cursor_run_traces SET received_at_ms = 5000 WHERE request_id = 'official-1'")
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    // Unfiltered calls endpoint returns total = 5 and honors limit/offset.
+    let (status, unfiltered_page) = send(
+        router.clone(),
+        "GET",
+        "/__byok-api__/api/llm-calls?limit=2&offset=1",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(unfiltered_page["total"], 5);
+    let items = unfiltered_page["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0]["call_id"], "a-3");
+    assert_eq!(items[1]["call_id"], "a-2");
+
+    // Supplier filter selects all models of supplier A before limit/offset and drops cursor_official.
+    let encoded_suppliers =
+        url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("suppliers", &json!([sid_a]).to_string())
+            .append_pair("limit", "1")
+            .append_pair("offset", "1")
+            .finish();
+    let (status, filtered_page) = send(
+        router.clone(),
+        "GET",
+        &format!("/__byok-api__/api/llm-calls?{encoded_suppliers}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(filtered_page["total"], 3);
+    let f_items = filtered_page["items"].as_array().unwrap();
+    assert_eq!(f_items.len(), 1);
+    assert_eq!(f_items[0]["call_id"], "a-2");
+
+    // Overview endpoint reports mixed pricing_sources without flattening to one source.
+    let (status, all_overview) = send(router.clone(), "GET", "/__byok-api__/api/overview", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let gpt4o = all_overview["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["model_id"] == "gpt-4o")
+        .unwrap();
+    assert_eq!(gpt4o["pricing_sources"], json!(["custom", "catalog"]));
+    let sup_a = all_overview["suppliers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["supplier_id"] == sid_a)
+        .unwrap();
+    assert_eq!(sup_a["pricing_sources"], json!(["custom", "unpriced"]));
+    assert_eq!(sup_a["model_count"], 2);
 }

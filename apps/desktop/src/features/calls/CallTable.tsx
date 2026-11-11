@@ -1,16 +1,24 @@
+import type { ReactNode } from "react";
 import type { LlmCall } from "../../shared/api";
+import { useAppStore } from "../../shared/store/appStore";
 import controls from "../../shared/ui/Controls.module.scss";
-import { DataTable, type DataTableColumn } from "../../shared/ui/DataTable";
+import { DataTable, type DataTableColumn, type ServerPagination } from "../../shared/ui/DataTable";
 import { Icon } from "../../shared/ui/Icon";
 import { TooltipTrigger } from "../../shared/ui/TooltipTrigger";
 import { eyeIcon } from "../../shared/ui/icons";
-import { formatUsd, formatUsdExact } from "../../shared/utils/costFormat";
+import {
+  formatConversionNote,
+  formatDisplayCost,
+  formatDisplayCostExact,
+  formatUsdExact,
+  type DisplayCurrency,
+} from "../../shared/utils/costFormat";
 import { formatFirstOutput, formatSpeed, performanceTooltip } from "../../shared/utils/speedFormat";
 import styles from "./CallTable.module.scss";
 
 const value = (input: string | number | null) => input ?? "-";
 
-function renderCost(call: LlmCall) {
+function renderCost(call: LlmCall, currency: DisplayCurrency, cnyRate: string | null) {
   if (call.call_kind === "cursor_official") {
     return <span className={styles.costMuted}>{t("未知")}</span>;
   }
@@ -26,25 +34,41 @@ function renderCost(call: LlmCall) {
       ? t("历史估算")
       : null;
   return <span className={styles.costCell}>
-    <span className={styles.costAmount}>{formatUsd(call.total_cost)}</span>
+    <span className={styles.costAmount}>{formatDisplayCost(call.total_cost, currency, cnyRate)}</span>
     {tag && <span className={styles.costTag}>{tag}</span>}
   </span>;
 }
 
-function costTitle(call: LlmCall): string | undefined {
+function costTitle(call: LlmCall, currency: DisplayCurrency, cnyRate: string | null): string | undefined {
   if (call.call_kind === "cursor_official") return t("Cursor 官方通道无法估算费用");
   if (call.cost_status === "incomplete_usage") return t("调用用量字段不完整");
   if (call.cost_status !== "priced" || call.total_cost == null) return t("该供应商模型尚未配置定价");
-  return t("总费用：{total}（输入 {input} · 输出 {output} · 缓存读 {read} · 缓存写 {write}）", {
-    total: formatUsdExact(call.total_cost),
-    input: formatUsdExact(call.input_cost),
-    output: formatUsdExact(call.output_cost),
-    read: formatUsdExact(call.cache_read_cost),
-    write: formatUsdExact(call.cache_write_cost),
+  const base = t("总费用：{total}（输入 {input} · 输出 {output} · 缓存读 {read} · 缓存写 {write}）", {
+    total: formatDisplayCostExact(call.total_cost, currency, cnyRate),
+    input: formatDisplayCostExact(call.input_cost, currency, cnyRate),
+    output: formatDisplayCostExact(call.output_cost, currency, cnyRate),
+    read: formatDisplayCostExact(call.cache_read_cost, currency, cnyRate),
+    write: formatDisplayCostExact(call.cache_write_cost, currency, cnyRate),
   });
+  const note = formatConversionNote(currency, cnyRate);
+  if (!note) return base;
+  return `${base}\n${t("原美元金额：{cost}", { cost: formatUsdExact(call.total_cost) })}\n${note}`;
 }
 
-export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (call: LlmCall) => void }) {
+export function CallTable({
+  calls,
+  onDetails,
+  serverPagination,
+  loading = false,
+  emptyText,
+}: {
+  calls: LlmCall[];
+  onDetails: (call: LlmCall) => void;
+  serverPagination?: ServerPagination;
+  loading?: boolean;
+  emptyText?: ReactNode;
+}) {
+  const { currency, cnyRate } = useAppStore();
   const columns: DataTableColumn<LlmCall>[] = [
     {
       key: "status",
@@ -79,8 +103,8 @@ export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (
     {
       key: "estimated_cost",
       header: t("估算费用"),
-      render: renderCost,
-      title: costTitle,
+      render: (call) => renderCost(call, currency, cnyRate),
+      title: (call) => costTitle(call, currency, cnyRate),
     },
     {
       key: "reasoning_effort",
@@ -222,5 +246,13 @@ export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (
       ),
     },
   ];
-  return <DataTable rows={calls} columns={columns} rowKey={(call) => call.call_id} minWidth={4340} />;
+  return <DataTable
+    rows={calls}
+    columns={columns}
+    rowKey={(call) => call.call_id}
+    minWidth={4340}
+    serverPagination={serverPagination}
+    loading={loading}
+    emptyText={emptyText}
+  />;
 }

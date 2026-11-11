@@ -17,11 +17,16 @@
     <script>
       (() => {
         try {
-          const theme = localStorage.getItem("cursor-byok.theme") === "default-light"
+          const saved = localStorage.getItem("cursor-byok.theme");
+          const prefersDark = typeof window.matchMedia === "function"
+            && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          const theme = saved === "default-light"
             ? "default-light"
-            : "default-dark";
+            : saved === "system"
+              ? (prefersDark ? "default-dark" : "default-light")
+              : "default-dark";
           const light = theme === "default-light";
-          const background = light ? "#fcfcfc" : "#141414";
+          const background = light ? "#f5f5f5" : "#141414";
           document.documentElement.dataset.theme = theme;
           document.documentElement.style.setProperty("--startup-background", background);
           document.documentElement.style.colorScheme = light ? "light" : "dark";

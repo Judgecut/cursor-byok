@@ -4,15 +4,26 @@
   min-width: 0;
 }
 
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--vscode-sideBar-border);
+}
+
 .list {
   display: flex;
   gap: 4px;
-  border-bottom: 1px solid var(--vscode-sideBar-border);
 }
 
 .tab {
   position: relative;
   min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 0 10px;
   color: var(--vscode-descriptionForeground);
   font-size: type.$font-size-base;
@@ -37,6 +48,25 @@
       background: var(--vscode-focusBorder);
     }
   }
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-sideBar-border);
+  border-radius: 99px;
+  font-family: var(--oa-number-font);
+  font-size: type.$font-size-2xs;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .panel {

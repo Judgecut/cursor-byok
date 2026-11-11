@@ -1,4 +1,6 @@
 //! Persists Cursor request traces and artifacts.
+use std::collections::HashMap;
+
 use sqlx::{Row, Sqlite, Transaction};
 
 use crate::{
@@ -281,16 +283,48 @@ impl Store {
             .transpose()
     }
 
-    pub async fn official_cursor_traces(&self, limit: i64) -> Result<Vec<CursorRunTraceSummary>> {
+    pub async fn count_official_cursor_traces(
+        &self,
+        start_ms: Option<i64>,
+        end_ms: Option<i64>,
+    ) -> Result<i64> {
+        let total: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM cursor_run_traces
+             WHERE route = 'cursor_official'
+               AND (? IS NULL OR received_at_ms >= ?)
+               AND (? IS NULL OR received_at_ms < ?)",
+        )
+        .bind(start_ms)
+        .bind(start_ms)
+        .bind(end_ms)
+        .bind(end_ms)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(total.max(0))
+    }
+
+    pub async fn official_cursor_traces_by_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<HashMap<String, CursorRunTraceSummary>> {
+        if request_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let ids_json = serde_json::to_string(request_ids)?;
         let rows = sqlx::query(
             "SELECT * FROM cursor_run_traces
              WHERE route = 'cursor_official'
-             ORDER BY received_at_ms DESC LIMIT ?",
+               AND request_id IN (SELECT value FROM json_each(?))",
         )
-        .bind(limit.clamp(1, 500))
+        .bind(ids_json)
         .fetch_all(&self.pool)
         .await?;
-        rows.into_iter().map(trace_from_row).collect()
+        rows.into_iter()
+            .map(|row| {
+                let trace = trace_from_row(row)?;
+                Ok((trace.request_id.clone(), trace))
+            })
+            .collect()
     }
 
     pub async fn cursor_trace_artifacts(

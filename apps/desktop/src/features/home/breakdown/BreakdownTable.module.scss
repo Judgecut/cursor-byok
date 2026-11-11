@@ -1,0 +1,225 @@
+@use "../../../styles/typography" as type;
+
+.card {
+  overflow: hidden;
+}
+
+.viewport {
+  width: 100%;
+}
+
+.content {
+  width: max-content;
+  min-width: 100%;
+}
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: type.$font-size-xs;
+
+  th,
+  td {
+    padding: 10px 12px;
+    text-align: right;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--vscode-sideBar-border);
+    background: var(--vscode-editorWidget-background);
+  }
+
+  th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    color: var(--vscode-descriptionForeground);
+    background: var(--vscode-editor-background);
+    font-weight: 500;
+  }
+
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  tbody tr:hover td {
+    background: var(--vscode-list-hoverBackground);
+  }
+}
+
+.stickyName,
+.stickyTotal {
+  position: sticky;
+  text-align: left !important;
+}
+
+.stickyName {
+  left: 0;
+  z-index: 2;
+  width: 220px;
+  min-width: 220px;
+  max-width: 220px;
+}
+
+.stickyTotal {
+  left: 220px;
+  z-index: 2;
+  width: 152px;
+  min-width: 152px;
+  max-width: 152px;
+  border-right: 1px solid var(--vscode-sideBar-border);
+}
+
+thead .stickyName,
+thead .stickyTotal {
+  z-index: 4;
+  background: var(--vscode-editor-background);
+}
+
+.entityCell {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.entityMain {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.entityName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.entitySub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--oa-code-font);
+  font-size: type.$font-size-2xs;
+}
+
+.totalCell {
+  display: grid;
+  gap: 5px;
+}
+
+.totalTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.totalValue {
+  font-family: var(--oa-number-font);
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.shareValue {
+  font-family: var(--oa-number-font);
+  font-size: type.$font-size-2xs;
+  color: var(--vscode-descriptionForeground);
+}
+
+.shareTrack {
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--vscode-descriptionForeground) 18%, transparent);
+  border-radius: 99px;
+}
+
+.shareFill {
+  height: 100%;
+  background: var(--vscode-focusBorder);
+  border-radius: 99px;
+  transition: width 160ms ease;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-sideBar-border);
+  border-radius: 99px;
+  font-size: type.$font-size-2xs;
+  font-weight: 400;
+}
+
+.badgeWarn {
+  color: var(--vscode-editorWarning-foreground, #e5c07b);
+  border-color: color-mix(in srgb, var(--vscode-editorWarning-foreground, #e5c07b) 40%, transparent);
+}
+
+.badgeActive {
+  color: var(--vscode-textLink-foreground);
+}
+
+.monoNum {
+  font-family: var(--oa-number-font);
+}
+
+.sortHeader {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--vscode-foreground);
+  }
+}
+
+.sortHeaderLeft {
+  justify-content: flex-start;
+}
+
+.sortMarker {
+  color: var(--vscode-descriptionForeground);
+}
+
+.subValue {
+  display: block;
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-2xs;
+}
+
+.empty {
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-xs;
+}
+
+@media (max-width: 560px) {
+  .stickyName {
+    width: 164px;
+    min-width: 164px;
+    max-width: 164px;
+  }
+
+  .stickyTotal {
+    left: 164px;
+    width: 128px;
+    min-width: 128px;
+    max-width: 128px;
+  }
+}

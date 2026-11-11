@@ -12,6 +12,8 @@ export type ContributionDay = {
 
 type ContributionCalendarChartProps = {
   data: ContributionDay[];
+  loading?: boolean;
+  error?: string | null;
 };
 
 type CalendarCell = ContributionDay & {
@@ -89,7 +91,7 @@ function buildCalendarLayout(data: ContributionDay[], locale: Locale) {
   return { cells, columnCount, monthTicks };
 }
 
-export function ContributionCalendarChart({ data }: ContributionCalendarChartProps) {
+export function ContributionCalendarChart({ data, loading = false, error = null }: ContributionCalendarChartProps) {
   const { locale } = useI18n();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -246,10 +248,33 @@ export function ContributionCalendarChart({ data }: ContributionCalendarChartPro
     scheduleDrawRef.current();
   }, [layout]);
 
-  if (!layout) return null;
+  if (error) {
+    return (
+      <section className={styles.root} aria-label={t("过去一年的 Token 用量")}>
+        <div className={styles.header}>
+          <span>{t("年度活动日历（固定最近 365 天，按当前供应商筛选）")}</span>
+        </div>
+        <div className={styles.state}>{t("日历数据加载失败：{error}", { error })}</div>
+      </section>
+    );
+  }
+
+  if (!layout) {
+    return (
+      <section className={styles.root} aria-label={t("过去一年的 Token 用量")}>
+        <div className={styles.header}>
+          <span>{t("年度活动日历（固定最近 365 天，按当前供应商筛选）")}</span>
+        </div>
+        <div className={styles.state}>{loading ? t("正在加载日历数据…") : t("暂无年度活动数据")}</div>
+      </section>
+    );
+  }
 
   return (
     <section className={styles.root} aria-label={t("过去一年的 Token 用量")}>
+      <div className={styles.header}>
+        <span>{t("年度活动日历（固定最近 365 天，按当前供应商筛选）")}</span>
+      </div>
       <div ref={scrollerRef} className={styles.scroller}>
         <div
           ref={canvasRef}

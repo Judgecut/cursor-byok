@@ -16,7 +16,8 @@
     <script>
       // 在应用样式加载前按主题参数铺底色，避免切换 poster 时闪出错误颜色
       (function () {
-        var light = new URLSearchParams(location.search).get("theme") === "default-light";
+        var theme = new URLSearchParams(location.search).get("theme");
+        var light = theme === "default-light" || (theme === "system" && typeof matchMedia === "function" && !matchMedia("(prefers-color-scheme: dark)").matches);
         document.documentElement.style.setProperty("--boot-bg", light ? "#f5f5f5" : "#141414");
         var meta = document.createElement("meta");
         meta.name = "theme-color";

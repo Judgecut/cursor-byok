@@ -283,7 +283,7 @@ mod overview {
 
     use crate::model::{SpeedSampleTotals, SpeedStatus};
 
-    #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+    #[derive(Clone, Debug, PartialEq, Serialize)]
     pub struct OverviewMetrics {
         pub llm_calls: i64,
         pub successful_calls: i64,
@@ -303,6 +303,7 @@ mod overview {
         pub priced_calls: i64,
         pub unpriced_calls: i64,
         pub incomplete_usage_calls: i64,
+        pub speed: SpeedAggregate,
     }
 
     impl Default for OverviewMetrics {
@@ -326,6 +327,7 @@ mod overview {
                 priced_calls: 0,
                 unpriced_calls: 0,
                 incomplete_usage_calls: 0,
+                speed: SpeedAggregate::default(),
             }
         }
     }
@@ -424,16 +426,35 @@ mod overview {
         }
     }
 
-    #[derive(Clone, Debug, PartialEq, Serialize)]
-    pub struct OverviewSupplierSummary {
-        pub supplier_key: String,
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+    pub struct OverviewActivityDay {
+        pub date: String,
+        pub token_usage: i64,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+    pub struct OverviewFilterSupplier {
+        pub supplier_id: String,
         pub source_kind: String,
         pub endpoint_key: String,
-        pub model_id: String,
         pub label: String,
         pub provider_type: String,
+        pub plugin_icon: Option<String>,
         pub active: bool,
-        pub pricing_source: String,
+        pub model_count: i64,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    pub struct OverviewSupplierBreakdown {
+        pub supplier_id: String,
+        pub source_kind: String,
+        pub endpoint_key: String,
+        pub label: String,
+        pub provider_type: String,
+        pub plugin_icon: Option<String>,
+        pub active: bool,
+        pub model_count: i64,
+        pub pricing_sources: Vec<String>,
         pub llm_calls: i64,
         pub successful_calls: i64,
         pub failed_calls: i64,
@@ -458,6 +479,8 @@ mod overview {
     #[derive(Clone, Debug, PartialEq, Serialize)]
     pub struct OverviewModelSummary {
         pub model_id: String,
+        pub supplier_count: i64,
+        pub pricing_sources: Vec<String>,
         pub llm_calls: i64,
         pub successful_calls: i64,
         pub failed_calls: i64,
@@ -477,7 +500,6 @@ mod overview {
         pub unpriced_calls: i64,
         pub incomplete_usage_calls: i64,
         pub speed: SpeedAggregate,
-        pub providers: Vec<OverviewSupplierSummary>,
     }
 
     #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -498,7 +520,10 @@ mod overview {
         pub metrics: OverviewMetrics,
         pub token_usage_granularity: TokenUsageGranularity,
         pub token_usage_series: Vec<TokenUsageBucket>,
+        pub activity_series: Vec<OverviewActivityDay>,
+        pub suppliers: Vec<OverviewSupplierBreakdown>,
         pub models: Vec<OverviewModelSummary>,
+        pub available_suppliers: Vec<OverviewFilterSupplier>,
         pub available_models: Vec<OverviewFilterModel>,
     }
 }

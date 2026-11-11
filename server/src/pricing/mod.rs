@@ -12,8 +12,8 @@ pub use calculator::{
 };
 pub use decimal::{canonicalize_custom_price, divide_nano_round_half_up, format_nano_usd};
 pub use identity::{
-    build_supplier_identity, canonical_supplier_identity, endpoint_host, normalize_endpoint_key,
-    SourceKind, SupplierIdentity,
+    build_supplier_identity, canonical_supplier_id, canonical_supplier_identity, endpoint_host,
+    normalize_endpoint_key, source_kind_for, SourceKind, SupplierIdentity,
 };
 pub use matcher::{
     parse_models_dev_catalog, resolve_supplier_pricing, BindingMode, CatalogMatchKind,

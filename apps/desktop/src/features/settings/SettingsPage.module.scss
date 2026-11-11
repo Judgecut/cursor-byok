@@ -79,11 +79,21 @@
   }
 }
 
+.themeSection {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+
+  small {
+    color: var(--vscode-descriptionForeground);
+    font-size: type.$font-size-xs;
+  }
+}
+
 .themeActions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 14px;
 
   button {
     min-height: 30px;
@@ -95,7 +105,101 @@
     background: var(--vscode-input-background);
     border: 1px solid var(--vscode-input-border);
     border-radius: 5px;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--vscode-list-hoverBackground);
+    }
   }
+}
+
+.currencySection {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.currencyRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+
+  > div:first-child {
+    display: grid;
+    gap: 5px;
+  }
+
+  small {
+    color: var(--vscode-descriptionForeground);
+    font-size: type.$font-size-xs;
+  }
+}
+
+.currencyActions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  button {
+    min-height: 30px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 11px;
+    color: var(--vscode-foreground);
+    background: var(--vscode-input-background);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 5px;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--vscode-list-hoverBackground);
+    }
+  }
+}
+
+.currencyRateBlock {
+  display: grid;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--vscode-sideBar-border);
+
+  small {
+    color: var(--vscode-descriptionForeground);
+    font-size: type.$font-size-xs;
+  }
+}
+
+.currencyRateHeader {
+  display: grid;
+  gap: 5px;
+}
+
+.currencyRateForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ratePrefix,
+.rateSuffix {
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-xs;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rateInputWrap {
+  width: 140px;
+  flex: 0 1 140px;
+}
+
+.rateError {
+  color: var(--vscode-errorForeground, #f48771);
+  font-size: type.$font-size-xs;
 }
 
 .languageControl {
@@ -151,13 +255,15 @@
     grid-template-columns: 1fr;
   }
 
-  .importRow {
+  .importRow,
+  .currencyRow {
     align-items: stretch;
     flex-direction: column;
   }
-
 }
 
-.themeActions .selected {
+.themeActions .selected,
+.currencyActions .selected {
   border-color: var(--vscode-focusBorder);
+  background: color-mix(in srgb, var(--vscode-focusBorder) 14%, var(--vscode-input-background));
 }

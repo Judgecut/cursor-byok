@@ -16,6 +16,7 @@ pub struct OverviewRange {
     start_ms: Option<i64>,
     end_ms: Option<i64>,
     supplier_keys: Option<String>,
+    suppliers: Option<String>,
     bucket_ms: Option<i64>,
 }
 
@@ -29,6 +30,7 @@ pub async fn get(
                 range.start_ms,
                 range.end_ms,
                 range.supplier_keys.as_deref(),
+                range.suppliers.as_deref(),
                 range.bucket_ms,
             )
             .await?,

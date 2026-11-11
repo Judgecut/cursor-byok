@@ -478,6 +478,7 @@ export interface OverviewMetrics {
   priced_calls: number;
   unpriced_calls: number;
   incomplete_usage_calls: number;
+  speed: SpeedAggregate;
 }
 
 export type TokenUsageGranularity = "minute" | "hour" | "day";
@@ -498,15 +499,32 @@ export interface OverviewTokenUsageBucket {
   incomplete_usage_calls: number;
 }
 
-export interface OverviewSupplierSummary {
-  supplier_key: string;
+export interface OverviewActivityDay {
+  date: string;
+  token_usage: number;
+}
+
+export interface OverviewFilterSupplier {
+  supplier_id: string;
   source_kind: SourceKind;
   endpoint_key: string;
-  model_id: string;
   label: string;
   provider_type: string;
+  plugin_icon: string | null;
   active: boolean;
-  pricing_source: PricingSource;
+  model_count: number;
+}
+
+export interface OverviewSupplierBreakdown {
+  supplier_id: string;
+  source_kind: SourceKind;
+  endpoint_key: string;
+  label: string;
+  provider_type: string;
+  plugin_icon: string | null;
+  active: boolean;
+  model_count: number;
+  pricing_sources: PricingSource[];
   llm_calls: number;
   successful_calls: number;
   failed_calls: number;
@@ -530,6 +548,8 @@ export interface OverviewSupplierSummary {
 
 export interface OverviewModelSummary {
   model_id: string;
+  supplier_count: number;
+  pricing_sources: PricingSource[];
   llm_calls: number;
   successful_calls: number;
   failed_calls: number;
@@ -549,7 +569,6 @@ export interface OverviewModelSummary {
   unpriced_calls: number;
   incomplete_usage_calls: number;
   speed: SpeedAggregate;
-  providers: OverviewSupplierSummary[];
 }
 
 export interface OverviewFilterModel {
@@ -568,8 +587,16 @@ export interface Overview {
   metrics: OverviewMetrics;
   token_usage_granularity: TokenUsageGranularity;
   token_usage_series: OverviewTokenUsageBucket[];
+  activity_series: OverviewActivityDay[];
+  suppliers: OverviewSupplierBreakdown[];
   models: OverviewModelSummary[];
+  available_suppliers: OverviewFilterSupplier[];
   available_models: OverviewFilterModel[];
+}
+
+export interface CallListResult {
+  items: LlmCall[];
+  total: number;
 }
 
 export interface LlmCall {
@@ -718,16 +745,26 @@ export const api = {
   deleteModel: (hash: string) => request<void>(`/models/${hash}`, { method: "DELETE" }),
   testModel: (hash: string, testId: string, signal?: AbortSignal) => request<ModelConnectivityResult>(`/models/${encodeURIComponent(hash)}/test/${encodeURIComponent(testId)}`, { method: "POST", signal }),
   cancelModelTest: (hash: string, testId: string) => request<void>(`/models/${encodeURIComponent(hash)}/test/${encodeURIComponent(testId)}`, { method: "DELETE" }),
-  overview: (filter?: { startMs: number; endMs: number; supplierKeys?: string[]; bucketMs?: number }) => {
+  overview: (
+    filter?: {
+      startMs?: number;
+      endMs?: number;
+      suppliers?: string[];
+      supplierKeys?: string[];
+      bucketMs?: number;
+    },
+    init?: { signal?: AbortSignal },
+  ) => {
     const params = new URLSearchParams();
-    if (filter) {
+    if (filter?.startMs != null && filter?.endMs != null) {
       params.set("start_ms", String(filter.startMs));
       params.set("end_ms", String(filter.endMs));
-      if (filter.supplierKeys?.length) params.set("supplier_keys", JSON.stringify(filter.supplierKeys));
-      if (filter.bucketMs) params.set("bucket_ms", String(filter.bucketMs));
     }
+    if (filter?.suppliers?.length) params.set("suppliers", JSON.stringify(filter.suppliers));
+    if (filter?.supplierKeys?.length) params.set("supplier_keys", JSON.stringify(filter.supplierKeys));
+    if (filter?.bucketMs) params.set("bucket_ms", String(filter.bucketMs));
     const query = params.toString();
-    return request<Overview>(`/overview${query ? `?${query}` : ""}`);
+    return request<Overview>(`/overview${query ? `?${query}` : ""}`, init);
   },
   cursorHarness: () => request<CursorHarnessStatus>("/harness/cursor/status"),
   initializeCursorCa: () => request<CursorHarnessStatus>("/harness/cursor/ca/initialize", { method: "POST" }),
@@ -756,7 +793,29 @@ export const api = {
     await writeText(text);
   },
   setCursorEnabled: (enabled: boolean) => request<CursorHarnessStatus>("/harness/cursor/enabled", { method: "PUT", body: JSON.stringify({ enabled }) }),
-  calls: () => request<LlmCall[]>("/llm-calls?limit=200"),
+  calls: (
+    filter?: {
+      startMs?: number;
+      endMs?: number;
+      suppliers?: string[];
+      supplierKeys?: string[];
+      limit?: number;
+      offset?: number;
+    },
+    init?: { signal?: AbortSignal },
+  ) => {
+    const params = new URLSearchParams();
+    if (filter?.startMs != null && filter?.endMs != null) {
+      params.set("start_ms", String(filter.startMs));
+      params.set("end_ms", String(filter.endMs));
+    }
+    if (filter?.suppliers?.length) params.set("suppliers", JSON.stringify(filter.suppliers));
+    if (filter?.supplierKeys?.length) params.set("supplier_keys", JSON.stringify(filter.supplierKeys));
+    if (filter?.limit != null) params.set("limit", String(filter.limit));
+    if (filter?.offset != null) params.set("offset", String(filter.offset));
+    const query = params.toString();
+    return request<CallListResult>(`/llm-calls${query ? `?${query}` : ""}`, init);
+  },
   call: (id: string) => request<CallDetail>(`/llm-calls/${encodeURIComponent(id)}`),
   openCallDetails: async (id: string) => {
     const url = new URL(window.location.href);

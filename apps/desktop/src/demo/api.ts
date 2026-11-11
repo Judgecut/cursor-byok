@@ -1,5 +1,6 @@
 import type {
   CallDetail,
+  CallListResult,
   CallPerformance,
   CatalogModel,
   CatalogProviderOption,
@@ -9,11 +10,15 @@ import type {
   LlmCall,
   Model,
   Overview,
+  OverviewActivityDay,
   OverviewFilterModel,
+  OverviewFilterSupplier,
+  OverviewMetrics,
   OverviewModelSummary,
-  OverviewSupplierSummary,
+  OverviewSupplierBreakdown,
   OverviewTokenUsageBucket,
   PricingRates,
+  PricingSource,
   PricingSyncState,
   ProxySettings,
   SaveSupplierPricingInput,
@@ -25,7 +30,11 @@ import type {
 } from "../shared/api";
 
 const API_ROOT = "/__byok-api__/api";
-const FIXED_NOW = Date.UTC(2026, 7, 27, 8, 0, 0);
+const DEMO_NOW = Date.now();
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+const MAX_RANGE_BUCKETS = 60;
 
 const models: Model[] = [
   createModel({ hash: "mock-claude-sonnet", order: 1, name: "Claude Sonnet 4", type: "anthropic", url: "https://api.anthropic.com", modelId: "claude-sonnet-4-20250514" }),
@@ -72,22 +81,51 @@ function catalogEntry(
   model_name: string,
   rates: PricingRates,
 ): CatalogModel {
-  return { provider_id, provider_name, provider_api, model_id, model_name, rates, synced_at_ms: FIXED_NOW - 30 * 60_000 };
+  return { provider_id, provider_name, provider_api, model_id, model_name, rates, synced_at_ms: DEMO_NOW - 30 * MINUTE_MS };
+}
+
+function supplierIdForEndpoint(sourceKind: "builtin" | "plugin", endpointKey: string): string {
+  return `${sourceKind}::${endpointKey}`;
+}
+
+function supplierIdForModel(model: Model): string {
+  return supplierIdForEndpoint("builtin", model.base_url);
 }
 
 function supplierKeyFor(model: Model): string {
   return `builtin::${model.base_url}::${model.model_id}`;
 }
 
-const calls: LlmCall[] = Array.from({ length: 24 }, (_, index) => {
+function supplierIdOfCall(call: LlmCall): string {
+  const sourceKind = call.provider_type === "plugin" || call.endpoint_key?.startsWith("plugin://") ? "plugin" : "builtin";
+  const endpointKey = call.endpoint_key || call.provider_url;
+  return supplierIdForEndpoint(sourceKind, endpointKey);
+}
+
+function endpointLabel(endpointKey: string): string {
+  try {
+    return new URL(endpointKey).hostname.toLowerCase();
+  } catch {
+    return endpointKey;
+  }
+}
+
+function timestampForCall(index: number): number {
+  if (index < 6) return DEMO_NOW - (index + 1) * MINUTE_MS;
+  if (index < 18) return DEMO_NOW - (index - 4) * 5 * MINUTE_MS;
+  if (index < 36) return DEMO_NOW - (index - 15) * HOUR_MS;
+  return DEMO_NOW - (index - 34) * 14 * HOUR_MS;
+}
+
+const calls: LlmCall[] = Array.from({ length: 84 }, (_, index) => {
   const model = models[index % models.length];
-  const failed = index === 7 || index === 19;
+  const failed = index % 17 === 7;
   const catalog = DEMO_CATALOG.find((item) => item.model_id === model.model_id);
-  const billedInput = 4_800 + index * 337;
-  const outputTokens = failed ? 0 : 820 + index * 43;
-  const cacheReadTokens = 3_100 + index * 251;
-  const cacheWriteTokens = 320 + index * 19;
-  const pricingSource = catalog ? "catalog" : "unpriced";
+  const billedInput = 1_200 + (index % 11) * 340;
+  const outputTokens = failed ? 0 : 760 + (index % 9) * 135;
+  const cacheReadTokens = index % 13 === 0 ? 0 : 95_000 + (index % 7) * 12_500;
+  const cacheWriteTokens = index % 3 === 0 ? 480 + (index % 5) * 90 : 0;
+  const pricingSource: PricingSource = catalog ? (index % 9 === 0 ? "custom" : "catalog") : "unpriced";
   const costStatus = catalog ? "priced" : "unpriced";
   const inputCost = catalog ? formatNano(mulRate(billedInput, catalog.rates.input_per_million)) : null;
   const outputCost = catalog ? formatNano(mulRate(outputTokens, catalog.rates.output_per_million)) : null;
@@ -99,6 +137,8 @@ const calls: LlmCall[] = Array.from({ length: 24 }, (_, index) => {
       + mulRate(cacheReadTokens, catalog.rates.cache_read_per_million)
       + mulRate(cacheWriteTokens, catalog.rates.cache_write_per_million)
     : null;
+  const firstOutputMs = 380 + (index % 8) * 145;
+  const generationMs = failed ? null : 4_800 + (index % 7) * 980;
 
   return {
     call_kind: "provider_llm",
@@ -120,28 +160,28 @@ const calls: LlmCall[] = Array.from({ length: 24 }, (_, index) => {
     fast: index % 3 === 0,
     status: failed ? "failed" : "completed",
     finish_reason: failed ? null : "stop",
-    created_at_ms: FIXED_NOW - index * 3 * 60_000,
-    ttfb_ms: 210 + index * 13,
-    ttfr_ms: 290 + index * 15,
-    ttft_ms: 370 + index * 17,
-    ttfo_ms: 418 + index * 9,
-    duration_ms: failed ? 812 : 1_420 + index * 71,
-    generation_ms: failed ? null : 1_002 + index * 62,
+    created_at_ms: timestampForCall(index),
+    ttfb_ms: 190 + (index % 6) * 24,
+    ttfr_ms: 260 + (index % 6) * 28,
+    ttft_ms: 340 + (index % 6) * 32,
+    ttfo_ms: firstOutputMs,
+    duration_ms: failed ? 812 : firstOutputMs + (generationMs ?? 0),
+    generation_ms: generationMs,
     streaming: true,
     call_origin: "run" as const,
     observed_thinking: index % 2 === 0,
-    performance: mockPerformance(outputTokens, 418 + index * 9, failed ? null : 1_002 + index * 62, failed),
+    performance: mockPerformance(outputTokens, firstOutputMs, generationMs, failed),
     input_tokens: model.type === "anthropic" ? billedInput : billedInput + cacheReadTokens + cacheWriteTokens,
     billed_input_tokens: billedInput,
     output_tokens: outputTokens,
     total_tokens: failed ? billedInput : billedInput + outputTokens + cacheReadTokens + cacheWriteTokens,
     cache_read_tokens: cacheReadTokens,
     cache_write_tokens: cacheWriteTokens,
-    reasoning_tokens: index % 2 === 0 ? 420 + index * 11 : null,
+    reasoning_tokens: index % 2 === 0 ? 420 + (index % 5) * 45 : null,
     pricing_source: pricingSource,
     pricing_provider_id: catalog?.provider_id ?? null,
     pricing_model_id: catalog?.model_id ?? null,
-    pricing_snapshot_at_ms: FIXED_NOW - 30 * 60_000,
+    pricing_snapshot_at_ms: DEMO_NOW - 30 * MINUTE_MS,
     unit_input_per_million: catalog?.rates.input_per_million ?? null,
     unit_output_per_million: catalog?.rates.output_per_million ?? null,
     unit_cache_read_per_million: catalog?.rates.cache_read_per_million ?? null,
@@ -152,7 +192,7 @@ const calls: LlmCall[] = Array.from({ length: 24 }, (_, index) => {
     cache_read_cost: cacheReadCost,
     cache_write_cost: cacheWriteCost,
     total_cost: totalNano == null ? null : formatNano(totalNano),
-    cost_calculated_at_ms: FIXED_NOW - index * 3 * 60_000,
+    cost_calculated_at_ms: timestampForCall(index),
     cost_backfilled: index % 5 === 0,
     message_count: 14 + (index % 8),
     tool_count: 3 + (index % 5),
@@ -167,14 +207,14 @@ let pricingSyncState: PricingSyncState = {
   auto_sync_enabled: true,
   sync_interval_hours: 6,
   catalog_model_count: DEMO_CATALOG.length,
-  last_attempted_at_ms: FIXED_NOW - 30 * 60_000,
-  last_synced_at_ms: FIXED_NOW - 30 * 60_000,
+  last_attempted_at_ms: DEMO_NOW - 30 * MINUTE_MS,
+  last_synced_at_ms: DEMO_NOW - 30 * MINUTE_MS,
   last_error: null,
   syncing: false,
   backfilling: false,
 };
 
-let pricingConfigs = new Map<string, SaveSupplierPricingInput>();
+const pricingConfigs = new Map<string, SaveSupplierPricingInput>();
 
 let harnessStatus: CursorHarnessStatus = {
   platform: "macos",
@@ -213,6 +253,18 @@ export function installDemoApi() {
     const body = await readBody(input, init);
 
     if (path === "/promotions") return json({ slots: [] });
+    if (path === "/plugins/runtime" && method === "GET") {
+      return json({
+        state: "unsupported",
+        version: "0.0.0",
+        target: null,
+        phase: null,
+        downloaded_bytes: 0,
+        total_bytes: null,
+        error: null,
+      });
+    }
+    if (path === "/plugins" && method === "GET") return json([]);
     if (path === "/models" && method === "GET") return json(models);
     if (path === "/models" && method === "POST") return json(models);
     if (path === "/models/order") return json(models);
@@ -228,7 +280,7 @@ export function installDemoApi() {
       return method === "DELETE" ? empty() : json(models[0]);
     }
     if (path === "/overview") return json(createOverview(url.searchParams));
-    if (path === "/llm-calls") return json(calls);
+    if (path === "/llm-calls") return json(listCalls(url.searchParams));
     if (path.startsWith("/llm-calls/")) return json(createCallDetail(path.slice("/llm-calls/".length)));
     if (path === "/pricing/catalog" && method === "GET") return json(searchCatalog(url.searchParams));
     if (path === "/pricing/models" && method === "GET") return json(buildSupplierPricingViews());
@@ -250,7 +302,7 @@ export function installDemoApi() {
       return json(pricingSyncState);
     }
     if (path === "/pricing/sync" && method === "POST") {
-      pricingSyncState = { ...pricingSyncState, last_attempted_at_ms: FIXED_NOW, last_synced_at_ms: FIXED_NOW, last_error: null };
+      pricingSyncState = { ...pricingSyncState, last_attempted_at_ms: DEMO_NOW, last_synced_at_ms: DEMO_NOW, last_error: null };
       return json(pricingSyncState);
     }
     if (path === "/harness/cursor/status") return json(harnessStatus);
@@ -296,6 +348,9 @@ export function installDemoApi() {
     if (path === "/settings/tab") {
       tabSettings = body as TabSettings;
       return json(tabSettings);
+    }
+    if (path === "/settings/commit") {
+      return json({ model_id: "", prompt: "", prompt_locale: "zh", default_prompt: "" });
     }
     if (path === "/settings/desktop" && method === "GET") return json({ silent_start: false, show_dock_icon: true });
     if (path === "/settings/desktop") return json(body);
@@ -372,7 +427,7 @@ function buildSupplierPricingViews(): SupplierPricingView[] {
       custom_rates: customRates,
       effective_source: effectiveSource,
       effective_rates: effectiveRates,
-      updated_at_ms: saved ? FIXED_NOW : null,
+      updated_at_ms: saved ? DEMO_NOW : null,
     };
   });
 }
@@ -410,40 +465,295 @@ function createModel({ hash, order, name, type, url, modelId, endpoint = "/v1/re
     anthropic_max_tokens: type === "anthropic" ? 32_000 : null,
     anthropic_thinking_effort: type === "anthropic" ? "high" : null,
     thinking_budget_tokens: null,
-    created_at_ms: FIXED_NOW - order * 86_400_000,
-    updated_at_ms: FIXED_NOW,
+    created_at_ms: DEMO_NOW - order * DAY_MS,
+    updated_at_ms: DEMO_NOW,
+  };
+}
+
+function parseJsonStringSet(raw: string | null): Set<string> | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    const values = parsed.filter((item): item is string => typeof item === "string" && item.length > 0);
+    return values.length > 0 ? new Set(values) : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseOptionalInt(raw: string | null): number | null {
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function filterDemoCalls(
+  startMs: number | null,
+  endMs: number | null,
+  supplierIds: Set<string> | null,
+  supplierKeys: Set<string> | null,
+): LlmCall[] {
+  return calls.filter((call) => {
+    if (startMs != null && call.created_at_ms < startMs) return false;
+    if (endMs != null && call.created_at_ms >= endMs) return false;
+    if (supplierIds && !supplierIds.has(supplierIdOfCall(call))) return false;
+    if (supplierKeys && (!call.supplier_key || !supplierKeys.has(call.supplier_key))) return false;
+    return true;
+  });
+}
+
+function listCalls(params: URLSearchParams): CallListResult {
+  const startMs = parseOptionalInt(params.get("start_ms"));
+  const endMs = parseOptionalInt(params.get("end_ms"));
+  const supplierIds = parseJsonStringSet(params.get("suppliers"));
+  const supplierKeys = parseJsonStringSet(params.get("supplier_keys"));
+  const limit = Math.max(1, Math.min(200, parseOptionalInt(params.get("limit")) ?? 200));
+  const offset = Math.max(0, parseOptionalInt(params.get("offset")) ?? 0);
+
+  const filtered = filterDemoCalls(startMs, endMs, supplierIds, supplierKeys)
+    .slice()
+    .sort((left, right) => right.created_at_ms - left.created_at_ms || right.call_id.localeCompare(left.call_id));
+
+  return {
+    items: filtered.slice(offset, offset + limit),
+    total: filtered.length,
+  };
+}
+
+function aggregateCallStats(matchingCalls: LlmCall[]): Omit<OverviewMetrics, "speed"> & { speed: SpeedAggregate } {
+  let llmCalls = 0;
+  let successfulCalls = 0;
+  let failedCalls = 0;
+  let inputTokens = 0;
+  let cacheReadTokens = 0;
+  let cacheWriteTokens = 0;
+  let outputTokens = 0;
+  let inputNano = 0;
+  let outputNano = 0;
+  let cacheReadNano = 0;
+  let cacheWriteNano = 0;
+  let totalNano = 0;
+  let pricedCalls = 0;
+  let unpricedCalls = 0;
+  let incompleteCalls = 0;
+
+  for (const call of matchingCalls) {
+    llmCalls += 1;
+    if (call.status === "completed") successfulCalls += 1;
+    else failedCalls += 1;
+    inputTokens += call.billed_input_tokens ?? call.input_tokens ?? 0;
+    cacheReadTokens += call.cache_read_tokens ?? 0;
+    cacheWriteTokens += call.cache_write_tokens ?? 0;
+    outputTokens += call.output_tokens ?? 0;
+
+    if (call.cost_status === "priced") {
+      pricedCalls += 1;
+      inputNano += toNano(call.input_cost);
+      outputNano += toNano(call.output_cost);
+      cacheReadNano += toNano(call.cache_read_cost);
+      cacheWriteNano += toNano(call.cache_write_cost);
+      totalNano += toNano(call.total_cost);
+    } else if (call.cost_status === "incomplete_usage") {
+      incompleteCalls += 1;
+    } else {
+      unpricedCalls += 1;
+    }
+  }
+
+  const promptTokens = inputTokens + cacheReadTokens + cacheWriteTokens;
+  return {
+    llm_calls: llmCalls,
+    successful_calls: successfulCalls,
+    failed_calls: failedCalls,
+    token_usage: promptTokens + outputTokens,
+    prompt_tokens: promptTokens,
+    input_tokens: inputTokens,
+    cache_read_tokens: cacheReadTokens,
+    cache_write_tokens: cacheWriteTokens,
+    output_tokens: outputTokens,
+    total_cost: formatNano(totalNano),
+    input_cost: formatNano(inputNano),
+    output_cost: formatNano(outputNano),
+    cache_read_cost: formatNano(cacheReadNano),
+    cache_write_cost: formatNano(cacheWriteNano),
+    average_priced_cost: pricedCalls > 0 ? formatNano(Math.round(totalNano / pricedCalls)) : null,
+    priced_calls: pricedCalls,
+    unpriced_calls: unpricedCalls,
+    incomplete_usage_calls: incompleteCalls,
+    speed: mockAggregate(matchingCalls),
   };
 }
 
 function createOverview(params: URLSearchParams): Overview {
-  const start = Number(params.get("start_ms"));
-  const end = Number(params.get("end_ms"));
-  const rawSupplierKeys = params.get("supplier_keys");
-  const filterKeys = rawSupplierKeys ? new Set(JSON.parse(rawSupplierKeys) as string[]) : null;
-  const selectedModels = filterKeys?.size ? models.filter((m) => filterKeys.has(supplierKeyFor(m))) : models;
-  const duration = Number.isFinite(start) && Number.isFinite(end) && end > start ? end - start : 365 * 86_400_000;
-  const granularity = duration <= 2 * 60 * 60_000 ? "minute" : duration <= 2 * 86_400_000 ? "hour" : "day";
-  const step = granularity === "minute" ? 60_000 : granularity === "hour" ? 3_600_000 : 86_400_000;
-  const count = granularity === "minute" ? Math.min(60, Math.max(10, Math.ceil(duration / step))) : granularity === "hour" ? Math.min(24, Math.max(8, Math.ceil(duration / step))) : Math.min(365, Math.max(7, Math.ceil(duration / step)));
-  const series = createSeries(count, step, Number.isFinite(end) && end > 0 ? end : FIXED_NOW);
+  const startMs = parseOptionalInt(params.get("start_ms"));
+  const endMs = parseOptionalInt(params.get("end_ms"));
+  const supplierIds = parseJsonStringSet(params.get("suppliers"));
+  const supplierKeys = parseJsonStringSet(params.get("supplier_keys"));
 
-  const modelSummaries = createModelSummaries(selectedModels);
-  const totals = series.reduce((sum, bucket) => ({
-    input: sum.input + bucket.input_tokens,
-    cacheRead: sum.cacheRead + bucket.cache_read_tokens,
-    cacheWrite: sum.cacheWrite + bucket.cache_write_tokens,
-    output: sum.output + bucket.output_tokens,
-    inputNano: sum.inputNano + toNano(bucket.input_cost),
-    outputNano: sum.outputNano + toNano(bucket.output_cost),
-    cacheReadNano: sum.cacheReadNano + toNano(bucket.cache_read_cost),
-    cacheWriteNano: sum.cacheWriteNano + toNano(bucket.cache_write_cost),
-    totalNano: sum.totalNano + toNano(bucket.total_cost),
-    priced: sum.priced + bucket.priced_calls,
-    unpriced: sum.unpriced + bucket.unpriced_calls,
-    incomplete: sum.incomplete + bucket.incomplete_usage_calls,
-  }), { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, inputNano: 0, outputNano: 0, cacheReadNano: 0, cacheWriteNano: 0, totalNano: 0, priced: 0, unpriced: 0, incomplete: 0 });
-  const llmCalls = Math.max(selectedModels.length, totals.priced + totals.unpriced + totals.incomplete);
-  const failedCalls = Math.max(0, Math.floor(llmCalls * 0.008));
+  const matchingCalls = filterDemoCalls(startMs, endMs, supplierIds, supplierKeys);
+  const metrics = aggregateCallStats(matchingCalls);
+
+  const rangeEnd = endMs ?? DEMO_NOW;
+  const rangeStart = startMs ?? (rangeEnd - 30 * DAY_MS);
+  const spanMs = Math.max(MINUTE_MS, rangeEnd - rangeStart);
+  const granularity: Overview["token_usage_granularity"] =
+    spanMs <= 2 * HOUR_MS ? "minute" : spanMs <= 2 * DAY_MS ? "hour" : "day";
+  const baseStep = granularity === "minute" ? MINUTE_MS : granularity === "hour" ? HOUR_MS : DAY_MS;
+  const stepCount = Math.max(1, Math.ceil(spanMs / baseStep));
+  const bucketMs = stepCount > MAX_RANGE_BUCKETS
+    ? Math.max(baseStep, Math.ceil(stepCount / MAX_RANGE_BUCKETS) * baseStep)
+    : baseStep;
+  const seriesStart = Math.floor(rangeStart / bucketMs) * bucketMs;
+  const seriesEnd = Math.floor(Math.max(rangeStart, rangeEnd - 1) / bucketMs) * bucketMs;
+
+  const bucketMap = new Map<number, OverviewTokenUsageBucket>();
+  for (let start = seriesStart; start <= seriesEnd; start += bucketMs) {
+    bucketMap.set(start, {
+      bucket_start_ms: start,
+      input_tokens: 0,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      output_tokens: 0,
+      input_cost: "0",
+      output_cost: "0",
+      cache_read_cost: "0",
+      cache_write_cost: "0",
+      total_cost: "0",
+      priced_calls: 0,
+      unpriced_calls: 0,
+      incomplete_usage_calls: 0,
+    });
+  }
+  const bucketNano = new Map<number, { input: number; output: number; cacheRead: number; cacheWrite: number; total: number }>();
+  for (const call of matchingCalls) {
+    const bucketStart = Math.floor(call.created_at_ms / bucketMs) * bucketMs;
+    const bucket = bucketMap.get(bucketStart);
+    if (!bucket) continue;
+    bucket.input_tokens += call.billed_input_tokens ?? call.input_tokens ?? 0;
+    bucket.cache_read_tokens += call.cache_read_tokens ?? 0;
+    bucket.cache_write_tokens += call.cache_write_tokens ?? 0;
+    bucket.output_tokens += call.output_tokens ?? 0;
+    const nano = bucketNano.get(bucketStart) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+    if (call.cost_status === "priced") {
+      bucket.priced_calls += 1;
+      nano.input += toNano(call.input_cost);
+      nano.output += toNano(call.output_cost);
+      nano.cacheRead += toNano(call.cache_read_cost);
+      nano.cacheWrite += toNano(call.cache_write_cost);
+      nano.total += toNano(call.total_cost);
+    } else if (call.cost_status === "incomplete_usage") {
+      bucket.incomplete_usage_calls += 1;
+    } else {
+      bucket.unpriced_calls += 1;
+    }
+    bucketNano.set(bucketStart, nano);
+  }
+  const tokenUsageSeries: OverviewTokenUsageBucket[] = [...bucketMap.values()].map((bucket) => {
+    const nano = bucketNano.get(bucket.bucket_start_ms);
+    return nano
+      ? {
+          ...bucket,
+          input_cost: formatNano(nano.input),
+          output_cost: formatNano(nano.output),
+          cache_read_cost: formatNano(nano.cacheRead),
+          cache_write_cost: formatNano(nano.cacheWrite),
+          total_cost: formatNano(nano.total),
+        }
+      : bucket;
+  });
+
+  // Activity calendar uses fixed 365-day window under supplier selection only.
+  const activityCalls = filterDemoCalls(null, null, supplierIds, supplierKeys);
+  const tokensByDate = new Map<string, number>();
+  for (const call of activityCalls) {
+    const d = new Date(call.created_at_ms);
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    const billedInput = call.billed_input_tokens ?? call.input_tokens ?? 0;
+    const cacheRead = call.cache_read_tokens ?? 0;
+    const cacheWrite = call.cache_write_tokens ?? 0;
+    const output = call.output_tokens ?? 0;
+    tokensByDate.set(key, (tokensByDate.get(key) ?? 0) + billedInput + cacheRead + cacheWrite + output);
+  }
+  const activitySeries: OverviewActivityDay[] = [];
+  const todayUtc = new Date(DEMO_NOW);
+  todayUtc.setUTCHours(0, 0, 0, 0);
+  for (let offset = 364; offset >= 0; offset -= 1) {
+    const day = new Date(todayUtc.getTime() - offset * DAY_MS);
+    const date = `${day.getUTCFullYear()}-${String(day.getUTCMonth() + 1).padStart(2, "0")}-${String(day.getUTCDate()).padStart(2, "0")}`;
+    activitySeries.push({ date, token_usage: tokensByDate.get(date) ?? 0 });
+  }
+
+  // Complete supplier metadata from configured models.
+  const supplierMeta = new Map<string, OverviewFilterSupplier>();
+  for (const model of models) {
+    const supplierId = supplierIdForModel(model);
+    const existing = supplierMeta.get(supplierId);
+    if (existing) {
+      existing.model_count += 1;
+    } else {
+      supplierMeta.set(supplierId, {
+        supplier_id: supplierId,
+        source_kind: "builtin",
+        endpoint_key: model.base_url,
+        label: endpointLabel(model.base_url),
+        provider_type: model.type,
+        plugin_icon: null,
+        active: true,
+        model_count: 1,
+      });
+    }
+  }
+  const availableSuppliers = [...supplierMeta.values()].sort((a, b) => a.label.localeCompare(b.label));
+
+  // Cross-model supplier breakdowns.
+  const callsBySupplier = new Map<string, LlmCall[]>();
+  for (const call of matchingCalls) {
+    const sid = supplierIdOfCall(call);
+    const group = callsBySupplier.get(sid);
+    if (group) group.push(call);
+    else callsBySupplier.set(sid, [call]);
+  }
+  const suppliers: OverviewSupplierBreakdown[] = [...callsBySupplier.entries()]
+    .map(([supplierId, supplierCalls]) => {
+      const stats = aggregateCallStats(supplierCalls);
+      const meta = supplierMeta.get(supplierId);
+      const pricingSources = [...new Set(supplierCalls.map((c) => c.pricing_source).filter((s): s is PricingSource => s != null))];
+      const sample = supplierCalls[0];
+      return {
+        supplier_id: supplierId,
+        source_kind: meta?.source_kind ?? "builtin",
+        endpoint_key: meta?.endpoint_key ?? (sample.endpoint_key || sample.provider_url),
+        label: meta?.label ?? endpointLabel(sample.endpoint_key || sample.provider_url),
+        provider_type: meta?.provider_type ?? sample.provider_type,
+        plugin_icon: meta?.plugin_icon ?? null,
+        active: meta?.active ?? false,
+        model_count: new Set(supplierCalls.map((c) => c.model_id)).size,
+        pricing_sources: pricingSources,
+        ...stats,
+      };
+    })
+    .sort((left, right) => right.token_usage - left.token_usage || left.label.localeCompare(right.label));
+
+  // Cross-supplier model summaries.
+  const callsByModel = new Map<string, LlmCall[]>();
+  for (const call of matchingCalls) {
+    const group = callsByModel.get(call.model_id);
+    if (group) group.push(call);
+    else callsByModel.set(call.model_id, [call]);
+  }
+  const modelSummaries: OverviewModelSummary[] = [...callsByModel.entries()]
+    .map(([modelId, modelCalls]) => {
+      const stats = aggregateCallStats(modelCalls);
+      const pricingSources = [...new Set(modelCalls.map((c) => c.pricing_source).filter((s): s is PricingSource => s != null))];
+      return {
+        model_id: modelId,
+        supplier_count: new Set(modelCalls.map((c) => supplierIdOfCall(c))).size,
+        pricing_sources: pricingSources,
+        ...stats,
+      };
+    })
+    .sort((left, right) => right.token_usage - left.token_usage || left.model_id.localeCompare(right.model_id));
 
   const availableModels: OverviewFilterModel[] = models.map((model) => ({
     supplier_key: supplierKeyFor(model),
@@ -451,151 +761,22 @@ function createOverview(params: URLSearchParams): Overview {
     endpoint_key: model.base_url,
     model_id: model.model_id,
     label: model.display_name,
-    group: new URL(model.base_url).hostname.toLowerCase(),
+    group: endpointLabel(model.base_url),
     provider_type: model.type,
     plugin_icon: null,
     active: true,
   }));
 
   return {
-    metrics: {
-      llm_calls: llmCalls,
-      successful_calls: llmCalls - failedCalls,
-      failed_calls: failedCalls,
-      token_usage: totals.input + totals.cacheRead + totals.cacheWrite + totals.output,
-      prompt_tokens: totals.input + totals.cacheRead + totals.cacheWrite,
-      input_tokens: totals.input,
-      cache_read_tokens: totals.cacheRead,
-      cache_write_tokens: totals.cacheWrite,
-      output_tokens: totals.output,
-      total_cost: formatNano(totals.totalNano),
-      input_cost: formatNano(totals.inputNano),
-      output_cost: formatNano(totals.outputNano),
-      cache_read_cost: formatNano(totals.cacheReadNano),
-      cache_write_cost: formatNano(totals.cacheWriteNano),
-      average_priced_cost: totals.priced > 0 ? formatNano(Math.round(totals.totalNano / totals.priced)) : null,
-      priced_calls: totals.priced,
-      unpriced_calls: totals.unpriced,
-      incomplete_usage_calls: totals.incomplete,
-    },
+    metrics,
     token_usage_granularity: granularity,
-    token_usage_series: series,
+    token_usage_series: tokenUsageSeries,
+    activity_series: activitySeries,
+    suppliers,
     models: modelSummaries,
+    available_suppliers: availableSuppliers,
     available_models: availableModels,
   };
-}
-
-function createModelSummaries(selected: Model[]): OverviewModelSummary[] {
-  const byModel = new Map<string, OverviewSupplierSummary[]>();
-  const views = new Map(buildSupplierPricingViews().map((view) => [view.supplier_key, view]));
-  for (const model of selected) {
-    const key = supplierKeyFor(model);
-    const matchingCalls = calls.filter((c) => c.supplier_key === key);
-    const llmCalls = Math.max(1, matchingCalls.length);
-    const failed = matchingCalls.filter((c) => c.status !== "completed").length;
-    const input = matchingCalls.reduce((s, c) => s + (c.billed_input_tokens ?? 0), 0) || 4_800;
-    const cacheRead = matchingCalls.reduce((s, c) => s + (c.cache_read_tokens ?? 0), 0) || 3_100;
-    const cacheWrite = matchingCalls.reduce((s, c) => s + (c.cache_write_tokens ?? 0), 0) || 320;
-    const output = matchingCalls.reduce((s, c) => s + (c.output_tokens ?? 0), 0) || 820;
-    const priced = matchingCalls.filter((c) => c.cost_status === "priced").length;
-    const unpriced = matchingCalls.filter((c) => !c.cost_status || c.cost_status === "unpriced").length;
-    const incomplete = matchingCalls.filter((c) => c.cost_status === "incomplete_usage").length;
-    const inputNano = matchingCalls.reduce((s, c) => s + toNano(c.input_cost), 0);
-    const outputNano = matchingCalls.reduce((s, c) => s + toNano(c.output_cost), 0);
-    const cacheReadNano = matchingCalls.reduce((s, c) => s + toNano(c.cache_read_cost), 0);
-    const cacheWriteNano = matchingCalls.reduce((s, c) => s + toNano(c.cache_write_cost), 0);
-    const totalNano = inputNano + outputNano + cacheReadNano + cacheWriteNano;
-    const supplier: OverviewSupplierSummary = {
-      supplier_key: key,
-      source_kind: "builtin",
-      endpoint_key: model.base_url,
-      model_id: model.model_id,
-      label: model.display_name,
-      provider_type: model.type,
-      active: true,
-      pricing_source: views.get(key)?.effective_source ?? "unpriced",
-      llm_calls: llmCalls,
-      successful_calls: llmCalls - failed,
-      failed_calls: failed,
-      token_usage: input + cacheRead + cacheWrite + output,
-      prompt_tokens: input + cacheRead + cacheWrite,
-      input_tokens: input,
-      cache_read_tokens: cacheRead,
-      cache_write_tokens: cacheWrite,
-      output_tokens: output,
-      total_cost: formatNano(totalNano),
-      input_cost: formatNano(inputNano),
-      output_cost: formatNano(outputNano),
-      cache_read_cost: formatNano(cacheReadNano),
-      cache_write_cost: formatNano(cacheWriteNano),
-      average_priced_cost: priced > 0 ? formatNano(Math.round(totalNano / priced)) : null,
-      priced_calls: priced,
-      unpriced_calls: unpriced,
-      incomplete_usage_calls: incomplete,
-      speed: mockAggregate(matchingCalls),
-    };
-    const existing = byModel.get(model.model_id);
-    if (existing) existing.push(supplier);
-    else byModel.set(model.model_id, [supplier]);
-  }
-  return [...byModel.entries()].map(([model_id, providers]) => {
-    const priced = providers.reduce((s, p) => s + p.priced_calls, 0);
-    const totalNano = providers.reduce((s, p) => s + toNano(p.total_cost), 0);
-    const matchingCallsForModel = calls.filter((call) => call.model_id === model_id);
-    return {
-      model_id,
-      llm_calls: providers.reduce((s, p) => s + p.llm_calls, 0),
-      successful_calls: providers.reduce((s, p) => s + p.successful_calls, 0),
-      failed_calls: providers.reduce((s, p) => s + p.failed_calls, 0),
-      token_usage: providers.reduce((s, p) => s + p.token_usage, 0),
-      prompt_tokens: providers.reduce((s, p) => s + p.prompt_tokens, 0),
-      input_tokens: providers.reduce((s, p) => s + p.input_tokens, 0),
-      cache_read_tokens: providers.reduce((s, p) => s + p.cache_read_tokens, 0),
-      cache_write_tokens: providers.reduce((s, p) => s + p.cache_write_tokens, 0),
-      output_tokens: providers.reduce((s, p) => s + p.output_tokens, 0),
-      total_cost: formatNano(totalNano),
-      input_cost: formatNano(providers.reduce((s, p) => s + toNano(p.input_cost), 0)),
-      output_cost: formatNano(providers.reduce((s, p) => s + toNano(p.output_cost), 0)),
-      cache_read_cost: formatNano(providers.reduce((s, p) => s + toNano(p.cache_read_cost), 0)),
-      cache_write_cost: formatNano(providers.reduce((s, p) => s + toNano(p.cache_write_cost), 0)),
-      average_priced_cost: priced > 0 ? formatNano(Math.round(totalNano / priced)) : null,
-      priced_calls: priced,
-      unpriced_calls: providers.reduce((s, p) => s + p.unpriced_calls, 0),
-      incomplete_usage_calls: providers.reduce((s, p) => s + p.incomplete_usage_calls, 0),
-      speed: mockAggregate(matchingCallsForModel),
-      providers,
-    };
-  });
-}
-
-function createSeries(count: number, step: number, end: number): OverviewTokenUsageBucket[] {
-  return Array.from({ length: count }, (_, index) => {
-    const wave = 0.72 + ((index * 17) % 31) / 50;
-    const input = Math.round(800 * wave);
-    const cacheRead = Math.round(79_200 * wave);
-    const cacheWrite = Math.round(7_500 * wave);
-    const output = Math.round(12_500 * wave);
-    const inputNano = mulRate(input, "2.5");
-    const cacheReadNano = mulRate(cacheRead, "0.3");
-    const cacheWriteNano = mulRate(cacheWrite, "3.125");
-    const outputNano = mulRate(output, "12.5");
-    return {
-      bucket_start_ms: end - (count - index) * step,
-      // input : cache_read = 1 : 99，使默认口径缓存命中率恰为 99%
-      input_tokens: input,
-      cache_read_tokens: cacheRead,
-      cache_write_tokens: cacheWrite,
-      output_tokens: output,
-      input_cost: formatNano(inputNano),
-      output_cost: formatNano(outputNano),
-      cache_read_cost: formatNano(cacheReadNano),
-      cache_write_cost: formatNano(cacheWriteNano),
-      total_cost: formatNano(inputNano + outputNano + cacheReadNano + cacheWriteNano),
-      priced_calls: 4,
-      unpriced_calls: index % 4 === 0 ? 1 : 0,
-      incomplete_usage_calls: 0,
-    };
-  });
 }
 
 function createCallDetail(id: string): CallDetail {
@@ -660,7 +841,8 @@ function mockAggregate(callList: LlmCall[]): SpeedAggregate {
 }
 
 /** Mirrors the server's speed rules closely enough for the demo dashboard. */
-function mockPerformance(  outputTokens: number,
+function mockPerformance(
+  outputTokens: number,
   firstOutputMs: number,
   generationMs: number | null,
   failed: boolean,

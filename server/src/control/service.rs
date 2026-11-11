@@ -30,9 +30,10 @@ use crate::{
     pricing::{PricingService, PricingSyncState},
     provider::{ModelEvent, Provider},
     store::{
-        CallFinish, CatalogSearchResult, CommitSettings, DesktopSettings, ExternalApiSettings,
-        PortSettings, ProxySettings, ProxySettingsInput, SaveSupplierPricingInput,
-        StatisticsStorage, Store, SupplierPricingView, TabSettings,
+        normalize_string_array_filter, CallFinish, CatalogSearchResult, CommitSettings,
+        DesktopSettings, ExternalApiSettings, LlmCallFilter, PortSettings, ProxySettings,
+        ProxySettingsInput, SaveSupplierPricingInput, StatisticsStorage, Store,
+        SupplierPricingView, TabSettings, TimelineCallRef,
     },
     Error, Result,
 };
@@ -123,6 +124,12 @@ pub struct CallDetail {
     pub request: Option<LlmCallRequest>,
     pub response_chunks: Vec<LlmCallResponseChunk>,
     pub cursor_trace: Option<CursorTraceDetail>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CallListResult {
+    pub items: Vec<CallSummary>,
+    pub total: i64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -374,11 +381,19 @@ impl ControlService {
         start_ms: Option<i64>,
         end_ms: Option<i64>,
         supplier_keys: Option<&str>,
+        suppliers: Option<&str>,
         bucket_ms: Option<i64>,
     ) -> Result<Overview> {
         let plugin_models = self.plugins.known_models().await;
         self.store
-            .overview_with_plugins(start_ms, end_ms, supplier_keys, bucket_ms, &plugin_models)
+            .overview_with_plugins(
+                start_ms,
+                end_ms,
+                supplier_keys,
+                suppliers,
+                bucket_ms,
+                &plugin_models,
+            )
             .await
     }
 
@@ -628,31 +643,78 @@ impl ControlService {
         })
     }
 
-    pub async fn calls(&self, limit: i64) -> Result<Vec<CallSummary>> {
-        let mut calls = self
-            .store
-            .llm_calls(limit)
-            .await?
-            .into_iter()
-            .map(|call| {
-                let route = call_route(&call.run_id);
-                CallSummary {
-                    call,
-                    call_kind: "provider_llm",
-                    route,
-                }
-            })
-            .collect::<Vec<_>>();
-        calls.extend(
-            self.store
-                .official_cursor_traces(limit)
+    pub async fn calls(&self, filter: &LlmCallFilter<'_>) -> Result<CallListResult> {
+        let supplier_keys_json =
+            normalize_string_array_filter(filter.supplier_keys, "supplier_keys")?;
+        let suppliers_json = normalize_string_array_filter(filter.suppliers, "suppliers")?;
+        let has_supplier_filter = supplier_keys_json.is_some() || suppliers_json.is_some();
+
+        if has_supplier_filter {
+            let total = self.store.count_llm_calls(filter).await?;
+            let items = self
+                .store
+                .llm_calls(filter)
                 .await?
                 .into_iter()
-                .map(official_call),
-        );
-        calls.sort_by_key(|call| std::cmp::Reverse(call.call.created_at_ms));
-        calls.truncate(limit.clamp(1, 500) as usize);
-        Ok(calls)
+                .map(provider_call_summary)
+                .collect();
+            return Ok(CallListResult { items, total });
+        }
+
+        let llm_total = self.store.count_llm_calls(filter).await?;
+        let official_total = self
+            .store
+            .count_official_cursor_traces(filter.start_ms, filter.end_ms)
+            .await?;
+        let total = llm_total.saturating_add(official_total);
+
+        let refs = self
+            .store
+            .unfiltered_call_timeline_page(
+                filter.start_ms,
+                filter.end_ms,
+                filter.limit,
+                filter.offset,
+            )
+            .await?;
+
+        let llm_ids: Vec<String> = refs
+            .iter()
+            .filter_map(|item| match item {
+                TimelineCallRef::Llm(id) => Some(id.clone()),
+                TimelineCallRef::Cursor(_) => None,
+            })
+            .collect();
+        let cursor_ids: Vec<String> = refs
+            .iter()
+            .filter_map(|item| match item {
+                TimelineCallRef::Cursor(id) => Some(id.clone()),
+                TimelineCallRef::Llm(_) => None,
+            })
+            .collect();
+
+        let mut llm_map = self.store.llm_calls_by_ids(&llm_ids).await?;
+        let mut cursor_map = self
+            .store
+            .official_cursor_traces_by_ids(&cursor_ids)
+            .await?;
+
+        let mut items = Vec::with_capacity(refs.len());
+        for entry in refs {
+            match entry {
+                TimelineCallRef::Llm(id) => {
+                    if let Some(call) = llm_map.remove(&id) {
+                        items.push(provider_call_summary(call));
+                    }
+                }
+                TimelineCallRef::Cursor(id) => {
+                    if let Some(trace) = cursor_map.remove(&id) {
+                        items.push(official_call(trace));
+                    }
+                }
+            }
+        }
+        Ok(CallListResult { items, total })
     }
 
     pub async fn call(&self, call_id: &str) -> Result<CallDetail> {
@@ -833,6 +895,15 @@ impl ControlService {
 
     pub async fn sync_pricing_now(&self) -> Result<PricingSyncState> {
         self.pricing.sync_now().await
+    }
+}
+
+fn provider_call_summary(call: LlmCallSummary) -> CallSummary {
+    let route = call_route(&call.run_id);
+    CallSummary {
+        call,
+        call_kind: "provider_llm",
+        route,
     }
 }
 

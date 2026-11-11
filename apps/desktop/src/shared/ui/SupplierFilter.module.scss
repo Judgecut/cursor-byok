@@ -1,0 +1,222 @@
+@use "../../styles/typography" as type;
+
+.target {
+  height: 26px;
+  min-width: 112px;
+  max-width: 196px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-sideBar-border);
+  border-radius: 5px;
+
+  &:focus-within,
+  &[data-open] {
+    border-color: var(--vscode-focusBorder);
+  }
+
+  &[data-disabled] {
+    opacity: 0.55;
+  }
+}
+
+.trigger {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px;
+  color: var(--vscode-input-foreground);
+  background: transparent;
+  border: 0;
+  font-size: type.$font-size-xs;
+  text-align: left;
+}
+
+.triggerLabel {
+  white-space: nowrap;
+}
+
+.summary {
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clear {
+  width: 24px;
+  height: 100%;
+  flex: 0 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--vscode-descriptionForeground);
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--vscode-sideBar-border);
+
+  &:hover {
+    color: var(--vscode-foreground);
+    background: var(--vscode-list-hoverBackground);
+  }
+}
+
+.menu {
+  position: fixed;
+  z-index: 14001;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 4px;
+  background: var(--vscode-dropdown-background);
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: var(--oa-overlay-radius);
+  box-shadow: var(--oa-dropdown-shadow);
+}
+
+.listFrame,
+.list {
+  min-height: 46px;
+  min-width: 0;
+}
+
+.listFrame {
+  flex: 0 1 auto;
+  overflow: hidden;
+}
+
+.optionRow {
+  width: 100%;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  box-sizing: border-box;
+  color: var(--vscode-dropdown-foreground);
+  background: transparent;
+  border-radius: 4px;
+  font-size: type.$font-size-xs;
+  cursor: pointer;
+
+  input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  &:hover,
+  &[data-active] {
+    color: var(--vscode-list-hoverForeground, var(--vscode-dropdown-foreground));
+    background: var(--vscode-list-hoverBackground);
+  }
+
+  &:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+  }
+}
+
+.checkbox {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  display: grid;
+  place-items: center;
+  color: var(--vscode-checkbox-foreground, var(--vscode-button-foreground));
+  background: var(--vscode-checkbox-background, var(--vscode-input-background));
+  border: 1px solid var(--vscode-checkbox-border, var(--vscode-input-border));
+  border-radius: 3px;
+}
+
+.optionRow:has(input:checked) .checkbox {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  border-color: var(--vscode-button-background);
+}
+
+.option {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.optionMain {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.optionLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.historyBadge {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-sideBar-border);
+  border-radius: 99px;
+  font-size: type.$font-size-2xs;
+  line-height: 1.3;
+}
+
+.endpoint {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--oa-code-font);
+  font-size: type.$font-size-2xs;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty {
+  padding: 12px 8px;
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-xs;
+  text-align: center;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--vscode-dropdown-border);
+
+  button {
+    width: auto;
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px 8px;
+    color: var(--vscode-textLink-foreground);
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    font-size: type.$font-size-xs;
+
+    &:hover {
+      background: var(--vscode-list-hoverBackground);
+    }
+  }
+}

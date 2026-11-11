@@ -12,29 +12,98 @@ export type DataTableColumn<T> = {
   sticky?: "right";
 };
 
-export function DataTable<T>({ rows, columns, rowKey, minWidth, emptyText = t("暂无数据") }: {
+export type ServerPagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+};
+
+export function DataTable<T>({
+  rows,
+  columns,
+  rowKey,
+  minWidth,
+  emptyText = t("暂无数据"),
+  loading = false,
+  loadingText = t("加载中…"),
+  serverPagination,
+}: {
   rows: T[];
   columns: DataTableColumn<T>[];
   rowKey: (row: T) => string | number;
   minWidth?: number | string;
   emptyText?: ReactNode;
+  loading?: boolean;
+  loadingText?: ReactNode;
+  serverPagination?: ServerPagination;
 }) {
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
-  useEffect(() => { if (page > pageCount) setPage(pageCount); }, [page, pageCount]);
-  const pageRows = useMemo(() => rows.slice((page - 1) * pageSize, page * pageSize), [page, pageSize, rows]);
+  const [clientPage, setClientPage] = useState(1);
+  const [clientPageSize, setClientPageSize] = useState(20);
+
+  const total = serverPagination ? serverPagination.total : rows.length;
+  const pageSize = serverPagination ? serverPagination.pageSize : clientPageSize;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const page = serverPagination ? Math.min(serverPagination.page, pageCount) : clientPage;
+
+  useEffect(() => {
+    if (!serverPagination && clientPage > pageCount) setClientPage(pageCount);
+  }, [clientPage, pageCount, serverPagination]);
+
+  const pageRows = useMemo(
+    () => (serverPagination ? rows : rows.slice((page - 1) * pageSize, page * pageSize)),
+    [page, pageSize, rows, serverPagination],
+  );
+
+  const showEmpty = pageRows.length === 0;
+  const overlayText = loading && showEmpty ? loadingText : showEmpty ? emptyText : null;
+
   return <div className={styles.root}>
     <div className={styles.tableRegion}>
-      <ScrollableContent horizontal className={[styles.viewport, rows.length === 0 ? styles.emptyViewport : ""].filter(Boolean).join(" ")} viewportClassName={styles.tableViewport} contentClassName={styles.tableContent} scrollbarInsetTop="33px">
+      <ScrollableContent
+        horizontal
+        className={[styles.viewport, showEmpty ? styles.emptyViewport : ""].filter(Boolean).join(" ")}
+        viewportClassName={styles.tableViewport}
+        contentClassName={styles.tableContent}
+        scrollbarInsetTop="33px"
+      >
         <table className={styles.table} style={{ minWidth }}>
-        <thead><tr>{columns.map((column) => <th key={column.key} className={columnClass(column)}>{column.header}</th>)}</tr></thead>
-        <tbody>{pageRows.map((row) => <tr key={rowKey(row)}>{columns.map((column) => <td key={column.key} className={columnClass(column)} title={column.title?.(row)}>{column.render(row)}</td>)}</tr>)}</tbody>
+          <thead>
+            <tr>
+              {columns.map((column) => <th key={column.key} className={columnClass(column)}>{column.header}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {pageRows.map((row) => <tr key={rowKey(row)}>
+              {columns.map((column) => (
+                <td key={column.key} className={columnClass(column)} title={column.title?.(row)}>
+                  {column.render(row)}
+                </td>
+              ))}
+            </tr>)}
+          </tbody>
         </table>
       </ScrollableContent>
-      {rows.length === 0 && <div className={styles.emptyState}>{emptyText}</div>}
+      {overlayText !== null && <div className={styles.emptyState}>{overlayText}</div>}
     </div>
-    <Pagination page={page} pageCount={pageCount} pageSize={pageSize} total={rows.length} onPageChange={setPage} onPageSizeChange={(nextPageSize) => { setPageSize(nextPageSize); setPage(1); }} />
+    <Pagination
+      page={page}
+      pageCount={pageCount}
+      pageSize={pageSize}
+      total={total}
+      onPageChange={(nextPage) => {
+        if (serverPagination) serverPagination.onPageChange(nextPage);
+        else setClientPage(nextPage);
+      }}
+      onPageSizeChange={(nextPageSize) => {
+        if (serverPagination) serverPagination.onPageSizeChange(nextPageSize);
+        else {
+          setClientPageSize(nextPageSize);
+          setClientPage(1);
+        }
+      }}
+    />
   </div>;
 }
 

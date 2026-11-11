@@ -1,7 +1,13 @@
 import type { CallDetail, CallPerformance, LlmCall } from "../../shared/api";
+import { useAppStore } from "../../shared/store/appStore";
 import { JsonEditor } from "../../shared/ui/JsonEditor";
 import { Tabs, type TabItem } from "../../shared/ui/Tabs";
-import { formatRatePerMillion, formatUsdExact } from "../../shared/utils/costFormat";
+import {
+  formatConversionNote,
+  formatDisplayCostExact,
+  formatRatePerMillion,
+  formatUsdExact,
+} from "../../shared/utils/costFormat";
 import { formatInteger } from "../../shared/utils/numberFormat";
 import {
   formatFirstOutput,
@@ -84,6 +90,8 @@ function performanceFormula(performance: CallPerformance, outputTokens: number |
 }
 
 function CostBreakdownSection({ call }: { call: LlmCall }) {
+  const { currency, cnyRate } = useAppStore();
+  const conversionNote = formatConversionNote(currency, cnyRate);
   const status = costStatusBadge(call);
   const priced = call.call_kind !== "cursor_official" && call.cost_status === "priced";
   const catalogRef = call.pricing_provider_id && call.pricing_model_id
@@ -143,19 +151,38 @@ function CostBreakdownSection({ call }: { call: LlmCall }) {
           {priced && call.status === "running" && <span className={styles.badge}>{t("暂计费用")}</span>}
           {priced && call.cost_backfilled && <span className={styles.badge}>{t("历史估算")}</span>}
         </div>
-        <span className={styles.costTotal}>
-          {priced && call.total_cost != null ? formatUsdExact(call.total_cost) : status.label}
+        <span
+          className={styles.costTotal}
+          title={priced && call.total_cost != null && conversionNote
+            ? `${t("原美元金额：{cost}", { cost: formatUsdExact(call.total_cost) })}\n${conversionNote}`
+            : undefined}
+        >
+          {priced && call.total_cost != null ? formatDisplayCostExact(call.total_cost, currency, cnyRate) : status.label}
         </span>
       </div>
       <div className={styles.costGrid}>
         {rows.map((item) => <div key={item.key}>
           <span>{item.label}</span>
-          <strong>{priced && item.cost != null ? formatUsdExact(item.cost) : "—"}</strong>
+          <strong
+            title={priced && item.cost != null && conversionNote
+              ? `${t("原美元金额：{cost}", { cost: formatUsdExact(item.cost) })}\n${conversionNote}`
+              : undefined}
+          >
+            {priced && item.cost != null ? formatDisplayCostExact(item.cost, currency, cnyRate) : "—"}
+          </strong>
           <small>
             {item.tokens != null ? formatInteger(item.tokens) : "-"} × {formatRatePerMillion(item.rate)}
           </small>
         </div>)}
       </div>
+      {priced && conversionNote && call.total_cost != null && (
+        <div className={styles.costNote}>
+          {t("原美元合计：{cost} · {note}（不影响历史冻结快照与美元单价）", {
+            cost: formatUsdExact(call.total_cost),
+            note: conversionNote,
+          })}
+        </div>
+      )}
       {note && <div className={styles.costNote}>{note}</div>}
     </div>
   </section>;

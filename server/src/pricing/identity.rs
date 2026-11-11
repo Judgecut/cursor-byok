@@ -52,7 +52,7 @@ pub fn canonical_supplier_identity(
         provider_url.trim()
     };
 
-    if provider_type == ProviderType::Plugin || raw_endpoint.starts_with("plugin://") {
+    if source_kind_for(provider_type, raw_endpoint) == SourceKind::Plugin {
         let endpoint_key = normalize_plugin_endpoint_key(raw_endpoint);
         let supplier_key = plugin_supplier_key(&endpoint_key, &model_id)
             .unwrap_or_else(|| hashed_supplier_key(SourceKind::Plugin, &endpoint_key, &model_id));
@@ -73,6 +73,19 @@ pub fn canonical_supplier_identity(
         endpoint_key,
         model_id,
     }
+}
+
+pub fn source_kind_for(provider_type: ProviderType, endpoint: &str) -> SourceKind {
+    if provider_type == ProviderType::Plugin || endpoint.trim().starts_with("plugin://") {
+        SourceKind::Plugin
+    } else {
+        SourceKind::Builtin
+    }
+}
+
+/// Canonical supplier identity decoupled from models (`source_kind + endpoint_key`).
+pub fn canonical_supplier_id(source_kind: SourceKind, endpoint_key: &str) -> String {
+    format!("{}::{}", source_kind.as_str(), endpoint_key)
 }
 
 pub fn build_supplier_identity(

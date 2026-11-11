@@ -2,33 +2,49 @@ import { autoUpdate, computePosition, flip, offset, shift, size } from "@floatin
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { parseTimeInput } from "../../../shared/utils/parseTimeInput";
+import type { OverviewRangePreset, QuickPreset } from "../../../shared/utils/timeRange";
 import controls from "../../../shared/ui/Controls.module.scss";
-import { Icon } from "../../../shared/ui/Icon";
 import { ModelSelect, type ModelSelectOption } from "../../../shared/ui/ModelSelect";
-import { TooltipTrigger } from "../../../shared/ui/TooltipTrigger";
-import { refreshIcon } from "../../../shared/ui/icons";
 import styles from "./OverviewTimeRangeFilter.module.scss";
 
-export type OverviewRangePreset = "ten-minutes" | "hour" | "today" | "week" | "month" | "custom";
-export type QuickPreset = "four-hours" | "twenty-four-hours";
+export type { OverviewRangePreset, QuickPreset };
 
-export function OverviewTimeRangeFilter({ value, quick, customOpen, customStart, customEnd, modelOptions, selectedModels, busy, onSelect, onQuickSelect, onCustomOpenChange, onCustomStartChange, onCustomEndChange, onSelectedModelsChange, onCustomApply, onRefresh }: {
-  value: OverviewRangePreset;
+export function OverviewTimeRangeFilter({
+  value,
+  allowAll = false,
+  allSelected = false,
+  quick,
+  customOpen,
+  customStart,
+  customEnd,
+  modelOptions,
+  selectedModels,
+  onSelectAll,
+  onSelect,
+  onQuickSelect,
+  onCustomOpenChange,
+  onCustomStartChange,
+  onCustomEndChange,
+  onSelectedModelsChange,
+  onCustomApply,
+}: {
+  value: OverviewRangePreset | "all";
+  allowAll?: boolean;
+  allSelected?: boolean;
   quick: QuickPreset | null;
   customOpen: boolean;
   customStart: string;
   customEnd: string;
-  modelOptions: ModelSelectOption[];
-  selectedModels: string[];
-  busy: boolean;
+  modelOptions?: ModelSelectOption[];
+  selectedModels?: string[];
+  onSelectAll?: () => void;
   onSelect: (value: Exclude<OverviewRangePreset, "custom">) => void;
   onQuickSelect: (durationMs: number) => void;
   onCustomOpenChange: (open: boolean) => void;
   onCustomStartChange: (value: string) => void;
   onCustomEndChange: (value: string) => void;
-  onSelectedModelsChange: (value: string[]) => void;
+  onSelectedModelsChange?: (value: string[]) => void;
   onCustomApply: () => void;
-  onRefresh: () => void;
 }) {
   const presets: Array<{ value: Exclude<OverviewRangePreset, "custom">; label: string }> = [
     { value: "hour", label: t("近1小时") },
@@ -73,12 +89,17 @@ export function OverviewTimeRangeFilter({ value, quick, customOpen, customStart,
   const parsedStart = parseTimeInput(customStart);
   const parsedEnd = parseTimeInput(customEnd);
   const customValid = parsedStart !== null && parsedEnd !== null && parsedStart < parsedEnd;
-  return <div className={styles.root} aria-label={t("概览时间范围")}>
+  return <div className={styles.root} aria-label={t("时间范围筛选")}>
     <div className={styles.presets}>
+      {allowAll && onSelectAll && <button
+        type="button"
+        aria-pressed={allSelected || value === "all"}
+        onClick={onSelectAll}
+      >{t("全部")}</button>}
       {presets.map((preset) => <button
         key={preset.value}
         type="button"
-        aria-pressed={value === preset.value}
+        aria-pressed={!allSelected && value === preset.value}
         onClick={() => onSelect(preset.value)}
       >{preset.label}</button>)}
       <button
@@ -87,19 +108,16 @@ export function OverviewTimeRangeFilter({ value, quick, customOpen, customStart,
         aria-haspopup="dialog"
         aria-controls={customOpen ? popoverId : undefined}
         aria-expanded={customOpen}
-        aria-pressed={value === "custom"}
+        aria-pressed={!allSelected && value === "custom"}
         onClick={() => onCustomOpenChange(!customOpen)}
       >{t("自定义")}</button>
     </div>
-    <TooltipTrigger label={t("刷新")}><button className={controls.iconButton} aria-label={t("刷新")} disabled={busy} onClick={onRefresh}>
-      <Icon className={busy ? controls.spin : ""} icon={refreshIcon} size="1.1em" />
-    </button></TooltipTrigger>
     {customOpen && createPortal(<div
       id={popoverId}
       ref={popover}
       className={styles.popover}
       role="dialog"
-      aria-label={t("自定义概览筛选")}
+      aria-label={t("自定义时间与筛选")}
       style={position}
       onPointerDown={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
@@ -120,7 +138,11 @@ export function OverviewTimeRangeFilter({ value, quick, customOpen, customStart,
       </div>
       <label><span>{t("开始时间")}</span><input type="text" placeholder={t("如：2026-08-23 09:00、1小时前")} value={customStart} onChange={(event) => onCustomStartChange(event.target.value)} /></label>
       <label><span>{t("结束时间")}</span><input type="text" placeholder={t("如：现在、2026-08-23 18:00")} value={customEnd} onChange={(event) => onCustomEndChange(event.target.value)} /></label>
-      <div className={styles.filterRow}><ModelSelect mode="multiple" label={t("模型")} value={selectedModels} options={modelOptions} onChange={onSelectedModelsChange} /></div>
+      {modelOptions && selectedModels && onSelectedModelsChange && (
+        <div className={styles.filterRow}>
+          <ModelSelect mode="multiple" label={t("模型")} value={selectedModels} options={modelOptions} onChange={onSelectedModelsChange} />
+        </div>
+      )}
       <div className={styles.popoverActions}>
         <button type="button" className={controls.secondary} onClick={() => onCustomOpenChange(false)}>{t("取消")}</button>
         <button type="button" className={controls.primary} disabled={!customValid} onClick={onCustomApply}>{t("应用")}</button>

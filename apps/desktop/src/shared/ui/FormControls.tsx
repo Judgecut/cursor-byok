@@ -1,14 +1,14 @@
-import { useState, type InputHTMLAttributes } from "react";
+import { useState, type ComponentProps } from "react";
 import { Icon } from "./Icon";
 import { TooltipTrigger } from "./TooltipTrigger";
 import { eyeIcon, eyeOffIcon, informationOutlineIcon } from "./icons";
 import styles from "./FormControls.module.scss";
 
-export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
+export function TextInput(props: ComponentProps<"input">) {
   return <input {...props} className={[styles.input, props.className].filter(Boolean).join(" ")} />;
 }
 
-export function SecretTextInput({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+export function SecretTextInput({ className, ...props }: ComponentProps<"input">) {
   const [visible, setVisible] = useState(false);
   return <div className={styles.secret}>
     <input {...props} type={visible ? "text" : "password"} className={[styles.input, className].filter(Boolean).join(" ")} />

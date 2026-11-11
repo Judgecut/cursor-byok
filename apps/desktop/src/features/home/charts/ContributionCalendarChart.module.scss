@@ -2,6 +2,13 @@
 
 .root {
   width: 100%;
+  display: grid;
+  gap: 6px;
+}
+
+.header {
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-2xs;
 }
 
 .scroller {
@@ -33,4 +40,15 @@
 .tooltipContent {
   display: flex;
   flex-direction: column;
+}
+
+.state {
+  min-height: 112px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vscode-descriptionForeground);
+  border: 1px dashed var(--vscode-sideBar-border);
+  border-radius: var(--oa-overlay-radius);
+  font-size: type.$font-size-xs;
 }

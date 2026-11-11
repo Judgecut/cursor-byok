@@ -160,6 +160,7 @@
   z-index: 12500;
   top: var(--window-safe-top);
   right: max(var(--app-page-padding), calc((100% - var(--app-page-max-width)) / 2));
+  max-width: calc(100% - var(--app-page-padding) * 2 - 110px);
   height: calc(var(--app-content-top) - var(--window-safe-top));
   display: flex;
   align-items: center;
@@ -177,21 +178,30 @@
 }
 
 .actions {
+  max-width: 100%;
   height: var(--app-toolbar-height);
   min-width: var(--app-toolbar-height);
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
   padding: 6px 6px;
-  gap: 3px;
+  gap: 5px;
   box-shadow: 0 0px 6px 4px var(--vscode-editor-background);
   transform: translateX(6px);
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 .pageActions {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
+  flex: 0 0 auto;
 
   &:empty {
     display: none;

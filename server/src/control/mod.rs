@@ -23,8 +23,9 @@ use tower_http::{
 use url::{Host, Url};
 
 pub use service::{
-    CallDetail, CallSummary, ControlService, DiscoveredModels, LegacyModelImportPreview,
-    LegacyModelImportResult, ModelConnectivityResult, ModelDiscoveryInput, ObservabilitySettings,
+    CallDetail, CallListResult, CallSummary, ControlService, DiscoveredModels,
+    LegacyModelImportPreview, LegacyModelImportResult, ModelConnectivityResult,
+    ModelDiscoveryInput, ObservabilitySettings,
 };
 
 pub fn web_router(service: ControlService, assets: impl AsRef<std::path::Path>) -> Router {

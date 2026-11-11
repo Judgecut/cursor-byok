@@ -1,5 +1,5 @@
 //! Persists provider call payloads, timing, frozen pricing snapshots, and usage costs.
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 use sqlx::Row;
 
@@ -15,7 +15,37 @@ use crate::{
     Result,
 };
 
-use super::{now_ms, pricing::resolve_snapshot_conn, Store};
+use super::{
+    now_ms,
+    overview::{normalize_string_array_filter, supplier_id_sql},
+    pricing::resolve_snapshot_conn,
+    Store,
+};
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LlmCallFilter<'a> {
+    pub start_ms: Option<i64>,
+    pub end_ms: Option<i64>,
+    pub suppliers: Option<&'a str>,
+    pub supplier_keys: Option<&'a str>,
+    pub limit: i64,
+    pub offset: i64,
+}
+
+impl<'a> LlmCallFilter<'a> {
+    pub fn with_limit(limit: i64) -> Self {
+        Self {
+            limit,
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum TimelineCallRef {
+    Llm(String),
+    Cursor(String),
+}
 
 const LLM_CALL_COLUMNS: &str = r#"
     call_id, run_id, conversation_id, provider_call_index, model_hash,
@@ -474,14 +504,133 @@ impl Store {
         }))
     }
 
-    pub async fn llm_calls(&self, limit: i64) -> Result<Vec<LlmCallSummary>> {
-        let query =
-            format!("SELECT {LLM_CALL_COLUMNS} FROM llm_calls ORDER BY created_at_ms DESC LIMIT ?");
+    pub async fn count_llm_calls(&self, filter: &LlmCallFilter<'_>) -> Result<i64> {
+        let supplier_keys_json =
+            normalize_string_array_filter(filter.supplier_keys, "supplier_keys")?;
+        let suppliers_json = normalize_string_array_filter(filter.suppliers, "suppliers")?;
+        let supplier_id_expr = supplier_id_sql();
+        let query = format!(
+            "SELECT COUNT(*) FROM llm_calls
+             WHERE (? IS NULL OR created_at_ms >= ?)
+               AND (? IS NULL OR created_at_ms < ?)
+               AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
+               AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))"
+        );
+        let total: i64 = sqlx::query_scalar(&query)
+            .bind(filter.start_ms)
+            .bind(filter.start_ms)
+            .bind(filter.end_ms)
+            .bind(filter.end_ms)
+            .bind(&supplier_keys_json)
+            .bind(&supplier_keys_json)
+            .bind(&suppliers_json)
+            .bind(&suppliers_json)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(total.max(0))
+    }
+
+    pub async fn llm_calls(&self, filter: &LlmCallFilter<'_>) -> Result<Vec<LlmCallSummary>> {
+        let supplier_keys_json =
+            normalize_string_array_filter(filter.supplier_keys, "supplier_keys")?;
+        let suppliers_json = normalize_string_array_filter(filter.suppliers, "suppliers")?;
+        let supplier_id_expr = supplier_id_sql();
+        let query = format!(
+            "SELECT {LLM_CALL_COLUMNS}
+             FROM llm_calls
+             WHERE (? IS NULL OR created_at_ms >= ?)
+               AND (? IS NULL OR created_at_ms < ?)
+               AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
+               AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))
+             ORDER BY created_at_ms DESC, rowid DESC
+             LIMIT ? OFFSET ?"
+        );
         let rows = sqlx::query(&query)
-            .bind(limit.clamp(1, 500))
+            .bind(filter.start_ms)
+            .bind(filter.start_ms)
+            .bind(filter.end_ms)
+            .bind(filter.end_ms)
+            .bind(&supplier_keys_json)
+            .bind(&supplier_keys_json)
+            .bind(&suppliers_json)
+            .bind(&suppliers_json)
+            .bind(filter.limit.clamp(1, 500))
+            .bind(filter.offset.max(0))
             .fetch_all(&self.pool)
             .await?;
         rows.into_iter().map(summary_from_row).collect()
+    }
+
+    pub async fn llm_calls_by_ids(
+        &self,
+        call_ids: &[String],
+    ) -> Result<HashMap<String, LlmCallSummary>> {
+        if call_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let ids_json = serde_json::to_string(call_ids)?;
+        let query = format!(
+            "SELECT {LLM_CALL_COLUMNS}
+             FROM llm_calls
+             WHERE call_id IN (SELECT value FROM json_each(?))"
+        );
+        let rows = sqlx::query(&query)
+            .bind(ids_json)
+            .fetch_all(&self.pool)
+            .await?;
+        rows.into_iter()
+            .map(|row| {
+                let summary = summary_from_row(row)?;
+                Ok((summary.call_id.clone(), summary))
+            })
+            .collect()
+    }
+
+    pub(crate) async fn unfiltered_call_timeline_page(
+        &self,
+        start_ms: Option<i64>,
+        end_ms: Option<i64>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<TimelineCallRef>> {
+        let rows = sqlx::query(
+            "SELECT 'llm' AS kind, call_id AS id, created_at_ms AS ts
+             FROM llm_calls
+             WHERE (? IS NULL OR created_at_ms >= ?)
+               AND (? IS NULL OR created_at_ms < ?)
+             UNION ALL
+             SELECT 'cursor' AS kind, request_id AS id, received_at_ms AS ts
+             FROM cursor_run_traces
+             WHERE route = 'cursor_official'
+               AND (? IS NULL OR received_at_ms >= ?)
+               AND (? IS NULL OR received_at_ms < ?)
+             ORDER BY ts DESC, kind DESC, id DESC
+             LIMIT ? OFFSET ?",
+        )
+        .bind(start_ms)
+        .bind(start_ms)
+        .bind(end_ms)
+        .bind(end_ms)
+        .bind(start_ms)
+        .bind(start_ms)
+        .bind(end_ms)
+        .bind(end_ms)
+        .bind(limit.clamp(1, 500))
+        .bind(offset.max(0))
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter()
+            .map(|row| {
+                let kind: String = row.try_get("kind")?;
+                let id: String = row.try_get("id")?;
+                Ok(if kind == "cursor" {
+                    TimelineCallRef::Cursor(id)
+                } else {
+                    TimelineCallRef::Llm(id)
+                })
+            })
+            .collect()
     }
 
     pub async fn llm_call(&self, call_id: &str) -> Result<Option<LlmCallSummary>> {
@@ -707,7 +856,7 @@ mod tests {
             .await
             .unwrap();
         let overview = store
-            .overview(None, None, Some(&format!("[\"{plugin_model}\"]")), None)
+            .overview(None, None, Some(&format!("[\"{plugin_model}\"]")), None, None)
             .await
             .unwrap();
         assert_eq!(overview.metrics.llm_calls, 1);

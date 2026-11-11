@@ -22,7 +22,7 @@ use cursor_server::{
     network::NetworkClients,
     plugin::{PluginRegistry, PluginRuntime},
     provider::{FinishReason, ModelEvent, ProviderRouter},
-    store::ExternalApiSettings,
+    store::{ExternalApiSettings, LlmCallFilter},
 };
 use serde_json::{json, Value};
 use tower::ServiceExt;
@@ -674,7 +674,7 @@ async fn all_entry_and_upstream_protocol_pairs_preserve_cache_usage() {
         for group in ["bridge-chat", "bridge-responses", "bridge-messages"] {
             for stream in [false, true] {
                 let prior_calls: HashSet<_> = store
-                    .llm_calls(100)
+                    .llm_calls(&LlmCallFilter::with_limit(100))
                     .await
                     .unwrap()
                     .into_iter()
@@ -733,7 +733,7 @@ async fn all_entry_and_upstream_protocol_pairs_preserve_cache_usage() {
                     forwarded.prompt.tools[0].name, "lookup",
                     "{path} -> {group} stream={stream}"
                 );
-                let calls = store.llm_calls(100).await.unwrap();
+                let calls = store.llm_calls(&LlmCallFilter::with_limit(100)).await.unwrap();
                 let call = calls
                     .iter()
                     .find(|call| {
