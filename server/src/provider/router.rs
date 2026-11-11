@@ -88,7 +88,7 @@ impl Provider for ProviderRouter {
                             &invocation.conversation_id,
                         );
                     routed.request.model.model_id = model.model_id.clone();
-                    let recorder = start_recorder(&store, &invocation, &model.model_hash, &model.display_name, provider_type, &request_url, &model.model_id).await?;
+                    let recorder = start_recorder(&store, &routed, &model.model_hash, &model.display_name, provider_type, &request_url, &model.model_id).await?;
                     let guard = recorder.cancel_on_drop();
                     let config = ProviderConfig {
                         kind: provider_kind(provider_type),
