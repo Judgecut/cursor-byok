@@ -315,7 +315,9 @@ impl Store {
 
         let mut series = Vec::with_capacity(OVERVIEW_DAYS as usize);
         for offset in 0..OVERVIEW_DAYS {
-            let day = start_date.checked_add_days(Days::new(offset)).unwrap_or(today);
+            let day = start_date
+                .checked_add_days(Days::new(offset))
+                .unwrap_or(today);
             let day_ms = day
                 .and_hms_opt(0, 0, 0)
                 .map(|dt| dt.and_utc().timestamp_millis())
@@ -559,10 +561,10 @@ impl Store {
                     .entry(identity.supplier_key)
                     .or_insert(group);
 
-                let supplier_id = canonical_supplier_id(identity.source_kind, &identity.endpoint_key);
-                let entry = canonical_suppliers
-                    .entry(supplier_id)
-                    .or_insert_with(|| CanonicalSupplierAccum {
+                let supplier_id =
+                    canonical_supplier_id(identity.source_kind, &identity.endpoint_key);
+                let entry = canonical_suppliers.entry(supplier_id).or_insert_with(|| {
+                    CanonicalSupplierAccum {
                         source_kind: identity.source_kind,
                         endpoint_key: identity.endpoint_key,
                         configured_label: configured_group.clone(),
@@ -570,7 +572,8 @@ impl Store {
                         plugin_icon: None,
                         active: true,
                         model_ids: BTreeSet::new(),
-                    });
+                    }
+                });
                 entry.active = true;
                 if entry.configured_label.is_none() {
                     entry.configured_label = configured_group;
@@ -592,17 +595,18 @@ impl Store {
                 .or_insert_with(|| plugin.plugin_name.clone());
 
             let supplier_id = canonical_supplier_id(SourceKind::Plugin, &identity.endpoint_key);
-            let entry = canonical_suppliers
-                .entry(supplier_id)
-                .or_insert_with(|| CanonicalSupplierAccum {
-                    source_kind: SourceKind::Plugin,
-                    endpoint_key: identity.endpoint_key,
-                    configured_label: Some(plugin.plugin_name.clone()),
-                    provider_type: ProviderType::Plugin.as_str().to_owned(),
-                    plugin_icon: Some(plugin.icon.clone()),
-                    active: true,
-                    model_ids: BTreeSet::new(),
-                });
+            let entry =
+                canonical_suppliers
+                    .entry(supplier_id)
+                    .or_insert_with(|| CanonicalSupplierAccum {
+                        source_kind: SourceKind::Plugin,
+                        endpoint_key: identity.endpoint_key,
+                        configured_label: Some(plugin.plugin_name.clone()),
+                        provider_type: ProviderType::Plugin.as_str().to_owned(),
+                        plugin_icon: Some(plugin.icon.clone()),
+                        active: true,
+                        model_ids: BTreeSet::new(),
+                    });
             entry.active = true;
             entry.configured_label = Some(plugin.plugin_name.clone());
             entry.plugin_icon = Some(plugin.icon.clone());
@@ -636,17 +640,18 @@ impl Store {
             });
 
             let supplier_id = canonical_supplier_id(view.source_kind, &view.endpoint_key);
-            let entry = canonical_suppliers
-                .entry(supplier_id)
-                .or_insert_with(|| CanonicalSupplierAccum {
-                    source_kind: view.source_kind,
-                    endpoint_key: view.endpoint_key.clone(),
-                    configured_label: None,
-                    provider_type: view.provider_type.clone(),
-                    plugin_icon: view.plugin_icon.clone(),
-                    active: view.active,
-                    model_ids: BTreeSet::new(),
-                });
+            let entry =
+                canonical_suppliers
+                    .entry(supplier_id)
+                    .or_insert_with(|| CanonicalSupplierAccum {
+                        source_kind: view.source_kind,
+                        endpoint_key: view.endpoint_key.clone(),
+                        configured_label: None,
+                        provider_type: view.provider_type.clone(),
+                        plugin_icon: view.plugin_icon.clone(),
+                        active: view.active,
+                        model_ids: BTreeSet::new(),
+                    });
             entry.active |= view.active;
             if entry.plugin_icon.is_none() {
                 entry.plugin_icon = view.plugin_icon.clone();
@@ -690,11 +695,7 @@ impl Store {
             right
                 .active
                 .cmp(&left.active)
-                .then_with(|| {
-                    left.label
-                        .to_lowercase()
-                        .cmp(&right.label.to_lowercase())
-                })
+                .then_with(|| left.label.to_lowercase().cmp(&right.label.to_lowercase()))
                 .then_with(|| left.endpoint_key.cmp(&right.endpoint_key))
                 .then_with(|| left.supplier_id.cmp(&right.supplier_id))
         });
@@ -962,8 +963,7 @@ impl Store {
             )
             .await?;
 
-        let mut models_with_sort: Vec<(i64, OverviewModelSummary)> =
-            Vec::with_capacity(rows.len());
+        let mut models_with_sort: Vec<(i64, OverviewModelSummary)> = Vec::with_capacity(rows.len());
         for row in rows {
             let model_id: String = row.try_get("model_id")?;
             let input_tokens = non_negative(row.try_get("input_tokens")?);
@@ -1063,11 +1063,7 @@ pub(crate) fn normalize_string_array_filter(
     Ok(Some(serde_json::to_string(&values)?))
 }
 
-fn collect_pricing_sources(
-    has_custom: bool,
-    has_catalog: bool,
-    has_unpriced: bool,
-) -> Vec<String> {
+fn collect_pricing_sources(has_custom: bool, has_catalog: bool, has_unpriced: bool) -> Vec<String> {
     let mut sources = Vec::new();
     if has_custom {
         sources.push("custom".into());
@@ -1209,7 +1205,10 @@ mod tests {
                 provider_type: ProviderType::OpenAiChat,
                 provider_url: sample.endpoint_url.into(),
                 request_type: ProviderType::OpenAiChat,
-                request_url: format!("{}/chat/completions", sample.endpoint_url.trim_end_matches('/')),
+                request_url: format!(
+                    "{}/chat/completions",
+                    sample.endpoint_url.trim_end_matches('/')
+                ),
                 model_id: sample.model_id.into(),
                 display_name: sample.display_name.into(),
                 reasoning_effort: None,
@@ -1365,13 +1364,7 @@ mod tests {
         // Filtering by an empty future time range must keep available_suppliers and 365-day activity_series.
         let future_ms = Utc::now().timestamp_millis() + DAY_MS * 10;
         let filtered_empty = store
-            .overview(
-                Some(future_ms),
-                Some(future_ms + HOUR_MS),
-                None,
-                None,
-                None,
-            )
+            .overview(Some(future_ms), Some(future_ms + HOUR_MS), None, None, None)
             .await
             .unwrap();
         assert_eq!(filtered_empty.metrics.llm_calls, 0);
@@ -1388,7 +1381,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn supplier_aggregation_keeps_same_name_endpoints_separate_and_sorts_models_by_token_usage() {
+    async fn supplier_aggregation_keeps_same_name_endpoints_separate_and_sorts_models_by_token_usage(
+    ) {
         let directory = tempfile::tempdir().unwrap();
         let store = Store::connect(&format!(
             "sqlite://{}",

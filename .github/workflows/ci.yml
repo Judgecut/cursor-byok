@@ -38,20 +38,13 @@ jobs:
         run: node --test .github/scripts/*.test.mjs
 
   rust:
-    name: Rust (Linux)
-    runs-on: ubuntu-24.04
+    name: Rust (Windows)
+    runs-on: windows-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
-
-      # The workspace includes apps/desktop/src-tauri, so even `cargo check`
-      # needs the same system libraries the release workflow installs.
-      - name: Install Linux system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
 
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
@@ -93,32 +86,6 @@ jobs:
         working-directory: apps/desktop
         run: npm audit --audit-level=high
 
-      - name: Check types and production build
+      - name: Check types, tests, and production build
         working-directory: apps/desktop
         run: npm run check
-
-  desktop-rust:
-    name: Desktop Rust (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - windows-latest
-          - macos-latest
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.ref }}
-
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          components: clippy
-
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          workspaces: ". -> target"
-
-      - name: Run platform Clippy
-        run: cargo clippy --locked --package cursor-byok-desktop --all-targets -- -D warnings

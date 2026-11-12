@@ -5,11 +5,11 @@ description: Prepare, authorize, publish, troubleshoot, and verify Cursor BYOK d
 
 # Desktop release
 
-Release through `.github/workflows/release.yml` in `leehainuo/cursor-byok`. The independent release series starts at `1.0.0`.
+Release through `.github/workflows/release.yml` in `Judgecut/cursor-byok`. The Windows-only fork release series continues at `1.0.2`.
 
 ## Publication authority
 
-- The maintainer, GitHub user `leehainuo`, authorizes releases. Verify the authenticated account before publication.
+- The maintainer, GitHub user `Judgecut`, authorizes releases. Verify the authenticated account before publication.
 - Require an explicit instruction to publish before pushing a `v*` tag, rerunning a release workflow, or publishing or editing a GitHub Release. Preparing a commit or configuring the repository does not authorize publication.
 - Ordinary pushes to `main` run CI only. Release tags must point to commits contained in `origin/main`.
 - Never print or commit `.tauri/cursor-byok.key`. Upload it only to this repository's `TAURI_SIGNING_PRIVATE_KEY` Actions secret when the maintainer authorizes signing-secret configuration. Preserve a secure backup of the key: changing it breaks updates for installed clients.
@@ -30,8 +30,9 @@ cursor-byok/
 │       └── tauri.conf.json               # App version, updater endpoint and public key
 ├── protocols/cursor/
 │   ├── agent_v1.proto                    # Agent protocol build input
-│   └── aiserver_v1.proto                 # Validated transport wire contracts
-└── .github/workflows/release.yml         # Tagged multi-platform build and publication
+│   ├── aiserver_v1.proto                 # Validated transport wire contracts
+│   └── run_inference.proto               # RunInference protocol build input
+└── .github/workflows/release.yml         # Tagged Windows build and publication
 ```
 
 Use stable SemVer tags, `vMAJOR.MINOR.PATCH`. Never republish an existing version. The updater resolves GitHub's `/releases/latest/download/` path, so releases must be normal Latest releases with `prerelease: false`.
@@ -50,7 +51,7 @@ After publication is explicitly authorized:
 
 1. Push the reviewed commit to `main` and wait for CI to pass.
 2. Create and push only its matching version tag. Follow the triggered release run; stop and diagnose on failure.
-3. Confirm the published release is Latest and contains signed Tauri updater artifacts and `latest.json` for all four targets: `darwin-aarch64`, `darwin-x86_64`, `linux-x86_64`, and `windows-x86_64`.
+3. Confirm the published release is Latest and contains signed Windows NSIS updater artifacts and `latest.json` for `windows-x86_64`.
 4. Confirm the Windows portable ZIP contains `cursor-byok-desktop.exe`, `LICENSE`, and `THIRD-PARTY-LICENSES.md`, with its signature and `portable-latest.json`. The current Windows client uses this signed portable update path.
 5. Verify updater URLs refer to public assets in this release. No legacy `update.json` or archives are generated for retired clients.
-6. Report the run and Release URLs. Updater signing is distinct from Apple code signing/notarization and Windows code signing; do not claim platform trust that was not configured and verified.
+6. Report the run and Release URLs. Updater signing is distinct from Windows Authenticode code signing; do not claim platform trust that was not configured and verified.

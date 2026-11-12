@@ -20,8 +20,8 @@ mod writer;
 
 pub use cas::*;
 pub(crate) use cursor_traces::BufferedCursorTraceChunk;
-pub use llm_calls::{CallFinish, LlmCallFilter};
 pub(crate) use llm_calls::{BufferedLlmChunk, ContextUsageAnchor, TimelineCallRef};
+pub use llm_calls::{CallFinish, LlmCallFilter};
 pub(crate) use overview::normalize_string_array_filter;
 pub use pricing::{
     CatalogProviderOption, CatalogSearchResult, SaveSupplierPricingInput, SupplierPricingView,

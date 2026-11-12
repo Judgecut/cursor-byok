@@ -21,7 +21,7 @@ for (const [name, actual] of Object.entries({
   "package-lock.json root package": lock.packages[""].version,
   "tauri.conf.json": tauri.version,
   "src-tauri/Cargo.toml": read("apps/desktop/src-tauri/Cargo.toml").match(/^version = "([^"]+)"/m)?.[1],
-  "Cargo.lock desktop package": read("Cargo.lock").match(/name = "cursor-byok-desktop"\nversion = "([^"]+)"/)?.[1],
+  "Cargo.lock desktop package": read("Cargo.lock").match(/name = "cursor-byok-desktop"\r?\nversion = "([^"]+)"/)?.[1],
 })) {
   assert.equal(actual, version, `${name} version must match ${version}`);
 }
@@ -42,7 +42,7 @@ for (const name of ["LICENSE", "THIRD-PARTY-LICENSES.md"]) {
   assert.equal(tauri.bundle.resources[`../../../${name}`], `licenses/${name}`);
   assert.ok(read(name).includes("MIT License"), `${name} must retain the MIT license`);
 }
-for (const name of ["agent_v1.proto", "aiserver_v1.proto"]) {
+for (const name of ["agent_v1.proto", "aiserver_v1.proto", "run_inference.proto"]) {
   assert.ok(read(`protocols/cursor/${name}`).length > 0, `${name} is required`);
 }
 

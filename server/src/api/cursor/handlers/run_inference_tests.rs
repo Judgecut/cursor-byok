@@ -347,14 +347,14 @@ async fn client_loop_inherits_model_selection_and_returns_context_usage() {
                             .as_ref()
                             .and_then(|response| response.response.as_ref())
                     {
-                        reported_usage = Some(usage.clone());
+                        reported_usage = Some(*usage);
                     }
                     if let Some(pb::inference_stream_response::Response::Usage(usage)) = response
                         .response
                         .as_ref()
                         .and_then(|response| response.response.as_ref())
                     {
-                        basic_usage = Some(usage.clone());
+                        basic_usage = Some(*usage);
                     }
                 }
                 if let Some(pb::run_inference_server_message::Message::InvocationEnd(end)) =

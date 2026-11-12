@@ -631,7 +631,6 @@ mod tests {
                 action: Some(pb::conversation_action::Action::ResumeAction(
                     pb::ResumeAction {
                         request_context: Some(context.clone()),
-                        ..Default::default()
                     },
                 )),
                 ..Default::default()

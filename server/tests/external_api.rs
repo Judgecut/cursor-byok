@@ -733,7 +733,10 @@ async fn all_entry_and_upstream_protocol_pairs_preserve_cache_usage() {
                     forwarded.prompt.tools[0].name, "lookup",
                     "{path} -> {group} stream={stream}"
                 );
-                let calls = store.llm_calls(&LlmCallFilter::with_limit(100)).await.unwrap();
+                let calls = store
+                    .llm_calls(&LlmCallFilter::with_limit(100))
+                    .await
+                    .unwrap();
                 let call = calls
                     .iter()
                     .find(|call| {

@@ -74,14 +74,20 @@ async fn trace_producers_do_not_wait_for_sqlite_and_artifacts_stay_ordered() {
         .await
         .unwrap();
 
-    let artifacts = tokio::time::timeout(Duration::from_secs(5), async {
+    // Artifact writes and the final status update become visible separately.
+    let (artifacts, trace) = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             let artifacts = store
                 .cursor_trace_artifacts("trace-queue-order")
                 .await
                 .unwrap();
-            if artifacts.len() == 64 {
-                break artifacts;
+            let trace = store
+                .cursor_trace("trace-queue-order")
+                .await
+                .unwrap()
+                .unwrap();
+            if artifacts.len() == 64 && trace.status == "completed" {
+                break (artifacts, trace);
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
@@ -93,11 +99,6 @@ async fn trace_producers_do_not_wait_for_sqlite_and_artifacts_stay_ordered() {
         assert_eq!(artifact.seq, expected as i64);
         assert_eq!(artifact.metadata["append_seqno"], expected as i64);
     }
-    let trace = store
-        .cursor_trace("trace-queue-order")
-        .await
-        .unwrap()
-        .unwrap();
     assert_eq!(trace.status, "completed");
     assert_eq!(
         trace.request_bytes,

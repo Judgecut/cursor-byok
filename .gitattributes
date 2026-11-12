@@ -1,0 +1,2 @@
+# Keep provider-visible prompt assets byte-stable across checkouts.
+server/prompt/** text eol=lf

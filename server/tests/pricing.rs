@@ -418,9 +418,13 @@ async fn same_model_across_suppliers_aggregates_cleanly_and_shares_identity_acro
         .available_suppliers
         .iter()
         .any(|s| s.supplier_id == openai_supplier_id && !s.active));
-    let openai_model_supplier_key =
-        canonical_supplier_identity(ProviderType::OpenAiResponses, &openai_url, &openai_url, "gpt-4o")
-            .supplier_key;
+    let openai_model_supplier_key = canonical_supplier_identity(
+        ProviderType::OpenAiResponses,
+        &openai_url,
+        &openai_url,
+        "gpt-4o",
+    )
+    .supplier_key;
     assert!(overview
         .available_models
         .iter()
@@ -603,7 +607,10 @@ async fn protocol_billing_and_native_external_api_forwarding_agree() {
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
-    let calls = store.llm_calls(&LlmCallFilter::with_limit(20)).await.unwrap();
+    let calls = store
+        .llm_calls(&LlmCallFilter::with_limit(20))
+        .await
+        .unwrap();
     assert_eq!(calls.len(), 3);
     for call in &calls {
         assert_eq!(call.cost_status.as_deref(), Some("priced"));
@@ -1850,7 +1857,14 @@ async fn overview_and_calls_api_apply_supplier_and_time_filters_before_paginatio
     for (idx, (call_id, ep, model_id, ts, input, output)) in [
         ("a-1", ep_a, "gpt-4o", 1_000_i64, 1_000_000_u64, 500_000_u64),
         ("b-1", ep_b, "gpt-4o", 2_000_i64, 500_000_u64, 0_u64),
-        ("a-2", ep_a, "custom-unpriced", 3_000_i64, 200_000_u64, 100_000_u64),
+        (
+            "a-2",
+            ep_a,
+            "custom-unpriced",
+            3_000_i64,
+            200_000_u64,
+            100_000_u64,
+        ),
         ("a-3", ep_a, "gpt-4o", 4_000_i64, 500_000_u64, 0_u64),
     ]
     .into_iter()
@@ -1915,13 +1929,20 @@ async fn overview_and_calls_api_apply_supplier_and_time_filters_before_paginatio
     // Add an official cursor passthrough trace (must appear unfiltered, disappear when supplier filtered).
     store.set_detailed_logging(true).await.unwrap();
     store
-        .start_cursor_trace_if_detailed("official-1", Some("conv"), "cursor_official", Some("default"))
+        .start_cursor_trace_if_detailed(
+            "official-1",
+            Some("conv"),
+            "cursor_official",
+            Some("default"),
+        )
         .await
         .unwrap();
-    sqlx::query("UPDATE cursor_run_traces SET received_at_ms = 5000 WHERE request_id = 'official-1'")
-        .execute(store.pool())
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE cursor_run_traces SET received_at_ms = 5000 WHERE request_id = 'official-1'",
+    )
+    .execute(store.pool())
+    .await
+    .unwrap();
 
     // Unfiltered calls endpoint returns total = 5 and honors limit/offset.
     let (status, unfiltered_page) = send(
@@ -1939,12 +1960,11 @@ async fn overview_and_calls_api_apply_supplier_and_time_filters_before_paginatio
     assert_eq!(items[1]["call_id"], "a-2");
 
     // Supplier filter selects all models of supplier A before limit/offset and drops cursor_official.
-    let encoded_suppliers =
-        url::form_urlencoded::Serializer::new(String::new())
-            .append_pair("suppliers", &json!([sid_a]).to_string())
-            .append_pair("limit", "1")
-            .append_pair("offset", "1")
-            .finish();
+    let encoded_suppliers = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("suppliers", &json!([sid_a]).to_string())
+        .append_pair("limit", "1")
+        .append_pair("offset", "1")
+        .finish();
     let (status, filtered_page) = send(
         router.clone(),
         "GET",
@@ -1959,7 +1979,8 @@ async fn overview_and_calls_api_apply_supplier_and_time_filters_before_paginatio
     assert_eq!(f_items[0]["call_id"], "a-2");
 
     // Overview endpoint reports mixed pricing_sources without flattening to one source.
-    let (status, all_overview) = send(router.clone(), "GET", "/__byok-api__/api/overview", None).await;
+    let (status, all_overview) =
+        send(router.clone(), "GET", "/__byok-api__/api/overview", None).await;
     assert_eq!(status, StatusCode::OK);
     let gpt4o = all_overview["models"]
         .as_array()
