@@ -13,11 +13,14 @@ import {
   formatUsdExact,
   type DisplayCurrency,
 } from "../../shared/utils/costFormat";
+import { formatCompactInteger, formatInteger } from "../../shared/utils/numberFormat";
 import { formatFirstOutput, formatSpeed, performanceTooltip } from "../../shared/utils/speedFormat";
 import styles from "./CallTable.module.scss";
 import { useCallHighlights } from "./useCallHighlights";
 
 const value = (input: string | number | null) => input ?? "-";
+const tokenCount = (input: number | null) => input == null ? "-" : formatCompactInteger(input);
+const tokenTitle = (input: number | null) => input == null ? undefined : formatInteger(input);
 
 function renderCost(call: LlmCall, currency: DisplayCurrency, cnyRate: string | null) {
   if (call.call_kind === "cursor_official") {
@@ -118,6 +121,42 @@ export function CallTable({
       render: (call) => value(call.reasoning_effort),
     },
     {
+      key: "input_tokens",
+      header: "Input Token",
+      render: (call) => tokenCount(call.input_tokens),
+      title: (call) => tokenTitle(call.input_tokens),
+    },
+    {
+      key: "output_tokens",
+      header: "Output Token",
+      render: (call) => tokenCount(call.output_tokens),
+      title: (call) => tokenTitle(call.output_tokens),
+    },
+    {
+      key: "total_tokens",
+      header: "Total Token",
+      render: (call) => tokenCount(call.total_tokens),
+      title: (call) => tokenTitle(call.total_tokens),
+    },
+    {
+      key: "cache_read",
+      header: "Cache Read",
+      render: (call) => tokenCount(call.cache_read_tokens),
+      title: (call) => tokenTitle(call.cache_read_tokens),
+    },
+    {
+      key: "cache_write",
+      header: "Cache Write",
+      render: (call) => tokenCount(call.cache_write_tokens),
+      title: (call) => tokenTitle(call.cache_write_tokens),
+    },
+    {
+      key: "reasoning_tokens",
+      header: "Reasoning Token",
+      render: (call) => tokenCount(call.reasoning_tokens),
+      title: (call) => tokenTitle(call.reasoning_tokens),
+    },
+    {
       key: "speed",
       header: t("平均速度（tok/s）"),
       title: (call) => performanceTooltip(call.performance),
@@ -155,36 +194,6 @@ export function CallTable({
       render: (call) => value(call.finish_reason),
     },
     { key: "http", header: "HTTP", render: (call) => value(call.http_status) },
-    {
-      key: "input_tokens",
-      header: "Input Token",
-      render: (call) => value(call.input_tokens),
-    },
-    {
-      key: "output_tokens",
-      header: "Output Token",
-      render: (call) => value(call.output_tokens),
-    },
-    {
-      key: "total_tokens",
-      header: "Total Token",
-      render: (call) => value(call.total_tokens),
-    },
-    {
-      key: "cache_read",
-      header: "Cache Read",
-      render: (call) => value(call.cache_read_tokens),
-    },
-    {
-      key: "cache_write",
-      header: "Cache Write",
-      render: (call) => value(call.cache_write_tokens),
-    },
-    {
-      key: "reasoning_tokens",
-      header: "Reasoning Token",
-      render: (call) => value(call.reasoning_tokens),
-    },
     {
       key: "message_count",
       header: t("消息数"),
