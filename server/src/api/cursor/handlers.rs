@@ -330,7 +330,7 @@ async fn bidi_handler(
         )
         .await;
     }
-    let decoded = match bidi::decode_payload(request_id, request.append_seqno, &payload) {
+    let mut decoded = match bidi::decode_payload(request_id, request.append_seqno, &payload) {
         Ok(decoded) => decoded,
         Err(_) if active_upstream => {
             let trace = registry.trace(request_id);
@@ -356,14 +356,19 @@ async fn bidi_handler(
     let conversation_id = decoded.conversation_id().map(str::to_owned);
     let trace_metadata = decoded.trace_metadata();
     let trace = registry.trace(&decoded.request_id);
-    let local = if let Some(model_id) = decoded.model_id() {
-        // 插件模型 ID 只在本地有意义,永远不转发到 Cursor 官方上游。
-        if model_id.starts_with(crate::plugin::ADAPTER_ID_PREFIX)
-            || registry.store().model(model_id).await?.is_some()
-        {
+    let local = if let Some(model_id) = first_model.as_deref() {
+        let resolved = crate::cursor::variant::resolve_cursor_model(&registry, model_id).await?;
+        if resolved.variant.is_some() {
+            if let Some(agent::agent_client_message::Message::RunRequest(run_request)) =
+                decoded.message.message.as_mut()
+            {
+                crate::cursor::variant::apply_to_agent_run_request(run_request, &resolved);
+            }
+        }
+        if resolved.local {
             tracing::info!(
                 request_id = decoded.request_id,
-                model_id,
+                model_id = %resolved.base_model_id,
                 "routing Cursor Run to BYOK provider"
             );
             true

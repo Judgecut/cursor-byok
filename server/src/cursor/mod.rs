@@ -10,6 +10,7 @@ pub mod protocol;
 pub mod services;
 pub mod tools;
 pub mod transport;
+pub(crate) mod variant;
 
 pub use conversation::TransportCommand;
 pub use transport::{TransportHandle, TransportParent, TransportRegistry, TransportRoute};

@@ -19,6 +19,7 @@ use crate::{
             proto::{agent::v1 as agent, inference as pb},
         },
         transport::{OutputHub, TransportRegistry},
+        variant,
     },
     model::{CallOrigin, ModelInvocation, ModelType},
     provider::{ModelEvent, Provider},
@@ -106,15 +107,18 @@ impl InferenceService {
             .as_ref()
             .filter(|model| !model.model_id.is_empty())
             .ok_or_else(|| Error::Protocol("RunInference model is required".into()))?;
-        let model_id = requested_model.model_id.as_str();
-        let incoming_selection = project(&pb::InferenceStreamRequest::default(), requested_model)?;
         if request.conversation_id.is_empty() {
             return Err(Error::Protocol(
                 "RunInference conversation ID is required".into(),
             ));
         }
-        let configured = self.registry.store().model(model_id).await?;
-        let local = configured.is_some() || model_id.starts_with(crate::plugin::ADAPTER_ID_PREFIX);
+        let resolved =
+            variant::resolve_cursor_model(&self.registry, &requested_model.model_id).await?;
+        let requested_model = variant::apply_to_inference_model(requested_model, &resolved);
+        let model_id = resolved.base_model_id.as_str();
+        let incoming_selection = project(&pb::InferenceStreamRequest::default(), &requested_model)?;
+        let configured = resolved.configured;
+        let local = resolved.local;
         let mut state = self.state.lock();
         if let Some(route) = state.routes.get(request_id) {
             return Ok(route.clone());
@@ -130,7 +134,7 @@ impl InferenceService {
             });
             let requested_model = state.selections.resolve(
                 &request.conversation_id,
-                requested_model,
+                &requested_model,
                 &headers,
                 default_effort,
             )?;
@@ -362,8 +366,20 @@ fn run_ready(
         .or_else(|| model_info.and_then(|model| model.context_window_tokens));
     let claude = anthropic && name.contains("claude");
     let gpt5 = !anthropic && name.starts_with("gpt-5");
+    let resolved_model = requested_model.map(|mut model| {
+        if let Some(selection) = selection.as_ref() {
+            if let Some(variant_id) = variant::encode_legacy_slug(
+                &model.model_id,
+                model_info.and_then(|info| info.context_window_tokens),
+                selection,
+            ) {
+                model.model_id = variant_id;
+            }
+        }
+        model
+    });
     pb::RunInferenceRunReady {
-        resolved_model: requested_model,
+        resolved_model,
         routed_model_display_name: (!display_name.is_empty()).then_some(display_name),
         prompt_model_metadata: Some(pb::RunInferencePromptModelMetadata {
             vendor: if anthropic { "anthropic" } else { "openai" }.into(),

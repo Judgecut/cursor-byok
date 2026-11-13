@@ -9,8 +9,12 @@ use prost::Message;
 
 use crate::{
     api::cursor::proxy::{self, CursorProxy},
-    cursor::{protocol::proto::agent::v1 as agent, transport::TransportRegistry},
-    model::{format_token_count, parse_token_count, ModelConfig},
+    cursor::{
+        protocol::proto::agent::v1 as agent,
+        transport::TransportRegistry,
+        variant::{context_options, legacy_slug, DEFAULT_CONTEXT, EFFORTS},
+    },
+    model::ModelConfig,
     plugin::PluginModelDescriptor,
     Error, Result,
 };
@@ -212,39 +216,6 @@ struct DefaultModelNudgeDataResponse {
 }
 
 const CLI_LOCAL_MODEL_API_KEY: &str = "cursor-byok-local";
-
-const CONTEXTS: [(&str, &str); 5] = [
-    ("200k", "200K"),
-    ("356k", "356K"),
-    ("500k", "500K"),
-    ("800k", "800K"),
-    ("1m", "1M"),
-];
-const EFFORTS: [(&str, &str); 5] = [
-    ("low", "Low"),
-    ("medium", "Medium"),
-    ("high", "High"),
-    ("xhigh", "Extra High"),
-    ("max", "Max"),
-];
-const DEFAULT_CONTEXT: &str = "200k";
-
-fn context_options(context_window_tokens: Option<u64>) -> Vec<(String, String)> {
-    let mut contexts = CONTEXTS
-        .into_iter()
-        .map(|(value, display_name)| (value.to_owned(), display_name.to_owned()))
-        .collect::<Vec<_>>();
-    if let Some(tokens) = context_window_tokens {
-        let value = tokens.to_string();
-        let duplicate = contexts
-            .iter()
-            .any(|(existing, _)| parse_token_count(existing) == Some(tokens));
-        if !duplicate {
-            contexts.push((value, format!("{} (Custom)", format_token_count(tokens))));
-        }
-    }
-    contexts
-}
 
 pub async fn available_models(
     State(registry): State<TransportRegistry>,
@@ -674,12 +645,11 @@ fn model_variant(
             }
             None => format!("{name}[context={context},fast={fast}]"),
         }),
-        legacy_slug: Some(format!(
-            "{name}-{context}{}{}",
-            effort
-                .map(|(effort, _)| format!("-{effort}"))
-                .unwrap_or_default(),
-            if fast { "-fast" } else { "" }
+        legacy_slug: Some(legacy_slug(
+            name,
+            context,
+            effort.map(|(effort, _)| effort),
+            fast,
         )),
     }
 }
