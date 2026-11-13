@@ -31,6 +31,47 @@
   gap: 8px 14px;
 }
 
+.windowSwitcher {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-sideBar-border));
+  border-radius: 5px;
+
+  button {
+    height: 22px;
+    padding: 0 8px;
+    color: var(--vscode-descriptionForeground);
+    background: transparent;
+    border: 0;
+    border-right: 1px solid var(--vscode-sideBar-border);
+    font-size: type.$font-size-2xs;
+    line-height: 1;
+    white-space: nowrap;
+
+    &:last-child {
+      border-right: 0;
+    }
+
+    &:hover {
+      color: var(--vscode-foreground);
+      background: var(--vscode-list-hoverBackground);
+    }
+
+    &:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: -1px;
+    }
+
+    &[aria-pressed="true"] {
+      color: var(--vscode-button-foreground);
+      background: var(--vscode-button-background);
+    }
+  }
+}
+
 .inlineStats {
   font-family: var(--oa-number-font);
   white-space: nowrap;
@@ -143,9 +184,12 @@
   span {
     position: absolute;
     top: 0;
-    width: 28px;
     white-space: nowrap;
   }
+}
+
+.axisCentered span {
+  text-align: center;
 }
 
 .summaryPane {

@@ -1,26 +1,24 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { init, Rect, type ElementEvent } from "zrender";
-import type { Locale } from "../../../i18n/runtime";
 import { useI18n } from "../../../i18n/store";
 import { useTooltip, type TooltipAnchor } from "../../../shared/ui/Tooltip";
 import { formatCompactInteger, formatInteger } from "../../../shared/utils/numberFormat";
+import {
+  buildCalendarLayout,
+  summarizeContribution,
+  type CalendarCell,
+  type CalendarLayout,
+  type ContributionDay,
+  type ContributionWindow,
+} from "./contributionCalendar";
 import styles from "./ContributionCalendarChart.module.scss";
 
-export type ContributionDay = {
-  date: string;
-  tokens: number;
-};
+export type { ContributionDay };
 
 type ContributionCalendarChartProps = {
   data: ContributionDay[];
   loading?: boolean;
   error?: string | null;
-};
-
-type CalendarCell = ContributionDay & {
-  column: number;
-  row: number;
-  level: number;
 };
 
 type CellExtra = CalendarCell & {
@@ -35,6 +33,7 @@ type AxisLabel = {
   key: string;
   text: string;
   left: number;
+  width?: number;
 };
 
 type CalendarGeometry = {
@@ -43,19 +42,9 @@ type CalendarGeometry = {
   cellGap: number;
   gridWidth: number;
   gridHeight: number;
-  calendarPaneWidth: number | null;
+  gridTemplateColumns: string | null;
+  axisCentered: boolean;
   axisLabels: AxisLabel[];
-};
-
-type ContributionSummary = {
-  windowDays: number;
-  totalTokens: number;
-  activeDays: number;
-  activeRateLabel: string;
-  averageActiveTokens: number | null;
-  longestStreak: number;
-  peakDay: ContributionDay | null;
-  dateRangeLabel: string;
 };
 
 const levelColors = [
@@ -71,14 +60,7 @@ const REFERENCE_MONDAY_MS = Date.UTC(2024, 0, 1);
 const WEEKDAY_ROWS = [0, 2, 4] as const;
 
 const CALENDAR_CONFIG = {
-  minCellSize: 9,
-  singleMaxCellSize: 20,
-  wideMaxCellSize: 22,
-  cellGap: 3,
   resizeTransitionMs: 180,
-  rowCount: 7,
-  axisLabelGap: 8,
-  axisLabelWidth: 28,
   calendarPadX: 32,
   weekdayReserve: 40,
   wideLayoutMinWidth: 1340,
@@ -87,13 +69,46 @@ const CALENDAR_CONFIG = {
   summaryRatio: 0.28,
 } as const;
 
-function parseDate(date: string) {
-  return new Date(`${date}T00:00:00Z`);
-}
-
-function mondayIndex(date: Date) {
-  return (date.getUTCDay() + 6) % 7;
-}
+const WINDOW_GEOMETRY_CONFIG: Record<
+  ContributionWindow,
+  {
+    minCellSize: number;
+    singleMaxCellSize: number;
+    wideMaxCellSize: number;
+    cellGap: number;
+    axisLabelWidth: number;
+    axisLabelGap: number;
+    cornerRadius: (cellSize: number) => number;
+  }
+> = {
+  year: {
+    minCellSize: 9,
+    singleMaxCellSize: 20,
+    wideMaxCellSize: 22,
+    cellGap: 3,
+    axisLabelWidth: 28,
+    axisLabelGap: 8,
+    cornerRadius: (cellSize) => Math.min(3, cellSize / 4),
+  },
+  month: {
+    minCellSize: 16,
+    singleMaxCellSize: 26,
+    wideMaxCellSize: 28,
+    cellGap: 4,
+    axisLabelWidth: 36,
+    axisLabelGap: 8,
+    cornerRadius: (cellSize) => Math.min(3, cellSize / 4),
+  },
+  week: {
+    minCellSize: 32,
+    singleMaxCellSize: 60,
+    wideMaxCellSize: 64,
+    cellGap: 10,
+    axisLabelWidth: 58,
+    axisLabelGap: 4,
+    cornerRadius: (cellSize) => Math.min(6, cellSize / 6),
+  },
+};
 
 function cellOffset(index: number, cellSize: number, cellGap: number) {
   return index * (cellSize + cellGap);
@@ -103,94 +118,18 @@ function isCellExtra(value: unknown): value is CellExtra {
   return typeof value === "object" && value !== null && (value as CellExtra).kind === "calendar-cell";
 }
 
-function buildCalendarLayout(data: ContributionDay[], locale: Locale) {
-  if (data.length === 0) return null;
-
-  const sorted = [...data].sort((left, right) => left.date.localeCompare(right.date));
-  const monthFormatter = new Intl.DateTimeFormat(locale, { month: "short", timeZone: "UTC" });
-  const maximum = Math.max(1, ...sorted.map(({ tokens }) => tokens));
-  const firstDate = parseDate(sorted[0].date);
-  const calendarStart = new Date(firstDate.getTime() - mondayIndex(firstDate) * DAY_IN_MS);
-
-  const cells: CalendarCell[] = sorted.map((day) => {
-    const tokens = Number.isFinite(day.tokens) ? Math.max(0, day.tokens) : 0;
-    const date = parseDate(day.date);
-    const daysFromStart = Math.round((date.getTime() - calendarStart.getTime()) / DAY_IN_MS);
-    const level = tokens === 0 ? 0 : Math.max(1, Math.ceil((tokens / maximum) * 4));
-    return { date: day.date, tokens, column: Math.floor(daysFromStart / 7), row: mondayIndex(date), level };
-  });
-
-  const columnCount = cells.at(-1)!.column + 1;
-  const monthTicks = cells.reduce<Array<{ key: string; text: string; column: number }>>((ticks, cell) => {
-    const date = parseDate(cell.date);
-    const key = `${date.getUTCFullYear()}-${date.getUTCMonth()}`;
-    if (ticks.at(-1)?.key !== key) ticks.push({ key, text: monthFormatter.format(date), column: cell.column });
-    return ticks;
-  }, []);
-
-  return { cells, columnCount, monthTicks };
-}
-
-function summarizeContribution(data: ContributionDay[]): ContributionSummary | null {
-  if (data.length === 0) return null;
-
-  const sorted = [...data].sort((left, right) => left.date.localeCompare(right.date));
-  let totalTokens = 0;
-  let activeDays = 0;
-  let longestStreak = 0;
-  let currentStreak = 0;
-  let previousActiveMs: number | null = null;
-  let peakDay: ContributionDay | null = null;
-
-  for (const day of sorted) {
-    const tokens = Number.isFinite(day.tokens) ? Math.max(0, day.tokens) : 0;
-    totalTokens += tokens;
-    if (tokens > 0) {
-      activeDays += 1;
-      const dayMs = parseDate(day.date).getTime();
-      if (previousActiveMs !== null && dayMs - previousActiveMs === DAY_IN_MS) {
-        currentStreak += 1;
-      } else {
-        currentStreak = 1;
-      }
-      previousActiveMs = dayMs;
-      longestStreak = Math.max(longestStreak, currentStreak);
-
-      if (!peakDay || tokens > peakDay.tokens) {
-        peakDay = { date: day.date, tokens };
-      }
-    }
-  }
-
-  const windowDays = sorted.length;
-  const activeRate = windowDays > 0 ? (activeDays / windowDays) * 100 : 0;
-  const activeRateLabel = `${activeRate.toFixed(1).replace(/\.0$/, "")}%`;
-  const firstDate = sorted[0].date;
-  const lastDate = sorted.at(-1)!.date;
-
-  return {
-    windowDays,
-    totalTokens,
-    activeDays,
-    activeRateLabel,
-    averageActiveTokens: activeDays > 0 ? Math.round(totalTokens / activeDays) : null,
-    longestStreak,
-    peakDay,
-    dateRangeLabel: firstDate === lastDate ? firstDate : `${firstDate} ~ ${lastDate}`,
-  };
-}
-
 export function ContributionCalendarChart({ data, loading = false, error = null }: ContributionCalendarChartProps) {
   const { locale } = useI18n();
+  const [windowMode, setWindowMode] = useState<ContributionWindow>("year");
   const bodyRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
-  const layoutRef = useRef<ReturnType<typeof buildCalendarLayout>>(null);
-  const scheduleDrawRef = useRef<() => void>(() => undefined);
+  const layoutRef = useRef<CalendarLayout | null>(null);
+  const drawNowRef = useRef<() => void>(() => undefined);
   const { show: showTooltip, hide: hideTooltip } = useTooltip();
   const [geometry, setGeometry] = useState<CalendarGeometry | null>(null);
 
-  const layout = useMemo(() => buildCalendarLayout(data, locale), [data, locale]);
-  const summary = useMemo(() => summarizeContribution(data), [data]);
+  const layout = useMemo(() => buildCalendarLayout(data, windowMode, locale), [data, locale, windowMode]);
+  const summary = useMemo(() => summarizeContribution(data, windowMode), [data, windowMode]);
   const hasChart = Boolean(layout && summary && !error);
   const tokenFormatter = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const tokenFormatterRef = useRef(tokenFormatter);
@@ -245,7 +184,7 @@ export function ContributionCalendarChart({ data, loading = false, error = null 
     let lastBodyWidth = -1;
     let lastGridWidth = -1;
     let lastGridHeight = -1;
-    let lastLayout: typeof layout = null;
+    let lastLayout: CalendarLayout | null = null;
 
     const draw = () => {
       const currentLayout = layoutRef.current;
@@ -253,14 +192,19 @@ export function ContributionCalendarChart({ data, loading = false, error = null 
       const bodyWidth = Math.floor(body.clientWidth);
       if (bodyWidth <= 0 || (bodyWidth === lastBodyWidth && currentLayout === lastLayout)) return;
 
+      const windowConfig = WINDOW_GEOMETRY_CONFIG[currentLayout.window];
       const colCount = currentLayout.columnCount;
-      const cellGap = CALENDAR_CONFIG.cellGap;
+      const rowCount = currentLayout.rowCount;
+      const showWeekday = rowCount > 1;
+      const weekdayReserve = showWeekday ? CALENDAR_CONFIG.weekdayReserve : 0;
+      const cellGap = windowConfig.cellGap;
       const gapsWidth = Math.max(0, colCount - 1) * cellGap;
       const isWide = bodyWidth >= CALENDAR_CONFIG.wideLayoutMinWidth;
 
       let calendarBudget = bodyWidth;
+      let summaryTarget = 0;
       if (isWide) {
-        const summaryTarget = Math.min(
+        summaryTarget = Math.min(
           CALENDAR_CONFIG.summaryMaxWidth,
           Math.max(CALENDAR_CONFIG.summaryMinWidth, Math.round(bodyWidth * CALENDAR_CONFIG.summaryRatio)),
         );
@@ -269,36 +213,50 @@ export function ContributionCalendarChart({ data, loading = false, error = null 
 
       const availableGridWidth = Math.max(
         0,
-        calendarBudget - CALENDAR_CONFIG.calendarPadX - CALENDAR_CONFIG.weekdayReserve,
+        calendarBudget - CALENDAR_CONFIG.calendarPadX - weekdayReserve,
       );
       const rawCellSize = colCount > 0
         ? (availableGridWidth - gapsWidth) / colCount
-        : CALENDAR_CONFIG.minCellSize;
+        : windowConfig.minCellSize;
       const maxCellSize = isWide
-        ? CALENDAR_CONFIG.wideMaxCellSize
-        : CALENDAR_CONFIG.singleMaxCellSize;
+        ? windowConfig.wideMaxCellSize
+        : windowConfig.singleMaxCellSize;
       const cellSize = Math.max(
-        CALENDAR_CONFIG.minCellSize,
+        windowConfig.minCellSize,
         Math.min(maxCellSize, rawCellSize),
       );
       const gridWidth = Math.round(colCount * cellSize + gapsWidth);
       const gridHeight = Math.round(
-        CALENDAR_CONFIG.rowCount * cellSize + Math.max(0, CALENDAR_CONFIG.rowCount - 1) * cellGap,
+        rowCount * cellSize + Math.max(0, rowCount - 1) * cellGap,
       );
-      const calendarPaneWidth = isWide
-        ? gridWidth + CALENDAR_CONFIG.weekdayReserve + CALENDAR_CONFIG.calendarPadX
-        : null;
 
+      let gridTemplateColumns: string | null = null;
+      if (isWide) {
+        const calendarPaneWidth = gridWidth + weekdayReserve + CALENDAR_CONFIG.calendarPadX;
+        const keepCompactCalendar = currentLayout.window === "year"
+          && calendarPaneWidth >= bodyWidth - CALENDAR_CONFIG.summaryMaxWidth;
+        gridTemplateColumns = keepCompactCalendar
+          ? `${calendarPaneWidth}px minmax(0, 1fr)`
+          : `minmax(0, 1fr) ${summaryTarget}px`;
+      }
+
+      const axisCentered = currentLayout.window === "week" && cellSize >= windowConfig.axisLabelWidth;
       let lastLabelEnd = -Infinity;
-      const axisLabels = currentLayout.monthTicks.flatMap((tick) => {
-        const left = Math.min(
-          cellOffset(tick.column, cellSize, cellGap),
-          Math.max(0, gridWidth - CALENDAR_CONFIG.axisLabelWidth),
-        );
-        if (left < lastLabelEnd + CALENDAR_CONFIG.axisLabelGap) return [];
-        lastLabelEnd = left + CALENDAR_CONFIG.axisLabelWidth;
-        return [{ ...tick, left }];
-      });
+      const axisLabels: AxisLabel[] = axisCentered
+        ? currentLayout.axisTicks.map((tick) => ({
+            ...tick,
+            left: cellOffset(tick.column, cellSize, cellGap),
+            width: cellSize,
+          }))
+        : currentLayout.axisTicks.flatMap((tick) => {
+            const left = Math.min(
+              cellOffset(tick.column, cellSize, cellGap),
+              Math.max(0, gridWidth - windowConfig.axisLabelWidth),
+            );
+            if (left < lastLabelEnd + windowConfig.axisLabelGap) return [];
+            lastLabelEnd = left + windowConfig.axisLabelWidth;
+            return [{ ...tick, left }];
+          });
 
       setGeometry({
         isWide,
@@ -306,7 +264,8 @@ export function ContributionCalendarChart({ data, loading = false, error = null 
         cellGap,
         gridWidth,
         gridHeight,
-        calendarPaneWidth,
+        gridTemplateColumns,
+        axisCentered,
         axisLabels,
       });
 
@@ -317,16 +276,27 @@ export function ContributionCalendarChart({ data, loading = false, error = null 
         lastGridWidth = gridWidth;
         lastGridHeight = gridHeight;
       }
+
+      if (lastLayout && lastLayout.window !== currentLayout.window) {
+        for (const rect of cellRects.values()) {
+          rect.stopAnimation();
+          chart.remove(rect);
+        }
+        cellRects.clear();
+      }
+
       lastBodyWidth = bodyWidth;
       lastLayout = currentLayout;
 
       const currentDates = new Set(currentLayout.cells.map((cell) => cell.date));
       for (const [date, rect] of cellRects) {
         if (currentDates.has(date)) continue;
+        rect.stopAnimation();
         chart.remove(rect);
         cellRects.delete(date);
       }
 
+      const cornerRadius = windowConfig.cornerRadius(cellSize);
       for (const cell of currentLayout.cells) {
         const x = cellOffset(cell.column, cellSize, cellGap);
         const y = cellOffset(cell.row, cellSize, cellGap);
@@ -335,7 +305,7 @@ export function ContributionCalendarChart({ data, loading = false, error = null 
           y,
           width: cellSize,
           height: cellSize,
-          r: Math.min(3, cellSize / 4),
+          r: cornerRadius,
         };
         const extra = {
           ...cell,
@@ -350,7 +320,13 @@ export function ContributionCalendarChart({ data, loading = false, error = null 
         if (current) {
           current.extra = extra;
           current.stopAnimation();
-          if (current.shape.width !== shape.width || current.shape.x !== shape.x || current.shape.y !== shape.y) {
+          if (
+            current.shape.width !== shape.width
+            || current.shape.height !== shape.height
+            || current.shape.x !== shape.x
+            || current.shape.y !== shape.y
+            || current.shape.r !== shape.r
+          ) {
             current.attr({ shape, style: { fill: levelColors[cell.level] } });
           } else {
             current.animateTo(
@@ -377,11 +353,16 @@ export function ContributionCalendarChart({ data, loading = false, error = null 
       hideTooltip();
     };
 
+    const drawNow = () => {
+      window.cancelAnimationFrame(drawFrame);
+      drawFrame = 0;
+      draw();
+    };
     const scheduleDraw = () => {
       window.cancelAnimationFrame(drawFrame);
       drawFrame = window.requestAnimationFrame(draw);
     };
-    scheduleDrawRef.current = scheduleDraw;
+    drawNowRef.current = drawNow;
     const observer = new ResizeObserver(scheduleDraw);
     observer.observe(body);
     draw();
@@ -389,20 +370,59 @@ export function ContributionCalendarChart({ data, loading = false, error = null 
     return () => {
       observer.disconnect();
       window.cancelAnimationFrame(drawFrame);
-      scheduleDrawRef.current = () => undefined;
+      drawNowRef.current = () => undefined;
       chart.dispose();
     };
   }, [hasChart]);
 
   useLayoutEffect(() => {
-    scheduleDrawRef.current();
-  }, [layout]);
+    drawNowRef.current();
+  }, [layout, windowMode]);
+
+  const windowTitle = windowMode === "year"
+    ? t("年度活动日历（近 365 天，按当前供应商筛选）")
+    : windowMode === "month"
+      ? t("月度活动日历（近 30 天，按当前供应商筛选）")
+      : t("周度活动日历（近 7 天，按当前供应商筛选）");
+
+  const sectionAriaLabel = windowMode === "year"
+    ? t("过去一年的 Token 用量")
+    : windowMode === "month"
+      ? t("过去一个月的 Token 用量")
+      : t("过去一周的 Token 用量");
+
+  const canvasAriaLabel = windowMode === "year"
+    ? t("过去一年的 Token 用量日历")
+    : windowMode === "month"
+      ? t("过去一个月的 Token 用量日历")
+      : t("过去一周的 Token 用量日历");
+
+  const renderWindowSwitcher = () => (
+    <div className={styles.windowSwitcher} role="group" aria-label={t("活动日历时间维度")}>
+      <button
+        type="button"
+        aria-pressed={windowMode === "year"}
+        onClick={() => setWindowMode("year")}
+      >{t("年")}</button>
+      <button
+        type="button"
+        aria-pressed={windowMode === "month"}
+        onClick={() => setWindowMode("month")}
+      >{t("月")}</button>
+      <button
+        type="button"
+        aria-pressed={windowMode === "week"}
+        onClick={() => setWindowMode("week")}
+      >{t("周")}</button>
+    </div>
+  );
 
   if (error) {
     return (
-      <section className={styles.root} aria-label={t("过去一年的 Token 用量")}>
+      <section className={styles.root} aria-label={sectionAriaLabel}>
         <div className={styles.header}>
-          <span className={styles.title}>{t("年度活动日历（固定最近 365 天，按当前供应商筛选）")}</span>
+          <span className={styles.title}>{windowTitle}</span>
+          <div className={styles.headerMeta}>{renderWindowSwitcher()}</div>
         </div>
         <div className={styles.state}>{t("日历数据加载失败：{error}", { error })}</div>
       </section>
@@ -411,24 +431,26 @@ export function ContributionCalendarChart({ data, loading = false, error = null 
 
   if (!layout || !summary) {
     return (
-      <section className={styles.root} aria-label={t("过去一年的 Token 用量")}>
+      <section className={styles.root} aria-label={sectionAriaLabel}>
         <div className={styles.header}>
-          <span className={styles.title}>{t("年度活动日历（固定最近 365 天，按当前供应商筛选）")}</span>
+          <span className={styles.title}>{windowTitle}</span>
+          <div className={styles.headerMeta}>{renderWindowSwitcher()}</div>
         </div>
-        <div className={styles.state}>{loading ? t("正在加载日历数据…") : t("暂无年度活动数据")}</div>
+        <div className={styles.state}>{loading ? t("正在加载日历数据…") : t("暂无活动数据")}</div>
       </section>
     );
   }
 
   const isWide = geometry?.isWide ?? false;
-  const bodyStyle = geometry?.calendarPaneWidth
-    ? { gridTemplateColumns: `${geometry.calendarPaneWidth}px minmax(0, 1fr)` }
+  const showWeekdayAxis = layout.rowCount > 1;
+  const bodyStyle = geometry?.gridTemplateColumns
+    ? { gridTemplateColumns: geometry.gridTemplateColumns }
     : undefined;
 
   return (
-    <section className={styles.root} aria-label={t("过去一年的 Token 用量")}>
+    <section className={styles.root} aria-label={sectionAriaLabel}>
       <div className={styles.header}>
-        <span className={styles.title}>{t("年度活动日历（固定最近 365 天，按当前供应商筛选）")}</span>
+        <span className={styles.title}>{windowTitle}</span>
         <div className={styles.headerMeta}>
           {!isWide && (
             <span className={styles.inlineStats}>
@@ -439,6 +461,7 @@ export function ContributionCalendarChart({ data, loading = false, error = null 
               })}
             </span>
           )}
+          {renderWindowSwitcher()}
           <div className={styles.legend} aria-hidden="true">
             <span>{t("少")}</span>
             <div className={styles.legendSwatches}>
@@ -460,37 +483,44 @@ export function ContributionCalendarChart({ data, loading = false, error = null 
           <div className={styles.scroller}>
             <div className={styles.canvasFrame}>
               <div className={styles.heatmapRow}>
-                <div
-                  className={styles.weekdayAxis}
-                  style={{ height: geometry?.gridHeight ?? 0 }}
-                  aria-hidden="true"
-                >
-                  {geometry && weekdayTicks.map((tick) => (
-                    <span
-                      key={tick.row}
-                      style={{
-                        top: cellOffset(tick.row, geometry.cellSize, geometry.cellGap),
-                        height: geometry.cellSize,
-                      }}
-                    >
-                      {tick.label}
-                    </span>
-                  ))}
-                </div>
+                {showWeekdayAxis && (
+                  <div
+                    className={styles.weekdayAxis}
+                    style={{ height: geometry?.gridHeight ?? 0 }}
+                    aria-hidden="true"
+                  >
+                    {geometry && weekdayTicks.map((tick) => (
+                      <span
+                        key={tick.row}
+                        style={{
+                          top: cellOffset(tick.row, geometry.cellSize, geometry.cellGap),
+                          height: geometry.cellSize,
+                        }}
+                      >
+                        {tick.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className={styles.gridColumn}>
                   <div
                     ref={canvasRef}
                     className={styles.canvas}
                     role="img"
-                    aria-label={t("过去一年的 Token 用量日历")}
+                    aria-label={canvasAriaLabel}
                   />
                   <div
-                    className={styles.axis}
+                    className={[styles.axis, geometry?.axisCentered ? styles.axisCentered : ""].filter(Boolean).join(" ")}
                     style={{ width: geometry?.gridWidth ?? 0 }}
                     aria-hidden="true"
                   >
                     {geometry?.axisLabels.map((label) => (
-                      <span key={label.key} style={{ left: label.left }}>{label.text}</span>
+                      <span
+                        key={label.key}
+                        style={label.width !== undefined ? { left: label.left, width: label.width } : { left: label.left }}
+                      >
+                        {label.text}
+                      </span>
                     ))}
                   </div>
                 </div>
