@@ -109,29 +109,28 @@ export type SpeedUnavailableReason =
   | "missing_output_tokens"
   | "missing_first_output"
   | "missing_generation"
+  | "missing_duration"
   | "short_output"
   | "short_generation";
 
 export interface CallPerformance {
+  /** Output tokens divided by the whole call duration, including the first-token wait. */
+  overall_tokens_per_second: number | null;
+  overall_reason: SpeedUnavailableReason | null;
   speed_status: SpeedStatus;
+  /** Output tokens divided by the generation window after the first output. */
   tokens_per_second: number | null;
   reason: SpeedUnavailableReason | null;
   first_output_ms: number | null;
   generation_ms: number | null;
 }
 
-/** Accumulated numerator and denominator behind one aggregated rate. */
-export interface SpeedSampleCounts {
-  output_tokens: number;
-  generation_ms: number;
-  samples: number;
-}
-
+/** Pooled end-to-end rate with the totals behind it. */
 export interface SpeedAggregate {
   average_tokens_per_second: number | null;
-  status: SpeedStatus;
-  measured: SpeedSampleCounts;
-  estimated: SpeedSampleCounts;
+  output_tokens: number;
+  duration_ms: number;
+  samples: number;
   first_output_median_ms: number | null;
 }
 

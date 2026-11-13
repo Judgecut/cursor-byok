@@ -14,7 +14,7 @@ import {
   type DisplayCurrency,
 } from "../../shared/utils/costFormat";
 import { formatCompactInteger, formatInteger } from "../../shared/utils/numberFormat";
-import { formatFirstOutput, formatSpeed, performanceTooltip } from "../../shared/utils/speedFormat";
+import { formatFirstOutput, formatSpeed, overallSpeedTooltip } from "../../shared/utils/speedFormat";
 import styles from "./CallTable.module.scss";
 import { useCallHighlights } from "./useCallHighlights";
 
@@ -158,17 +158,14 @@ export function CallTable({
     },
     {
       key: "speed",
-      header: t("平均速度（tok/s）"),
-      title: (call) => performanceTooltip(call.performance),
-      render: (call) => formatSpeed(
-        call.performance.tokens_per_second,
-        call.performance.speed_status,
-      ),
+      header: t("整体速度（tok/s）"),
+      title: (call) => overallSpeedTooltip(call.performance),
+      render: (call) => formatSpeed(call.performance.overall_tokens_per_second),
     },
     {
       key: "first_output",
       header: t("首 Token（s）"),
-      title: (call) => performanceTooltip(call.performance),
+      title: (call) => overallSpeedTooltip(call.performance),
       render: (call) => formatFirstOutput(call.performance.first_output_ms),
     },
     {

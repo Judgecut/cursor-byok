@@ -14,8 +14,7 @@ use crate::{
     model::{
         Overview, OverviewActivityDay, OverviewFilterModel, OverviewFilterSupplier,
         OverviewMetrics, OverviewModelSummary, OverviewSupplierBreakdown, ProviderType,
-        SpeedAggregate, SpeedSampleTotals, TokenUsageBucket, TokenUsageGranularity,
-        MIN_SPEED_GENERATION_MS, MIN_SPEED_OUTPUT_TOKENS,
+        SpeedAggregate, SpeedTotals, TokenUsageBucket, TokenUsageGranularity,
     },
     plugin::PluginModelDescriptor,
     pricing::{
@@ -338,18 +337,15 @@ impl Store {
         suppliers_json: Option<&str>,
     ) -> Result<SpeedAggregate> {
         let eligible = speed_eligible_sql();
-        let hidden = hidden_reasoning_sql();
         let supplier_id_expr = supplier_id_sql();
         let row = sqlx::query(&format!(
             "SELECT
-                COALESCE(SUM(CASE WHEN {eligible} AND NOT ({hidden}) THEN output_tokens ELSE 0 END), 0) AS measured_output_tokens,
-                COALESCE(SUM(CASE WHEN {eligible} AND NOT ({hidden}) THEN generation_ms ELSE 0 END), 0) AS measured_generation_ms,
-                COALESCE(SUM(CASE WHEN {eligible} AND NOT ({hidden}) THEN 1 ELSE 0 END), 0) AS measured_samples,
-                COALESCE(SUM(CASE WHEN {eligible} AND ({hidden}) THEN output_tokens ELSE 0 END), 0) AS estimated_output_tokens,
-                COALESCE(SUM(CASE WHEN {eligible} AND ({hidden}) THEN generation_ms ELSE 0 END), 0) AS estimated_generation_ms,
-                COALESCE(SUM(CASE WHEN {eligible} AND ({hidden}) THEN 1 ELSE 0 END), 0) AS estimated_samples
+                COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                COALESCE(SUM(duration_ms), 0) AS duration_ms,
+                COUNT(*) AS samples
              FROM llm_calls
-             WHERE (? IS NULL OR created_at_ms >= ?)
+             WHERE {eligible}
+               AND (? IS NULL OR created_at_ms >= ?)
                AND (? IS NULL OR created_at_ms < ?)
                AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
                AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))"
@@ -365,13 +361,10 @@ impl Store {
         .fetch_one(&self.pool)
         .await?;
 
-        let totals = SpeedSampleTotals {
-            measured_output_tokens: non_negative(row.try_get("measured_output_tokens")?),
-            measured_generation_ms: non_negative(row.try_get("measured_generation_ms")?),
-            measured_samples: non_negative(row.try_get("measured_samples")?),
-            estimated_output_tokens: non_negative(row.try_get("estimated_output_tokens")?),
-            estimated_generation_ms: non_negative(row.try_get("estimated_generation_ms")?),
-            estimated_samples: non_negative(row.try_get("estimated_samples")?),
+        let totals = SpeedTotals {
+            output_tokens: non_negative(row.try_get("output_tokens")?),
+            duration_ms: non_negative(row.try_get("duration_ms")?),
+            samples: non_negative(row.try_get("samples")?),
         };
 
         let median_row = sqlx::query(&format!(
@@ -413,20 +406,17 @@ impl Store {
         supplier_keys_json: Option<&str>,
         suppliers_json: Option<&str>,
         group_expr: &str,
-    ) -> Result<HashMap<String, SpeedSampleTotals>> {
+    ) -> Result<HashMap<String, SpeedTotals>> {
         let eligible = speed_eligible_sql();
-        let hidden = hidden_reasoning_sql();
         let supplier_id_expr = supplier_id_sql();
         let rows = sqlx::query(&format!(
             "SELECT {group_expr} AS group_key,
-                COALESCE(SUM(CASE WHEN {eligible} AND NOT ({hidden}) THEN output_tokens ELSE 0 END), 0) AS measured_output_tokens,
-                COALESCE(SUM(CASE WHEN {eligible} AND NOT ({hidden}) THEN generation_ms ELSE 0 END), 0) AS measured_generation_ms,
-                COALESCE(SUM(CASE WHEN {eligible} AND NOT ({hidden}) THEN 1 ELSE 0 END), 0) AS measured_samples,
-                COALESCE(SUM(CASE WHEN {eligible} AND ({hidden}) THEN output_tokens ELSE 0 END), 0) AS estimated_output_tokens,
-                COALESCE(SUM(CASE WHEN {eligible} AND ({hidden}) THEN generation_ms ELSE 0 END), 0) AS estimated_generation_ms,
-                COALESCE(SUM(CASE WHEN {eligible} AND ({hidden}) THEN 1 ELSE 0 END), 0) AS estimated_samples
+                COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                COALESCE(SUM(duration_ms), 0) AS duration_ms,
+                COUNT(*) AS samples
              FROM llm_calls
-             WHERE (? IS NULL OR created_at_ms >= ?)
+             WHERE {eligible}
+               AND (? IS NULL OR created_at_ms >= ?)
                AND (? IS NULL OR created_at_ms < ?)
                AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
                AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))
@@ -448,21 +438,10 @@ impl Store {
                 let key: String = row.try_get("group_key")?;
                 Ok((
                     key,
-                    SpeedSampleTotals {
-                        measured_output_tokens: non_negative(
-                            row.try_get("measured_output_tokens")?,
-                        ),
-                        measured_generation_ms: non_negative(
-                            row.try_get("measured_generation_ms")?,
-                        ),
-                        measured_samples: non_negative(row.try_get("measured_samples")?),
-                        estimated_output_tokens: non_negative(
-                            row.try_get("estimated_output_tokens")?,
-                        ),
-                        estimated_generation_ms: non_negative(
-                            row.try_get("estimated_generation_ms")?,
-                        ),
-                        estimated_samples: non_negative(row.try_get("estimated_samples")?),
+                    SpeedTotals {
+                        output_tokens: non_negative(row.try_get("output_tokens")?),
+                        duration_ms: non_negative(row.try_get("duration_ms")?),
+                        samples: non_negative(row.try_get("samples")?),
                     },
                 ))
             })
@@ -1133,20 +1112,13 @@ fn token_usage_buckets(
     )
 }
 
-/// A call contributes a rate only when it succeeded, streamed, and produced enough
-/// output over a long enough generation window.
-fn speed_eligible_sql() -> String {
-    format!(
-        "status = 'completed' AND COALESCE(streaming, 0) = 1 AND call_origin = 'run' \
-         AND COALESCE(output_tokens, 0) >= {MIN_SPEED_OUTPUT_TOKENS} \
-         AND COALESCE(generation_ms, 0) >= {MIN_SPEED_GENERATION_MS}"
-    )
-}
-
-/// Billed reasoning tokens that no output event ever showed hide part of the
-/// generation window, so such samples are aggregated as estimates.
-fn hidden_reasoning_sql() -> &'static str {
-    "(COALESCE(reasoning_tokens, 0) > 0 AND observed_thinking = 0)"
+/// A call contributes to the pooled end-to-end rate when it succeeded, belongs
+/// to a business run, reported an output count, and has a positive wall-clock
+/// duration. Streaming is not required because waiting is part of the denominator.
+fn speed_eligible_sql() -> &'static str {
+    "status = 'completed' AND call_origin = 'run' \
+     AND output_tokens IS NOT NULL \
+     AND COALESCE(duration_ms, 0) > 0"
 }
 
 fn first_output_eligible_sql() -> &'static str {
@@ -1175,7 +1147,7 @@ fn saturating_sum(values: &[i64]) -> i64 {
 #[cfg(test)]
 mod tests {
     use crate::{
-        model::{CallOrigin, NewLlmCall, ProviderType, SpeedStatus, Usage},
+        model::{CallOrigin, NewLlmCall, ProviderType, Usage},
         store::CallFinish,
     };
 
@@ -1253,9 +1225,10 @@ mod tests {
             .unwrap();
     }
 
-    /// Model tests must not pollute business speed samples, short calls must not
-    /// dilute the rate, overall/supplier/model speed aggregates must match SQL pooling
-    /// and medians, and activity calendar stays fixed at 365 days regardless of start_ms/end_ms.
+    /// Model tests must not pollute business speed samples, every completed run
+    /// call contributes its output and whole duration, overall/supplier/model
+    /// aggregates must match SQL pooling and medians, and the activity calendar
+    /// stays fixed at 365 days regardless of start_ms/end_ms.
     #[tokio::test]
     async fn speed_aggregates_pool_eligible_samples_across_overall_supplier_and_model() {
         let directory = tempfile::tempdir().unwrap();
@@ -1282,7 +1255,8 @@ mod tests {
             },
         )
         .await;
-        // Too few tokens to be a speed sample, but its wait still joins the median.
+        // Too few tokens for a generation sample, but its whole call still joins
+        // the end-to-end pool and its wait still joins the median.
         record(
             &store,
             Sample {
@@ -1299,7 +1273,8 @@ mod tests {
             },
         )
         .await;
-        // Hidden reasoning marks the sample as estimated.
+        // Hidden reasoning no longer changes the end-to-end rate: its wait is in
+        // the duration denominator.
         record(
             &store,
             Sample {
@@ -1336,20 +1311,27 @@ mod tests {
         let overview = store.overview(None, None, None, None, None).await.unwrap();
         assert_eq!(overview.activity_series.len(), 365);
 
-        assert_eq!(overview.metrics.speed.status, SpeedStatus::Measured);
-        assert!((overview.metrics.speed.average_tokens_per_second.unwrap() - 100.0).abs() < 0.001);
+        // Pooled over the three business calls: 1,550 tokens over 23.3 s.
+        assert_eq!(overview.metrics.speed.samples, 3);
+        assert_eq!(overview.metrics.speed.output_tokens, 1_550);
+        assert_eq!(overview.metrics.speed.duration_ms, 23_300);
+        assert!((overview.metrics.speed.average_tokens_per_second.unwrap() - 66.524).abs() < 0.001);
         assert_eq!(overview.metrics.speed.first_output_median_ms, Some(1_000));
+        // The JSON contract the desktop reads; a rename here must update the client type.
+        let speed_json = serde_json::to_value(overview.metrics.speed).unwrap();
+        assert_eq!(speed_json["samples"], 3);
+        assert_eq!(speed_json["output_tokens"], 1_550);
+        assert_eq!(speed_json["duration_ms"], 23_300);
 
         let model = overview
             .models
             .iter()
             .find(|item| item.model_id == "glm-4.6")
             .expect("model summary");
-        assert_eq!(model.speed.status, SpeedStatus::Measured);
-        assert_eq!(model.speed.measured.samples, 1);
-        assert_eq!(model.speed.measured.output_tokens, 1_000);
-        assert_eq!(model.speed.estimated.samples, 1);
-        assert!((model.speed.average_tokens_per_second.unwrap() - 100.0).abs() < 0.001);
+        assert_eq!(model.speed.samples, 3);
+        assert_eq!(model.speed.output_tokens, 1_550);
+        assert_eq!(model.speed.duration_ms, 23_300);
+        assert!((model.speed.average_tokens_per_second.unwrap() - 66.524).abs() < 0.001);
         assert_eq!(model.speed.first_output_median_ms, Some(1_000));
 
         let supplier = overview
@@ -1357,7 +1339,7 @@ mod tests {
             .iter()
             .find(|item| item.endpoint_key == "https://example.com/v1/chat/completions")
             .expect("supplier breakdown");
-        assert_eq!(supplier.speed.status, SpeedStatus::Measured);
+        assert_eq!(supplier.speed.samples, 3);
         assert_eq!(supplier.speed.first_output_median_ms, Some(1_000));
         assert_eq!(supplier.model_count, 1);
 

@@ -76,9 +76,9 @@ export function HomeModelBreakdown({
                 type="button"
                 className={styles.sortHeader}
                 onClick={() => toggleSort("speed")}
-                title={t("按平均速度排序，无样本的行排在最后")}
+                title={t("按整体速度排序，无样本的行排在最后")}
               >
-                {t("平均速度（tok/s）")}
+                {t("整体速度（tok/s）")}
                 <span className={styles.sortMarker}>{sortIndicator(sort, "speed")}</span>
               </button>
             </th>
@@ -159,7 +159,7 @@ export function HomeModelBreakdown({
                 </div>
               </td>
               <td className={styles.monoNum} title={aggregateTooltip(model.speed)}>
-                {formatSpeed(model.speed.average_tokens_per_second, model.speed.status)}
+                {formatSpeed(model.speed.average_tokens_per_second)}
               </td>
               <td className={styles.monoNum} title={aggregateTooltip(model.speed)}>
                 {formatFirstOutput(model.speed.first_output_median_ms)}

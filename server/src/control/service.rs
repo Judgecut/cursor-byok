@@ -569,6 +569,7 @@ impl ControlService {
                 output_tokens: Some(estimate_output_tokens(&output) as i64),
                 first_output_ms: record.ttfo_ms,
                 generation_ms: record.generation_ms,
+                duration_ms: record.duration_ms,
                 tokens_estimated: true,
                 hidden_reasoning: false,
             }),
@@ -944,6 +945,7 @@ fn official_call(trace: CursorRunTraceSummary) -> CallSummary {
         output_tokens: None,
         first_output_ms: None,
         generation_ms: None,
+        duration_ms: None,
         tokens_estimated: false,
         hidden_reasoning: false,
     });

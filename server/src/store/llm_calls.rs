@@ -713,6 +713,7 @@ fn summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<LlmCallSummary> {
         output_tokens,
         first_output_ms: ttfo_ms,
         generation_ms,
+        duration_ms: row.try_get("duration_ms")?,
         tokens_estimated: false,
         hidden_reasoning: reasoning_tokens.unwrap_or(0) > 0 && !observed_thinking,
     });

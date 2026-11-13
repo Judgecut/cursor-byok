@@ -3,7 +3,6 @@
 import type {
   CallPerformance,
   SpeedAggregate,
-  SpeedSampleCounts,
   SpeedStatus,
   SpeedUnavailableReason,
 } from "../api";
@@ -42,6 +41,8 @@ export function speedUnavailableText(reason: SpeedUnavailableReason | null): str
       return t("未观察到实际输出");
     case "missing_generation":
       return t("缺少生成结束时间");
+    case "missing_duration":
+      return t("缺少调用总耗时");
     case "short_output":
       return t("输出少于 100 Token，样本不足");
     case "short_generation":
@@ -51,21 +52,35 @@ export function speedUnavailableText(reason: SpeedUnavailableReason | null): str
   }
 }
 
-/** Explains one call's rate: why it is unavailable, or how it was measured. */
-export function performanceTooltip(performance: CallPerformance): string {
+/** Explains one call's end-to-end rate and how it differs from the generation rate. */
+export function overallSpeedTooltip(performance: CallPerformance): string {
   const lines: string[] = [];
-  if (performance.tokens_per_second == null) {
-    lines.push(speedUnavailableText(performance.reason));
+  if (performance.overall_tokens_per_second == null) {
+    lines.push(t("整体速度：不可用（{reason}）", {
+      reason: speedUnavailableText(performance.overall_reason),
+    }));
   } else {
     lines.push(
-      t("平均速度：{speed} tok/s", {
+      t("整体速度：{speed} tok/s", {
+        speed: formatSpeed(performance.overall_tokens_per_second),
+      }),
+    );
+  }
+  lines.push(t("计算方式：输出 Token ÷ 总耗时（含首 Token 等待）。"));
+  lines.push(
+    t("首 Token：{value}", { value: formatFirstOutput(performance.first_output_ms) }),
+  );
+  if (performance.tokens_per_second == null) {
+    lines.push(t("生成速度：不可用（{reason}）", {
+      reason: speedUnavailableText(performance.reason),
+    }));
+  } else {
+    lines.push(
+      t("生成速度：{speed} tok/s（不含首 Token 等待）", {
         speed: formatSpeed(performance.tokens_per_second, performance.speed_status),
       }),
     );
   }
-  lines.push(
-    t("首 Token：{value}", { value: formatFirstOutput(performance.first_output_ms) }),
-  );
   lines.push(
     t("生成时间：{value}", { value: formatGeneration(performance.generation_ms) }),
   );
@@ -75,32 +90,26 @@ export function performanceTooltip(performance: CallPerformance): string {
   return lines.join("\n");
 }
 
-function sampleText(counts: SpeedSampleCounts): string {
-  return t("{samples} 次调用 · {tokens} Token · {time}", {
-    samples: counts.samples,
-    tokens: counts.output_tokens,
-    time: formatGeneration(counts.generation_ms),
-  });
-}
-
-/** Explains an aggregated rate, including the measured/estimated sample split. */
+/** Explains an aggregated end-to-end rate and the totals behind it. */
 export function aggregateTooltip(speed: SpeedAggregate): string {
   const lines: string[] = [];
   if (speed.average_tokens_per_second == null) {
     lines.push(t("无可用的速度样本"));
   } else {
     lines.push(
-      t("平均速度：{speed} tok/s", {
-        speed: formatSpeed(speed.average_tokens_per_second, speed.status),
+      t("整体速度：{speed} tok/s", {
+        speed: formatSpeed(speed.average_tokens_per_second),
       }),
     );
   }
-  lines.push(t("按总输出 ÷ 总生成时间汇总，不平均每次调用速度"));
-  lines.push(t("实测样本：{detail}", { detail: sampleText(speed.measured) }));
-  lines.push(t("估算样本：{detail}", { detail: sampleText(speed.estimated) }));
-  if (speed.status === "estimated") {
-    lines.push(t("当前展示的是估算样本，缺少实测样本"));
-  }
+  lines.push(t("按总输出 ÷ 总耗时（含首 Token 等待）汇总，不平均每次调用速度"));
+  lines.push(
+    t("样本：{samples} 次调用 · {tokens} Token · {time}", {
+      samples: speed.samples,
+      tokens: speed.output_tokens,
+      time: formatGeneration(speed.duration_ms),
+    }),
+  );
   lines.push(
     t("首 Token 中位数：{value}", { value: formatFirstOutput(speed.first_output_median_ms) }),
   );

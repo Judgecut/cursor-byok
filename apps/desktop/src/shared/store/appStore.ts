@@ -88,9 +88,9 @@ export type AppSnapshot = {
 
 const emptySpeed = (): SpeedAggregate => ({
   average_tokens_per_second: null,
-  status: "unavailable",
-  measured: { output_tokens: 0, generation_ms: 0, samples: 0 },
-  estimated: { output_tokens: 0, generation_ms: 0, samples: 0 },
+  output_tokens: 0,
+  duration_ms: 0,
+  samples: 0,
   first_output_median_ms: null,
 });
 

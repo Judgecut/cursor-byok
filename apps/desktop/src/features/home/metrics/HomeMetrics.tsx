@@ -94,7 +94,7 @@ export function HomeMetrics({
     const titles = [
       t("缓存命中率"),
       t("LLM 调用"),
-      t("平均速度（tok/s）"),
+      t("整体速度（tok/s）"),
       t("首 Token（s）"),
       t("Token 消耗"),
       t("估算费用"),
@@ -146,18 +146,13 @@ export function HomeMetrics({
 
   const speedDisplay = data.speed.average_tokens_per_second == null
     ? "—"
-    : `${formatSpeed(data.speed.average_tokens_per_second, data.speed.status)} tok/s`;
-  const speedSamples = data.speed.status === "estimated"
-    ? data.speed.estimated.samples
-    : data.speed.measured.samples;
+    : `${formatSpeed(data.speed.average_tokens_per_second)} tok/s`;
   const speedSecondary = data.speed.average_tokens_per_second == null
     ? t("无有效速度样本")
-    : data.speed.status === "estimated"
-      ? t("估算样本 {count} 条", { count: formatCompactInteger(speedSamples) })
-      : t("实测样本 {count} 条", { count: formatCompactInteger(speedSamples) });
+    : t("样本 {count} 条", { count: formatCompactInteger(data.speed.samples) });
   const speedTooltip = [
     aggregateTooltip(data.speed),
-    t("仅统计成功流式且输出 ≥100 Token、生成时间 ≥100ms 的调用；模型测试不计入。"),
+    t("仅统计成功且有输出 Token 与耗时的业务调用；模型测试不计入。"),
   ].join("\n");
 
   const firstOutputDisplay = formatFirstOutput(data.speed.first_output_median_ms);
@@ -240,7 +235,7 @@ export function HomeMetrics({
       </div>
     </article>
     <article className={styles.metric}>
-      <div className={styles.label}>{t("平均速度（tok/s）")}<InfoTooltip content={speedTooltip} /></div>
+      <div className={styles.label}>{t("整体速度（tok/s）")}<InfoTooltip content={speedTooltip} /></div>
       <div className={styles.body}>
         <div className={styles.value} title={speedDisplay}>{speedDisplay}</div>
         <div className={styles.secondary} title={speedSecondary}>{speedSecondary}</div>

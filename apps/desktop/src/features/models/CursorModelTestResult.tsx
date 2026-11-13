@@ -52,7 +52,9 @@ export function CursorModelTestResult({ state, testing = false, compact = false 
   // still succeeded, so the summary reports the measurement gap instead.
   const hasSpeed = result.tokens_per_second != null;
   const speedText = hasSpeed
-    ? `${formatSpeed(result.tokens_per_second, result.speed_status)} tok/s`
+    ? t("生成速度 {speed} tok/s", {
+        speed: formatSpeed(result.tokens_per_second, result.speed_status),
+      })
     : null;
   const detail = testDetail(result);
 
@@ -78,7 +80,7 @@ function testDetail(result: ModelConnectivityResult) {
     lines.push(speedUnavailableText(result.speed_reason));
   } else {
     lines.push(
-      t("平均速度：{speed} tok/s", {
+      t("生成速度：{speed} tok/s（不含首 Token 等待）", {
         speed: formatSpeed(result.tokens_per_second, result.speed_status),
       }),
     );

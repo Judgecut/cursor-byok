@@ -281,7 +281,7 @@ mod overview {
 
     use serde::Serialize;
 
-    use crate::model::{SpeedSampleTotals, SpeedStatus};
+    use crate::model::SpeedTotals;
 
     #[derive(Clone, Debug, PartialEq, Serialize)]
     pub struct OverviewMetrics {
@@ -387,40 +387,25 @@ mod overview {
         }
     }
 
-    /// Accumulated numerator and denominator behind a rate, so several calls
-    /// divide total output by total generation time instead of averaging rates.
-    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
-    pub struct SpeedSampleCounts {
-        pub output_tokens: i64,
-        pub generation_ms: i64,
-        pub samples: i64,
-    }
-
+    /// Pooled end-to-end rate: total output divided by total call time, so one
+    /// long call contributes in proportion to its real output and wait.
     #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
     pub struct SpeedAggregate {
         pub average_tokens_per_second: Option<f64>,
-        pub status: SpeedStatus,
-        pub measured: SpeedSampleCounts,
-        pub estimated: SpeedSampleCounts,
+        pub output_tokens: i64,
+        pub duration_ms: i64,
+        pub samples: i64,
         /// Median first-output wait across successful streamed calls.
         pub first_output_median_ms: Option<i64>,
     }
 
     impl SpeedAggregate {
-        pub fn from_totals(totals: SpeedSampleTotals, first_output_median_ms: Option<i64>) -> Self {
+        pub fn from_totals(totals: SpeedTotals, first_output_median_ms: Option<i64>) -> Self {
             Self {
                 average_tokens_per_second: totals.average(),
-                status: totals.status(),
-                measured: SpeedSampleCounts {
-                    output_tokens: totals.measured_output_tokens,
-                    generation_ms: totals.measured_generation_ms,
-                    samples: totals.measured_samples,
-                },
-                estimated: SpeedSampleCounts {
-                    output_tokens: totals.estimated_output_tokens,
-                    generation_ms: totals.estimated_generation_ms,
-                    samples: totals.estimated_samples,
-                },
+                output_tokens: totals.output_tokens,
+                duration_ms: totals.duration_ms,
+                samples: totals.samples,
                 first_output_median_ms,
             }
         }

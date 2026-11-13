@@ -25,7 +25,6 @@ import type {
   ProxySettings,
   SaveSupplierPricingInput,
   SpeedAggregate,
-  SpeedStatus,
   StatisticsStorage,
   SupplierPricingView,
   TabSettings,
@@ -825,19 +824,21 @@ function mulRate(tokens: number, rate: string | null | undefined): number {
   return Math.round((tokens / 1_000_000) * Number(rate) * 1_000_000_000);
 }
 
-/** Pools sample numerators and denominators, preferring measured over estimated. */
+/** Pools total output and total call time, exactly like the server aggregate. */
 function mockAggregate(callList: LlmCall[]): SpeedAggregate {
-  const measured = { output_tokens: 0, generation_ms: 0, samples: 0 };
-  const estimated = { output_tokens: 0, generation_ms: 0, samples: 0 };
+  let outputTokens = 0;
+  let durationMs = 0;
+  let samples = 0;
   const waits: number[] = [];
   for (const call of callList) {
     const first = call.performance.first_output_ms;
     if (call.status === "completed" && call.streaming && first != null) waits.push(first);
-    if (call.performance.tokens_per_second == null) continue;
-    const target = call.performance.speed_status === "estimated" ? estimated : measured;
-    target.output_tokens += call.output_tokens ?? 0;
-    target.generation_ms += call.performance.generation_ms ?? 0;
-    target.samples += 1;
+    const overall = call.performance.overall_tokens_per_second;
+    if (call.status !== "completed" || overall == null) continue;
+    if (call.output_tokens == null || (call.duration_ms ?? 0) <= 0) continue;
+    outputTokens += call.output_tokens ?? 0;
+    durationMs += call.duration_ms ?? 0;
+    samples += 1;
   }
   waits.sort((left, right) => left - right);
   const middle = Math.floor(waits.length / 2);
@@ -846,20 +847,11 @@ function mockAggregate(callList: LlmCall[]): SpeedAggregate {
     : waits.length % 2 === 1
       ? waits[middle]
       : Math.trunc((waits[middle - 1] + waits[middle]) / 2);
-  const status: SpeedStatus = measured.samples > 0
-    ? "measured"
-    : estimated.samples > 0
-      ? "estimated"
-      : "unavailable";
-  const pool = status === "estimated" ? estimated : measured;
-  const average = status !== "unavailable" && pool.generation_ms > 0
-    ? pool.output_tokens / (pool.generation_ms / 1000)
-    : null;
   return {
-    average_tokens_per_second: average,
-    status,
-    measured,
-    estimated,
+    average_tokens_per_second: durationMs > 0 ? outputTokens / (durationMs / 1000) : null,
+    output_tokens: outputTokens,
+    duration_ms: durationMs,
+    samples,
     first_output_median_ms: firstOutputMedian,
   };
 }
@@ -871,8 +863,19 @@ function mockPerformance(
   generationMs: number | null,
   failed: boolean,
 ): CallPerformance {
+  const durationMs = firstOutputMs + (generationMs ?? 0);
+  const overall = outputTokens > 0 && durationMs > 0
+    ? outputTokens / (durationMs / 1000)
+    : null;
+  const overallReason = failed
+    ? "not_completed"
+    : overall == null
+      ? "missing_duration"
+      : null;
   if (failed) {
     return {
+      overall_tokens_per_second: null,
+      overall_reason: overallReason,
       speed_status: "unavailable",
       tokens_per_second: null,
       reason: "not_completed",
@@ -882,6 +885,8 @@ function mockPerformance(
   }
   if (generationMs == null || outputTokens < 100 || generationMs < 100) {
     return {
+      overall_tokens_per_second: overall,
+      overall_reason: overallReason,
       speed_status: "unavailable",
       tokens_per_second: null,
       reason: generationMs == null ? "missing_generation" : generationMs < 100 ? "short_generation" : "short_output",
@@ -890,6 +895,8 @@ function mockPerformance(
     };
   }
   return {
+    overall_tokens_per_second: overall,
+    overall_reason: overallReason,
     speed_status: "measured",
     tokens_per_second: outputTokens / (generationMs / 1000),
     reason: null,
