@@ -93,12 +93,6 @@ export function CallTable({
       ),
     },
     {
-      key: "display_name",
-      header: t("显示名称"),
-      render: (call) => call.display_name,
-      title: (call) => call.display_name,
-    },
-    {
       key: "created_at",
       header: t("时间"),
       render: (call) => new Date(call.created_at_ms).toLocaleString(),
@@ -119,6 +113,18 @@ export function CallTable({
       key: "reasoning_effort",
       header: t("思考强度"),
       render: (call) => value(call.reasoning_effort),
+    },
+    {
+      key: "speed",
+      header: t("整体速度（tok/s）"),
+      title: (call) => overallSpeedTooltip(call.performance),
+      render: (call) => formatSpeed(call.performance.overall_tokens_per_second),
+    },
+    {
+      key: "first_output",
+      header: t("首 Token（s）"),
+      title: (call) => overallSpeedTooltip(call.performance),
+      render: (call) => formatFirstOutput(call.performance.first_output_ms),
     },
     {
       key: "input_tokens",
@@ -155,18 +161,6 @@ export function CallTable({
       header: "Reasoning Token",
       render: (call) => tokenCount(call.reasoning_tokens),
       title: (call) => tokenTitle(call.reasoning_tokens),
-    },
-    {
-      key: "speed",
-      header: t("整体速度（tok/s）"),
-      title: (call) => overallSpeedTooltip(call.performance),
-      render: (call) => formatSpeed(call.performance.overall_tokens_per_second),
-    },
-    {
-      key: "first_output",
-      header: t("首 Token（s）"),
-      title: (call) => overallSpeedTooltip(call.performance),
-      render: (call) => formatFirstOutput(call.performance.first_output_ms),
     },
     {
       key: "fast",
@@ -240,6 +234,12 @@ export function CallTable({
       key: "call_index",
       header: "Call Index",
       render: (call) => call.provider_call_index,
+    },
+    {
+      key: "display_name",
+      header: t("显示名称"),
+      render: (call) => call.display_name,
+      title: (call) => call.display_name,
     },
     {
       key: "actions",
