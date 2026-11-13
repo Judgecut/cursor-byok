@@ -1,6 +1,7 @@
 //! Owns one client-loop inference stream per Cursor request ID.
 use std::{collections::HashMap, sync::Arc};
 
+use axum::http::HeaderMap;
 use bytes::Bytes;
 use futures_util::StreamExt;
 use parking_lot::Mutex;
@@ -24,13 +25,22 @@ use crate::{
     Error, Result,
 };
 
-use super::project;
+use super::{
+    project,
+    selection::{RunHeaders, Selections},
+};
 
 #[derive(Clone)]
 pub(crate) struct InferenceService {
-    state: Arc<Mutex<HashMap<String, InferenceRoute>>>,
+    state: Arc<Mutex<State>>,
     changed: Arc<Notify>,
     registry: TransportRegistry,
+}
+
+#[derive(Default)]
+struct State {
+    routes: HashMap<String, InferenceRoute>,
+    selections: Selections,
 }
 
 #[derive(Clone)]
@@ -56,14 +66,14 @@ struct ModelInfo {
 impl InferenceService {
     pub fn new(registry: TransportRegistry) -> Self {
         Self {
-            state: Arc::new(Mutex::new(HashMap::new())),
+            state: Arc::new(Mutex::new(State::default())),
             changed: Arc::new(Notify::new()),
             registry,
         }
     }
 
     pub fn route(&self, request_id: &str) -> Option<InferenceRoute> {
-        self.state.lock().get(request_id).cloned()
+        self.state.lock().routes.get(request_id).cloned()
     }
 
     pub async fn wait_route(&self, request_id: &str) -> InferenceRoute {
@@ -82,6 +92,7 @@ impl InferenceService {
         &self,
         request_id: &str,
         message: &pb::RunInferenceClientMessage,
+        headers: &HeaderMap,
     ) -> Result<InferenceRoute> {
         let Some(pb::run_inference_client_message::Message::RunRequest(request)) =
             message.message.as_ref()
@@ -96,7 +107,7 @@ impl InferenceService {
             .filter(|model| !model.model_id.is_empty())
             .ok_or_else(|| Error::Protocol("RunInference model is required".into()))?;
         let model_id = requested_model.model_id.as_str();
-        project(&pb::InferenceStreamRequest::default(), requested_model)?;
+        let incoming_selection = project(&pb::InferenceStreamRequest::default(), requested_model)?;
         if request.conversation_id.is_empty() {
             return Err(Error::Protocol(
                 "RunInference conversation ID is required".into(),
@@ -104,10 +115,44 @@ impl InferenceService {
         }
         let configured = self.registry.store().model(model_id).await?;
         let local = configured.is_some() || model_id.starts_with(crate::plugin::ADAPTER_ID_PREFIX);
+        let mut state = self.state.lock();
+        if let Some(route) = state.routes.get(request_id) {
+            return Ok(route.clone());
+        }
         let route = if local {
+            let headers = RunHeaders::parse(headers)?;
+            let default_effort = configured.as_ref().and_then(|model| {
+                if model.model_type == ModelType::Anthropic {
+                    model.anthropic_thinking_effort.as_deref()
+                } else {
+                    model.reasoning_effort.as_deref()
+                }
+            });
+            let requested_model = state.selections.resolve(
+                &request.conversation_id,
+                requested_model,
+                &headers,
+                default_effort,
+            )?;
+            let selection = project(&pb::InferenceStreamRequest::default(), &requested_model)?;
+            state.selections.remember(
+                request_id,
+                &request.conversation_id,
+                &requested_model,
+                &headers,
+            )?;
             tracing::info!(
                 request_id,
                 model_id,
+                conversation_id = %request.conversation_id,
+                parent_request_id = ?headers.parent_request_id,
+                root_parent_request_id = ?headers.root_parent_request_id,
+                incoming_run_effort = ?incoming_selection.model.reasoning.effort,
+                incoming_run_thinking_override = ?incoming_selection.model.reasoning.enabled_override,
+                run_effort = ?selection.model.reasoning.effort,
+                run_thinking_override = ?selection.model.reasoning.enabled_override,
+                run_context_tokens = ?selection.model.context_window_tokens,
+                run_latency = ?selection.model.latency,
                 "routing Cursor RunInference to BYOK provider"
             );
             let (sender, receiver) = mpsc::channel(64);
@@ -123,7 +168,7 @@ impl InferenceService {
                 self.registry.provider(),
                 request_id.into(),
                 request.conversation_id.clone(),
-                requested_model.clone(),
+                requested_model,
                 configured.map(|model| ModelInfo {
                     display_name: model.display_name,
                     model_type: model.model_type,
@@ -145,18 +190,16 @@ impl InferenceService {
             );
             InferenceRoute::Upstream
         };
-        let mut state = self.state.lock();
-        let route = state
-            .entry(request_id.into())
-            .or_insert_with(|| route.clone())
-            .clone();
+        state.routes.insert(request_id.into(), route.clone());
         drop(state);
         self.changed.notify_waiters();
         Ok(route)
     }
 
     pub fn finish(&self, request_id: &str) {
-        self.state.lock().remove(request_id);
+        let mut state = self.state.lock();
+        state.routes.remove(request_id);
+        state.selections.finish(request_id);
     }
 }
 
@@ -201,8 +244,8 @@ async fn serve(
     while let Some(message) = input.recv().await {
         use pb::run_inference_client_message::Message;
         match message.message {
-            Some(Message::RunRequest(request)) => {
-                let ready = run_ready(request.requested_model, model_info.as_ref());
+            Some(Message::RunRequest(_)) => {
+                let ready = run_ready(Some(requested_model.clone()), model_info.as_ref());
                 emit(
                     &output,
                     pb::run_inference_server_message::Message::RunReady(ready),
@@ -229,6 +272,14 @@ async fn serve(
                         continue;
                     }
                 };
+                tracing::info!(
+                    request_id = %run_id,
+                    invocation_id = %id,
+                    effective_effort = ?request.model.reasoning.effort,
+                    effective_thinking_override = ?request.model.reasoning.enabled_override,
+                    configured_effort = ?model_info.as_ref().and_then(|model| model.reasoning_effort.as_deref()),
+                    "resolved Cursor RunInference model selection"
+                );
                 if request.model.context_window_tokens.is_none() {
                     request.model.context_window_tokens = model_info
                         .as_ref()

@@ -29,6 +29,9 @@ use prost::Message;
 use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
 
+#[path = "run_inference_inheritance_tests.rs"]
+mod inheritance;
+
 #[tokio::test]
 async fn client_loop_receives_ready_text_tool_call_and_completion() {
     let (_directory, store) = temp_store().await;

@@ -315,7 +315,9 @@ async fn bidi_handler(
     let active_upstream = registry.upstream(request_id).await;
     if !active_local && !active_upstream && starts_run_inference(&payload) {
         let message = decode_append(&payload)?;
-        let route = inference_service.begin(request_id, &message).await?;
+        let route = inference_service
+            .begin(request_id, &message, &parts.headers)
+            .await?;
         return dispatch_inference(
             route,
             &inference_service,
