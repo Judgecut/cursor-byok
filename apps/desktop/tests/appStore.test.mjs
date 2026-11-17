@@ -15,6 +15,7 @@ const defaults = {
   overview_chart_mode: "tokens",
   overview_chart_type: "bar",
   overview_calendar_window: "year",
+  overview_calendar_chart_type: "heatmap",
   home_refresh_interval_seconds: 30,
 };
 
@@ -144,6 +145,41 @@ test("a failed queued save preserves an earlier successful save and allows retry
   await setImmediate();
   assert.equal(app.store.getSnapshot().overviewRangePreset, "week");
   assert.equal(app.store.getSnapshot().overviewCalendarWindow, "month");
+});
+
+test("selectOverviewCalendarChartType updates optimistically, rolls back on failure, and skips no-op writes", async () =>
+{
+  const app = await setup();
+  assert.equal(app.store.getSnapshot().overviewCalendarChartType, "heatmap");
+
+  app.store.selectOverviewCalendarChartType("heatmap");
+  await setImmediate();
+  assert.equal(app.writes.length, 0);
+
+  app.store.selectOverviewCalendarChartType("bar");
+  await setImmediate();
+  assert.equal(app.writes.length, 1);
+  assert.deepEqual({ ...app.writes[0].patch }, { overview_calendar_chart_type: "bar" });
+  assert.equal(app.store.getSnapshot().overviewCalendarChartType, "bar");
+
+  app.writes[0].reject(new Error("calendar chart save failed"));
+  await setImmediate();
+  assert.equal(app.store.getSnapshot().overviewCalendarChartType, "heatmap");
+  assert.equal(app.store.getSnapshot().error, "calendar chart save failed");
+
+  app.store.selectOverviewCalendarChartType("line");
+  await setImmediate();
+  assert.equal(app.writes.length, 2);
+  assert.deepEqual({ ...app.writes[1].patch }, { overview_calendar_chart_type: "line" });
+  assert.equal(app.store.getSnapshot().overviewCalendarChartType, "line");
+  assert.equal(app.store.getSnapshot().error, null);
+  app.writes[1].resolve({ ...app.saved(), overview_calendar_chart_type: "line" });
+  await setImmediate();
+  assert.equal(app.store.getSnapshot().overviewCalendarChartType, "line");
+
+  app.store.selectOverviewCalendarChartType("line");
+  await setImmediate();
+  assert.equal(app.writes.length, 2);
 });
 
 for (const readMethod of ["refresh", "hydrateInterfaceSettings"])

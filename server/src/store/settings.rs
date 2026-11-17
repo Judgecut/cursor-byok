@@ -258,6 +258,15 @@ pub enum OverviewCalendarWindow {
     Week,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OverviewCalendarChartType {
+    #[default]
+    Heatmap,
+    Bar,
+    Line,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct InterfaceSettings {
     #[serde(default)]
@@ -276,6 +285,8 @@ pub struct InterfaceSettings {
     pub overview_chart_type: OverviewChartType,
     #[serde(default)]
     pub overview_calendar_window: OverviewCalendarWindow,
+    #[serde(default)]
+    pub overview_calendar_chart_type: OverviewCalendarChartType,
     #[serde(default = "default_home_refresh_interval_seconds")]
     pub home_refresh_interval_seconds: u64,
 }
@@ -291,6 +302,7 @@ impl Default for InterfaceSettings {
             overview_chart_mode: OverviewChartMode::default(),
             overview_chart_type: OverviewChartType::default(),
             overview_calendar_window: OverviewCalendarWindow::default(),
+            overview_calendar_chart_type: OverviewCalendarChartType::default(),
             home_refresh_interval_seconds: DEFAULT_HOME_REFRESH_INTERVAL_SECONDS,
         }
     }
@@ -314,6 +326,8 @@ pub struct InterfaceSettingsPatch {
     pub overview_chart_type: Option<OverviewChartType>,
     #[serde(default)]
     pub overview_calendar_window: Option<OverviewCalendarWindow>,
+    #[serde(default)]
+    pub overview_calendar_chart_type: Option<OverviewCalendarChartType>,
     #[serde(default)]
     pub home_refresh_interval_seconds: Option<u64>,
 }
@@ -715,6 +729,9 @@ impl Store {
         if let Some(overview_calendar_window) = patch.overview_calendar_window {
             settings.overview_calendar_window = overview_calendar_window;
         }
+        if let Some(overview_calendar_chart_type) = patch.overview_calendar_chart_type {
+            settings.overview_calendar_chart_type = overview_calendar_chart_type;
+        }
         if let Some(interval) = patch.home_refresh_interval_seconds {
             if interval == 0 {
                 return Err(crate::Error::Config(
@@ -764,9 +781,9 @@ mod tests {
     use super::{
         read_proxy_settings, CommitPromptLocale, CommitSettings, DisplayCurrency,
         ExternalApiSettings, InterfaceLocale, InterfaceSettings, InterfaceSettingsPatch,
-        InterfaceTheme, OverviewCalendarWindow, OverviewChartMode, OverviewChartType,
-        OverviewRangePreset, ProxyMode, ProxySettingsInput, ProxySettingsSecret, Store,
-        DEFAULT_COMMIT_PROMPT_EN_US, DEFAULT_COMMIT_PROMPT_ZH_CN,
+        InterfaceTheme, OverviewCalendarChartType, OverviewCalendarWindow, OverviewChartMode,
+        OverviewChartType, OverviewRangePreset, ProxyMode, ProxySettingsInput, ProxySettingsSecret,
+        Store, DEFAULT_COMMIT_PROMPT_EN_US, DEFAULT_COMMIT_PROMPT_ZH_CN,
         DEFAULT_HOME_REFRESH_INTERVAL_SECONDS, PROXY_SETTINGS_KEY,
     };
 
@@ -950,6 +967,7 @@ mod tests {
                 overview_chart_mode: OverviewChartMode::Tokens,
                 overview_chart_type: OverviewChartType::Bar,
                 overview_calendar_window: OverviewCalendarWindow::Year,
+                overview_calendar_chart_type: OverviewCalendarChartType::Heatmap,
                 home_refresh_interval_seconds: DEFAULT_HOME_REFRESH_INTERVAL_SECONDS,
             }
         );
@@ -1012,6 +1030,7 @@ mod tests {
                 overview_chart_mode: Some(OverviewChartMode::Cost),
                 overview_chart_type: Some(OverviewChartType::Line),
                 overview_calendar_window: Some(OverviewCalendarWindow::Month),
+                overview_calendar_chart_type: Some(OverviewCalendarChartType::Line),
                 home_refresh_interval_seconds: Some(15),
                 ..InterfaceSettingsPatch::default()
             })
@@ -1025,6 +1044,10 @@ mod tests {
         assert_eq!(saved.overview_chart_mode, OverviewChartMode::Cost);
         assert_eq!(saved.overview_chart_type, OverviewChartType::Line);
         assert_eq!(saved.overview_calendar_window, OverviewCalendarWindow::Month);
+        assert_eq!(
+            saved.overview_calendar_chart_type,
+            OverviewCalendarChartType::Line
+        );
         assert_eq!(saved.home_refresh_interval_seconds, 15);
 
         // Reconnecting to SQLite preserves every field.

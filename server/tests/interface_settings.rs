@@ -81,6 +81,7 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
             "overview_chart_mode": "tokens",
             "overview_chart_type": "bar",
             "overview_calendar_window": "year",
+            "overview_calendar_chart_type": "heatmap",
             "home_refresh_interval_seconds": 30
         })
     );
@@ -139,6 +140,7 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
             "overview_chart_mode": "cost",
             "overview_chart_type": "line",
             "overview_calendar_window": "month",
+            "overview_calendar_chart_type": "bar",
             "home_refresh_interval_seconds": 45
         })),
     )
@@ -155,6 +157,7 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
             "overview_chart_mode": "cost",
             "overview_chart_type": "line",
             "overview_calendar_window": "month",
+            "overview_calendar_chart_type": "bar",
             "home_refresh_interval_seconds": 45
         })
     );
@@ -192,6 +195,7 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
             "overview_chart_mode": "cost",
             "overview_chart_type": "line",
             "overview_calendar_window": "month",
+            "overview_calendar_chart_type": "bar",
             "home_refresh_interval_seconds": 45
         })
     );

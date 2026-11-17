@@ -13,6 +13,7 @@ import {
   type Model,
   type ModelInput,
   type Overview,
+  type OverviewCalendarChartType,
   type OverviewCalendarWindow,
   type OverviewChartMode,
   type OverviewChartType,
@@ -31,7 +32,13 @@ import { applyTheme, type ThemeId } from "../theme/theme";
 import { normalizeExchangeRate, type DisplayCurrency } from "../utils/costFormat";
 import type { CustomRange } from "../utils/timeRange";
 
-export type { OverviewCalendarWindow, OverviewChartMode, OverviewChartType, OverviewRangePresetOption } from "../api";
+export type {
+  OverviewCalendarChartType,
+  OverviewCalendarWindow,
+  OverviewChartMode,
+  OverviewChartType,
+  OverviewRangePresetOption,
+} from "../api";
 export type OverviewRangePresetValue = OverviewRangePresetOption | "custom";
 export type OverviewQuickPresetValue = "four-hours" | "twenty-four-hours";
 
@@ -46,6 +53,7 @@ const DEFAULT_INTERFACE_SETTINGS: InterfaceSettings = {
   overview_chart_mode: "tokens",
   overview_chart_type: "bar",
   overview_calendar_window: "year",
+  overview_calendar_chart_type: "heatmap",
   home_refresh_interval_seconds: DEFAULT_HOME_REFRESH_INTERVAL_SECONDS,
 };
 
@@ -85,6 +93,7 @@ export type AppSnapshot = {
   overviewChartMode: OverviewChartMode;
   overviewChartType: OverviewChartType;
   overviewCalendarWindow: OverviewCalendarWindow;
+  overviewCalendarChartType: OverviewCalendarChartType;
   homeRefreshIntervalSeconds: number;
   refreshTick: number;
   pendingCallsFilter: CallsFilterHandoff | null;
@@ -156,6 +165,7 @@ let snapshot: AppSnapshot = {
   overviewChartMode: DEFAULT_INTERFACE_SETTINGS.overview_chart_mode,
   overviewChartType: DEFAULT_INTERFACE_SETTINGS.overview_chart_type,
   overviewCalendarWindow: DEFAULT_INTERFACE_SETTINGS.overview_calendar_window,
+  overviewCalendarChartType: DEFAULT_INTERFACE_SETTINGS.overview_calendar_chart_type,
   homeRefreshIntervalSeconds: DEFAULT_INTERFACE_SETTINGS.home_refresh_interval_seconds,
   refreshTick: 0,
   pendingCallsFilter: null,
@@ -189,6 +199,7 @@ function applyInterfaceSettings(
     overviewChartMode: next.overview_chart_mode,
     overviewChartType: next.overview_chart_type,
     overviewCalendarWindow: next.overview_calendar_window,
+    overviewCalendarChartType: next.overview_calendar_chart_type,
     homeRefreshIntervalSeconds: next.home_refresh_interval_seconds,
     ...options?.extra,
   });
@@ -229,6 +240,9 @@ async function persistInterfacePatch(
     if (patch.overview_chart_type !== undefined) optimisticPatch.overviewChartType = patch.overview_chart_type;
     if (patch.overview_calendar_window !== undefined) {
       optimisticPatch.overviewCalendarWindow = patch.overview_calendar_window;
+    }
+    if (patch.overview_calendar_chart_type !== undefined) {
+      optimisticPatch.overviewCalendarChartType = patch.overview_calendar_chart_type;
     }
     if (patch.home_refresh_interval_seconds !== undefined) {
       optimisticPatch.homeRefreshIntervalSeconds = patch.home_refresh_interval_seconds;
@@ -707,6 +721,15 @@ export const appStore = {
       return;
     }
     void persistInterfacePatch({ overview_calendar_window: overviewCalendarWindow }, { optimistic: true });
+  },
+  selectOverviewCalendarChartType(overviewCalendarChartType: OverviewCalendarChartType) {
+    if (
+      snapshot.overviewCalendarChartType === overviewCalendarChartType
+      && persistedInterface.overview_calendar_chart_type === overviewCalendarChartType
+    ) {
+      return;
+    }
+    void persistInterfacePatch({ overview_calendar_chart_type: overviewCalendarChartType }, { optimistic: true });
   },
   async saveHomeRefreshIntervalSeconds(rawInterval: string | number): Promise<number | null> {
     const parsed = typeof rawInterval === "number"

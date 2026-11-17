@@ -15,8 +15,10 @@ await module.link((specifier) => {
 await module.evaluate();
 
 const {
+  CONTRIBUTION_LEVEL_COLORS,
   CONTRIBUTION_YEAR_DAYS,
   buildCalendarLayout,
+  buildContributionSeries,
   sliceContributionData,
   summarizeContribution,
 } = module.namespace;
@@ -30,12 +32,14 @@ function makeSeries(startDate, count, tokenForIndex) {
   });
 }
 
-test("empty input returns empty slice and null layout/summary across all windows", () => {
+test("empty input returns empty slice and null layout/series/summary across all windows", () => {
   assert.equal(CONTRIBUTION_YEAR_DAYS, 365);
+  assert.equal(CONTRIBUTION_LEVEL_COLORS.length, 5);
 
   for (const window of ["year", "month", "week"]) {
     assert.deepEqual([...sliceContributionData([], window)], []);
     assert.equal(buildCalendarLayout([], window, "en-US"), null);
+    assert.equal(buildContributionSeries([], window, "en-US"), null);
     assert.equal(summarizeContribution([], window), null);
   }
 });
@@ -245,4 +249,85 @@ test("summarizeContribution computes window-scoped totals, streaks, peaks, avera
   assert.equal(singleZero.longestStreak, 0);
   assert.equal(singleZero.peakDay, null);
   assert.equal(singleZero.dateRangeLabel, "2026-11-10");
+});
+
+test("buildContributionSeries aligns slicing, levels, maxTokens, and averageActiveTokens across year, month, and week", () => {
+  // 400 days from 2025-10-14 through 2026-11-17 (Tuesday), passed unsorted
+  const raw = makeSeries("2025-10-14", 400, (index) => {
+    if (index === 399) return 1000;
+    if (index === 398) return 200;
+    if (index % 5 === 0) return 0;
+    return ((index % 4) + 1) * 200;
+  });
+  const reversed = [...raw].reverse();
+
+  for (const window of ["year", "month", "week"]) {
+    const layout = buildCalendarLayout(reversed, window, "en-US");
+    const summary = summarizeContribution(reversed, window);
+    const series = buildContributionSeries(reversed, window, "en-US");
+
+    assert.ok(layout);
+    assert.ok(summary);
+    assert.ok(series);
+    assert.equal(series.window, window);
+    assert.equal(series.points.length, layout.cells.length);
+    assert.equal(series.maxTokens, summary.peakDay?.tokens ?? 0);
+    assert.equal(series.averageActiveTokens, summary.averageActiveTokens);
+
+    series.points.forEach((point, index) => {
+      assert.equal(point.date, layout.cells[index].date);
+      assert.equal(point.tokens, layout.cells[index].tokens);
+      assert.equal(point.level, layout.cells[index].level);
+    });
+  }
+
+  const weekSeries = buildContributionSeries(reversed, "week", "en-US");
+  assert.ok(weekSeries);
+  assert.equal(weekSeries.points.length, 2);
+  assert.equal(weekSeries.maxTokens, 1000);
+  assert.equal(weekSeries.averageActiveTokens, 600);
+  assert.match(weekSeries.points[0].axisLabel, /Mon.*11\/16/);
+  assert.match(weekSeries.points[1].axisLabel, /Tue.*11\/17/);
+  assert.match(weekSeries.points[0].tooltipLabel, /^2026-11-16 Mon/);
+  assert.match(weekSeries.points[1].tooltipLabel, /^2026-11-17 Tue/);
+
+  const monthSeries = buildContributionSeries(reversed, "month", "en-US");
+  assert.ok(monthSeries);
+  assert.equal(monthSeries.points.length, 17);
+  assert.equal(monthSeries.points[0].axisLabel, "11/1");
+  assert.equal(monthSeries.points[16].axisLabel, "11/17");
+
+  const yearSeries = buildContributionSeries(reversed, "year", "zh-CN");
+  assert.ok(yearSeries);
+  assert.equal(yearSeries.points.length, 365);
+  assert.equal(yearSeries.points[0].date, "2025-11-18");
+  assert.equal(yearSeries.points[0].axisLabel, "11/18");
+  assert.equal(yearSeries.points[364].date, "2026-11-17");
+  assert.equal(yearSeries.points[364].axisLabel, "11/17");
+  assert.match(yearSeries.points[364].tooltipLabel, /^2026-11-17 /);
+});
+
+test("buildContributionSeries sanitizes invalid tokens and handles inactive or single-day windows", () => {
+  const invalidSeries = [
+    { date: "2026-11-09", tokens: -25 },
+    { date: "2026-11-10", tokens: Number.NaN },
+    { date: "2026-11-11", tokens: Number.POSITIVE_INFINITY },
+  ];
+  const allZero = buildContributionSeries(invalidSeries, "week", "en-US");
+  assert.ok(allZero);
+  assert.equal(allZero.maxTokens, 0);
+  assert.equal(allZero.averageActiveTokens, null);
+  allZero.points.forEach((point) => {
+    assert.equal(point.tokens, 0);
+    assert.equal(point.level, 0);
+  });
+
+  const singleActive = buildContributionSeries([{ date: "2026-11-12", tokens: 450 }], "week", "en-US");
+  assert.ok(singleActive);
+  assert.equal(singleActive.points.length, 1);
+  assert.equal(singleActive.maxTokens, 450);
+  assert.equal(singleActive.averageActiveTokens, 450);
+  assert.equal(singleActive.points[0].level, 4);
+  assert.match(singleActive.points[0].axisLabel, /Thu.*11\/12/);
+  assert.match(singleActive.points[0].tooltipLabel, /^2026-11-12 Thu/);
 });

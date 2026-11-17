@@ -42,6 +42,7 @@ export function HomePage() {
     overviewChartMode,
     overviewChartType,
     overviewCalendarWindow,
+    overviewCalendarChartType,
     homeRefreshIntervalSeconds,
     refreshTick,
   } = useAppStore();
@@ -761,6 +762,8 @@ export function HomePage() {
         data={contribution}
         windowMode={overviewCalendarWindow}
         onWindowModeChange={(value) => appStore.selectOverviewCalendarWindow(value)}
+        chartType={overviewCalendarChartType}
+        onChartTypeChange={(value) => appStore.selectOverviewCalendarChartType(value)}
         loading={rangeBusy && !hasMatchingOverview}
         error={effectiveOverviewError}
       />,

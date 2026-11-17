@@ -32,7 +32,7 @@ const overview: Overview = {
 export const test = base.extend<{ management: ManagementState }>({
   management: [async ({ context }, use) =>
   {
-    const settings = { locale: "system", theme: "default-dark", currency: "USD", cny_rate: null, overview_range_preset: "today", overview_chart_mode: "tokens", overview_chart_type: "bar", overview_calendar_window: "year", home_refresh_interval_seconds: 30 } as const;
+    const settings = { locale: "system", theme: "default-dark", currency: "USD", cny_rate: null, overview_range_preset: "today", overview_chart_mode: "tokens", overview_chart_type: "bar", overview_calendar_window: "year", overview_calendar_chart_type: "heatmap", home_refresh_interval_seconds: 30 } as const;
     const state: ManagementState = {
       providers: [],
       models: [],

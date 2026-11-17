@@ -220,6 +220,7 @@ export type OverviewRangePresetOption = "ten-minutes" | "hour" | "today" | "week
 export type OverviewChartMode = "tokens" | "cost";
 export type OverviewChartType = "bar" | "line";
 export type OverviewCalendarWindow = "year" | "month" | "week";
+export type OverviewCalendarChartType = "heatmap" | "bar" | "line";
 
 export interface InterfaceSettings {
   locale: LocalePreference;
@@ -230,6 +231,7 @@ export interface InterfaceSettings {
   overview_chart_mode: OverviewChartMode;
   overview_chart_type: OverviewChartType;
   overview_calendar_window: OverviewCalendarWindow;
+  overview_calendar_chart_type: OverviewCalendarChartType;
   home_refresh_interval_seconds: number;
 }
 
@@ -242,6 +244,7 @@ export interface InterfaceSettingsPatch {
   overview_chart_mode?: OverviewChartMode;
   overview_chart_type?: OverviewChartType;
   overview_calendar_window?: OverviewCalendarWindow;
+  overview_calendar_chart_type?: OverviewCalendarChartType;
   home_refresh_interval_seconds?: number;
 }
 

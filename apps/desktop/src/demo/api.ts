@@ -286,6 +286,7 @@ let interfaceSettings: InterfaceSettings = {
   overview_chart_mode: "tokens",
   overview_chart_type: "bar",
   overview_calendar_window: "year",
+  overview_calendar_chart_type: "heatmap",
   home_refresh_interval_seconds: 30,
 };
 
@@ -1118,6 +1119,12 @@ function applyDemoInterfacePatch(
       return { error: "invalid overview calendar window" };
     }
     next.overview_calendar_window = patch.overview_calendar_window;
+  }
+  if (patch.overview_calendar_chart_type !== undefined) {
+    if (!["heatmap", "bar", "line"].includes(patch.overview_calendar_chart_type)) {
+      return { error: "invalid overview calendar chart type" };
+    }
+    next.overview_calendar_chart_type = patch.overview_calendar_chart_type;
   }
   if (patch.home_refresh_interval_seconds !== undefined) {
     if (
