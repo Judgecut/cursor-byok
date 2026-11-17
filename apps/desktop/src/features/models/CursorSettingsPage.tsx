@@ -54,9 +54,8 @@ export function CursorSettingsPage() {
     ...pluginModels.map((model) => ({ model_hash: model.id, display_name: model.displayName })),
   ];
   const typeGroups = cursorModelGroups(models, "type", providers);
-  const canGroupByProvider = providers.length > 0;
   const canGroupByType = typeGroups.length > 1;
-  const effectiveGrouping = resolveCursorModelGrouping(grouping, canGroupByProvider, canGroupByType);
+  const effectiveGrouping = resolveCursorModelGrouping(grouping, canGroupByType);
 
   useEffect(() => {
     if (caCommand) void api.copyCursorText(caCommand);
@@ -68,7 +67,7 @@ export function CursorSettingsPage() {
   };
   const openNewProvider = () => {
     const next = emptyCursorProviderDraft();
-    next.provider.sort_order = providers.length + 1;
+    next.provider.sort_order = nextSortOrder(providers);
     setEditingProvider(null);
     setProviderDraft(next);
   };
@@ -101,7 +100,7 @@ export function CursorSettingsPage() {
       return;
     }
     const next = emptyCursorModelDraft(target);
-    next.model.sort_order = models.length + 1;
+    next.model.sort_order = nextSortOrder(models.filter((item) => item.provider_id === target.provider_id));
     setEditing(null);
     setDraft(next);
   };
@@ -133,8 +132,18 @@ export function CursorSettingsPage() {
   const persist = async (): Promise<Model | null> => {
     if (!draft) return null;
     const input = modelDraftInput(draft);
-    if (editing) return appStore.updateCursorModel(editing.model_hash, input);
-    return (await appStore.createModels([input]))?.[0] ?? null;
+    if (editing) {
+      const nextInput = {
+        ...input,
+        sort_order: input.provider_id !== editing.provider_id ? 0 : editing.sort_order,
+      };
+      return appStore.updateCursorModel(editing.model_hash, nextInput);
+    }
+    const nextInput = {
+      ...input,
+      sort_order: nextSortOrder(models.filter((item) => item.provider_id === input.provider_id)),
+    };
+    return (await appStore.createModels([nextInput]))?.[0] ?? null;
   };
   const save = async () => {
     try {
@@ -209,6 +218,7 @@ export function CursorSettingsPage() {
     }
     if (!saved) return;
     setEditing(saved);
+    setDraft((current) => (current ? { ...current, model: { ...current.model, sort_order: saved.sort_order } } : current));
     await testModel(saved);
     await appStore.refresh();
   };
@@ -251,13 +261,18 @@ export function CursorSettingsPage() {
     }
     const created = await appStore.createModels([{
       ...modelDraftFrom(model).model,
-      sort_order: models.length + 1,
+      sort_order: nextSortOrder(models.filter((item) => item.provider_id === model.provider_id)),
       display_name: displayName,
     }]);
     if (created) message(t("模型已复制"));
   };
-  const reorderModels = useCallback(async (modelHashes: string[]) => {
-    if (!await appStore.reorderCursorModels(modelHashes)) {
+  const reorderProviders = useCallback(async (providerIds: string[]) => {
+    if (!await appStore.reorderProviders(providerIds)) {
+      message(appStore.getSnapshot().error || t("供应商排序失败"));
+    }
+  }, [message]);
+  const reorderModels = useCallback(async (providerId: string, modelHashes: string[]) => {
+    if (!await appStore.reorderCursorModels(providerId, modelHashes)) {
       message(appStore.getSnapshot().error || t("排序失败"));
     }
   }, [message]);
@@ -276,7 +291,8 @@ export function CursorSettingsPage() {
     onDelete={setDeleting}
     onTestPluginModel={(model) => void testModel({ model_hash: model.id, display_name: model.displayName })}
     onPluginSettings={() => navigate("/plugins")}
-    onReorder={reorderModels}
+    onReorderProviders={reorderProviders}
+    onReorderModels={reorderModels}
     onAddModelForProvider={openNewModel}
     onEditProvider={openEditProvider}
     onDeleteProvider={setDeletingProvider}
@@ -318,10 +334,11 @@ export function CursorSettingsPage() {
             }}
           />
         </TooltipTrigger>
-        {(providers.length > 0 || testTargets.length > 0) && <div className={styles.groupActions} role="group" aria-label={t("操作")}>
-          <button type="button" aria-pressed={effectiveGrouping === "flat"} onClick={() => setGrouping("flat")}>{t("默认平铺")}</button>
-          {canGroupByProvider && <button type="button" aria-pressed={effectiveGrouping === "provider"} onClick={() => setGrouping("provider")}>{t("按供应商")}</button>}
-          {canGroupByType && <button type="button" aria-pressed={effectiveGrouping === "type"} onClick={() => setGrouping("type")}>{t("按类型")}</button>}
+        {(canGroupByType || testTargets.length > 0) && <div className={styles.groupActions} role="group" aria-label={t("操作")}>
+          {canGroupByType && <>
+            <button type="button" aria-pressed={effectiveGrouping === "provider"} onClick={() => setGrouping("provider")}>{t("按供应商")}</button>
+            <button type="button" aria-pressed={effectiveGrouping === "type"} onClick={() => setGrouping("type")}>{t("按类型")}</button>
+          </>}
           {testTargets.length > 0 && <button type="button" disabled={cursorBusy || (!batchTesting && testingModelHashes.size > 0)} onClick={() => void (batchTesting ? cancelAllModelTests() : testAllModels())}>{batchTesting ? t("取消全部测试") : t("一键测试")}</button>}
         </div>}
       </div>
@@ -381,6 +398,10 @@ export function CursorSettingsPage() {
     </ConfirmDialog>
     <ConfirmDialog open={deleting !== null} title={t("删除模型")} cancelLabel={t("取消")} confirmLabel={t("删除")} onCancel={() => setDeleting(null)} onConfirm={() => { if (deleting) void appStore.deleteModel(deleting.model_hash); setDeleting(null); }}><p>{t("确定删除这个模型吗？")}</p></ConfirmDialog>
   </>;
+}
+
+function nextSortOrder(items: ReadonlyArray<{ sort_order: number }>) {
+  return items.reduce((max, item) => Math.max(max, item.sort_order), 0) + 1;
 }
 
 function errorText(cause: unknown) {

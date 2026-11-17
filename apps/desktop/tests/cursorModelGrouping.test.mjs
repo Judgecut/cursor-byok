@@ -7,14 +7,14 @@ import { createContext, SourceTextModule } from "node:vm";
 const source = stripTypeScriptTypes(
   await readFile(new URL("../src/features/models/cursorModelGrouping.ts", import.meta.url), "utf8"),
 );
-const context = createContext({ Map });
+const context = createContext({ Map, Set });
 const module = new SourceTextModule(source, { context });
 await module.link((specifier) => {
   throw new Error(`Unexpected dependency: ${specifier}`);
 });
 await module.evaluate();
 
-const { cursorModelGroups, resolveCursorModelGrouping } = module.namespace;
+const { cursorModelGroups, replaceOrderedSubset, resolveCursorModelGrouping } = module.namespace;
 
 function provider(overrides) {
   return {
@@ -65,45 +65,59 @@ function model(overrides) {
   };
 }
 
-test("resolveCursorModelGrouping keeps default provider preference across async initial load", () => {
-  // Before async providers load, render flat without clobbering the preferred "provider" state.
-  assert.equal(resolveCursorModelGrouping("provider", false, false), "flat");
-  // Once providers load, default view immediately resolves back to "provider".
-  assert.equal(resolveCursorModelGrouping("provider", true, false), "provider");
-  // Explicit user selection of "flat" stays "flat" even when providers are present.
-  assert.equal(resolveCursorModelGrouping("flat", true, true), "flat");
-  // "type" resolves to "type" once >1 type exists, otherwise displays "flat".
-  assert.equal(resolveCursorModelGrouping("type", true, false), "flat");
-  assert.equal(resolveCursorModelGrouping("type", true, true), "type");
+test("resolveCursorModelGrouping keeps provider as default and falls back from type when fewer than two types exist", () => {
+  assert.equal(resolveCursorModelGrouping("provider", false), "provider");
+  assert.equal(resolveCursorModelGrouping("provider", true), "provider");
+  assert.equal(resolveCursorModelGrouping("type", false), "provider");
+  assert.equal(resolveCursorModelGrouping("type", true), "type");
 });
 
-test("cursorModelGroups retains empty providers in both provider and type groupings", () => {
+test("cursorModelGroups retains empty providers and preserves provider/model order in provider and type groupings", () => {
   const providers = [
     provider({ provider_id: "p-oai", name: "OpenAI Official", type: "openai", openai_endpoint: "/v1/responses" }),
     provider({ provider_id: "p-ant-empty", name: "Anthropic Empty", type: "anthropic", openai_endpoint: "" }),
+    provider({ provider_id: "p-oai-2", name: "OpenAI Backup", type: "openai", openai_endpoint: "/v1/responses" }),
   ];
   const models = [
-    model({ model_hash: "m1", provider_id: "p-oai", provider_name: "OpenAI Official" }),
+    model({ model_hash: "m2", provider_id: "p-oai", provider_name: "OpenAI Official", display_name: "GPT-5 Mini" }),
+    model({ model_hash: "m1", provider_id: "p-oai", provider_name: "OpenAI Official", display_name: "GPT-5" }),
+    model({ model_hash: "m3", provider_id: "p-oai-2", provider_name: "OpenAI Backup", display_name: "GPT-4.1" }),
   ];
 
   const byProvider = Array.from(cursorModelGroups(models, "provider", providers), (group) => ({
     key: group.key,
     label: group.label,
     hasProvider: Boolean(group.provider),
-    modelCount: group.models.length,
+    modelHashes: Array.from(group.models, (item) => item.model_hash),
   }));
   assert.deepEqual(byProvider, [
-    { key: "p-oai", label: "OpenAI Official", hasProvider: true, modelCount: 1 },
-    { key: "p-ant-empty", label: "Anthropic Empty", hasProvider: true, modelCount: 0 },
+    { key: "p-oai", label: "OpenAI Official", hasProvider: true, modelHashes: ["m2", "m1"] },
+    { key: "p-ant-empty", label: "Anthropic Empty", hasProvider: true, modelHashes: [] },
+    { key: "p-oai-2", label: "OpenAI Backup", hasProvider: true, modelHashes: ["m3"] },
   ]);
 
   const byType = Array.from(cursorModelGroups(models, "type", providers), (group) => ({
     key: group.key,
     label: group.label,
-    modelCount: group.models.length,
+    modelHashes: Array.from(group.models, (item) => item.model_hash),
   }));
   assert.deepEqual(byType, [
-    { key: "openai-responses", label: "OpenAI Responses", modelCount: 1 },
-    { key: "anthropic", label: "Anthropic", modelCount: 0 },
+    { key: "openai-responses", label: "OpenAI Responses", modelHashes: ["m2", "m1", "m3"] },
+    { key: "anthropic", label: "Anthropic", modelHashes: [] },
   ]);
+});
+
+test("replaceOrderedSubset splices reordered subset back into original slots", () => {
+  assert.deepEqual(
+    Array.from(replaceOrderedSubset(["p-oai-1", "p-ant", "p-oai-2", "p-chat"], ["p-oai-2", "p-oai-1"])),
+    ["p-oai-2", "p-ant", "p-oai-1", "p-chat"],
+  );
+  assert.deepEqual(
+    Array.from(replaceOrderedSubset(["p1", "p2"], ["p1", "p1"])),
+    ["p1", "p2"],
+  );
+  assert.deepEqual(
+    Array.from(replaceOrderedSubset(["p1", "p2"], ["p1"])),
+    ["p1", "p2"],
+  );
 });

@@ -56,11 +56,14 @@ impl Store {
     }
 
     pub async fn create_provider(&self, input: &ProviderConfigInput) -> Result<ProviderConfig> {
-        let input = normalize_provider_input(input)?;
+        let mut input = normalize_provider_input(input)?;
         let provider_id = generate_provider_id();
         let now = now_ms();
         let _write = self.writes.lock().await;
         let mut transaction = self.pool.begin().await?;
+        if input.sort_order <= 0 {
+            input.sort_order = next_provider_sort_order(&mut transaction).await?;
+        }
         insert_provider_with_conflict(&mut transaction, &provider_id, &input, now, false).await?;
         transaction.commit().await?;
         Ok(self
@@ -74,10 +77,20 @@ impl Store {
         provider_id: &str,
         input: &ProviderConfigInput,
     ) -> Result<ProviderConfig> {
-        let input = normalize_provider_input(input)?;
+        let mut input = normalize_provider_input(input)?;
         let now = now_ms();
         let _write = self.writes.lock().await;
         let mut transaction = self.pool.begin().await?;
+        let existing_sort_order: Option<i64> =
+            sqlx::query_scalar("SELECT sort_order FROM provider_configs WHERE provider_id = ?")
+                .bind(provider_id)
+                .fetch_optional(&mut *transaction)
+                .await?;
+        let existing_sort_order = existing_sort_order
+            .ok_or_else(|| Error::RunNotFound(format!("provider {provider_id}")))?;
+        if input.sort_order <= 0 {
+            input.sort_order = existing_sort_order;
+        }
         let result = sqlx::query(
             r#"UPDATE provider_configs SET
                 sort_order = ?, name = ?, model_type = ?, base_url = ?, use_full_url = ?,
@@ -147,7 +160,7 @@ impl Store {
             "SELECT {MODEL_JOIN_COLUMNS}
              FROM model_configs AS m
              INNER JOIN provider_configs AS p ON p.provider_id = m.provider_id
-             ORDER BY m.sort_order, m.display_name"
+             ORDER BY p.sort_order, p.name, p.provider_id, m.sort_order, m.display_name, m.model_hash"
         );
         sqlx::query(&query)
             .fetch_all(&self.pool)
@@ -198,7 +211,22 @@ impl Store {
             }
             normalized.push((hash, input));
         }
-        for (hash, input) in &normalized {
+        let mut next_sort_orders = HashMap::new();
+        for (hash, input) in &mut normalized {
+            if input.sort_order <= 0 {
+                let next = match next_sort_orders.entry(input.provider_id.clone()) {
+                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        let initial =
+                            next_model_sort_order(&mut transaction, &input.provider_id).await?;
+                        entry.insert(initial)
+                    }
+                };
+                input.sort_order = *next;
+                *next += 1;
+            } else if let Some(next) = next_sort_orders.get_mut(&input.provider_id) {
+                *next = (*next).max(input.sort_order + 1);
+            }
             insert_model(&mut transaction, hash, input, now).await?;
         }
         transaction.commit().await?;
@@ -215,17 +243,23 @@ impl Store {
         current_hash: &str,
         input: &ModelConfigInput,
     ) -> Result<ModelConfig> {
-        let current = self
-            .model(current_hash)
-            .await?
-            .ok_or_else(|| Error::RunNotFound(format!("model {current_hash}")))?;
         let now = now_ms();
         let _write = self.writes.lock().await;
         let mut transaction = self.pool.begin().await?;
+        let current = model_in_tx(&mut transaction, current_hash)
+            .await?
+            .ok_or_else(|| Error::RunNotFound(format!("model {current_hash}")))?;
         let mut provider_types = HashMap::new();
         let model_type =
             lookup_provider_type(&mut transaction, &mut provider_types, &input.provider_id).await?;
-        let input = normalize_model_input(input, model_type)?;
+        let mut input = normalize_model_input(input, model_type)?;
+        if input.sort_order <= 0 {
+            input.sort_order = if input.provider_id == current.provider_id {
+                current.sort_order
+            } else {
+                next_model_sort_order(&mut transaction, &input.provider_id).await?
+            };
+        }
         let identity_unchanged = current.provider_id == input.provider_id
             && current.model_id == input.model_id
             && current.display_name == input.display_name;
@@ -291,41 +325,132 @@ impl Store {
         Ok(())
     }
 
-    pub async fn reorder_models(&self, model_hashes: &[String]) -> Result<Vec<ModelConfig>> {
-        let current = self.models().await?;
-        let current_hashes = current
-            .iter()
-            .map(|model| model.model_hash.as_str())
-            .collect::<HashSet<_>>();
-        let requested_hashes = model_hashes
-            .iter()
-            .map(String::as_str)
-            .collect::<HashSet<_>>();
-        if model_hashes.len() != current.len()
-            || requested_hashes.len() != current.len()
-            || requested_hashes != current_hashes
-        {
-            return Err(Error::Config(
-                "model configuration changed; refresh and try sorting again".into(),
-            ));
-        }
-
+    pub async fn reorder_providers(&self, provider_ids: &[String]) -> Result<Vec<ProviderConfig>> {
         let now = now_ms();
         let _write = self.writes.lock().await;
         let mut transaction = self.pool.begin().await?;
+        let current_ids: Vec<String> =
+            sqlx::query_scalar("SELECT provider_id FROM provider_configs")
+                .fetch_all(&mut *transaction)
+                .await?;
+        validate_permutation(
+            &current_ids,
+            provider_ids,
+            "provider configuration changed; refresh and try sorting again",
+        )?;
+
+        for (index, provider_id) in provider_ids.iter().enumerate() {
+            sqlx::query(
+                "UPDATE provider_configs SET sort_order = ?, updated_at_ms = ? WHERE provider_id = ?",
+            )
+            .bind(i64::try_from(index + 1).expect("provider order fits in i64"))
+            .bind(now)
+            .bind(provider_id)
+            .execute(&mut *transaction)
+            .await?;
+        }
+        transaction.commit().await?;
+        self.providers().await
+    }
+
+    pub async fn reorder_models(
+        &self,
+        provider_id: &str,
+        model_hashes: &[String],
+    ) -> Result<Vec<ModelConfig>> {
+        let now = now_ms();
+        let _write = self.writes.lock().await;
+        let mut transaction = self.pool.begin().await?;
+        let provider_exists: i64 = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM provider_configs WHERE provider_id = ?)",
+        )
+        .bind(provider_id)
+        .fetch_one(&mut *transaction)
+        .await?;
+        if provider_exists == 0 {
+            return Err(Error::RunNotFound(format!("provider {provider_id}")));
+        }
+
+        let current_hashes: Vec<String> =
+            sqlx::query_scalar("SELECT model_hash FROM model_configs WHERE provider_id = ?")
+                .bind(provider_id)
+                .fetch_all(&mut *transaction)
+                .await?;
+        validate_permutation(
+            &current_hashes,
+            model_hashes,
+            "model configuration changed; refresh and try sorting again",
+        )?;
+
         for (index, hash) in model_hashes.iter().enumerate() {
             sqlx::query(
-                "UPDATE model_configs SET sort_order = ?, updated_at_ms = ? WHERE model_hash = ?",
+                "UPDATE model_configs SET sort_order = ?, updated_at_ms = ? WHERE model_hash = ? AND provider_id = ?",
             )
             .bind(i64::try_from(index + 1).expect("model order fits in i64"))
             .bind(now)
             .bind(hash)
+            .bind(provider_id)
             .execute(&mut *transaction)
             .await?;
         }
         transaction.commit().await?;
         self.models().await
     }
+}
+
+fn validate_permutation(
+    current: &[String],
+    requested: &[String],
+    error_message: &str,
+) -> Result<()> {
+    let current_set = current.iter().map(String::as_str).collect::<HashSet<_>>();
+    let requested_set = requested.iter().map(String::as_str).collect::<HashSet<_>>();
+    if requested.len() != current.len()
+        || requested_set.len() != current.len()
+        || requested_set != current_set
+    {
+        return Err(Error::Config(error_message.into()));
+    }
+    Ok(())
+}
+
+async fn next_provider_sort_order(transaction: &mut Transaction<'_, Sqlite>) -> Result<i64> {
+    let next: i64 =
+        sqlx::query_scalar("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM provider_configs")
+            .fetch_one(&mut **transaction)
+            .await?;
+    Ok(next)
+}
+
+async fn next_model_sort_order(
+    transaction: &mut Transaction<'_, Sqlite>,
+    provider_id: &str,
+) -> Result<i64> {
+    let next: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM model_configs WHERE provider_id = ?",
+    )
+    .bind(provider_id)
+    .fetch_one(&mut **transaction)
+    .await?;
+    Ok(next)
+}
+
+async fn model_in_tx(
+    transaction: &mut Transaction<'_, Sqlite>,
+    hash: &str,
+) -> Result<Option<ModelConfig>> {
+    let query = format!(
+        "SELECT {MODEL_JOIN_COLUMNS}
+         FROM model_configs AS m
+         INNER JOIN provider_configs AS p ON p.provider_id = m.provider_id
+         WHERE m.model_hash = ?"
+    );
+    sqlx::query(&query)
+        .bind(hash)
+        .fetch_optional(&mut **transaction)
+        .await?
+        .map(model_from_row)
+        .transpose()
 }
 
 async fn lookup_provider_type(
@@ -536,8 +661,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn updating_provider_propagates_to_models_without_changing_model_identity() {
+    async fn test_store() -> (tempfile::TempDir, Store) {
         let directory = tempfile::tempdir().unwrap();
         let store = Store::connect(&format!(
             "sqlite://{}",
@@ -545,6 +669,12 @@ mod tests {
         ))
         .await
         .unwrap();
+        (directory, store)
+    }
+
+    #[tokio::test]
+    async fn updating_provider_propagates_to_models_without_changing_model_identity() {
+        let (_directory, store) = test_store().await;
 
         let provider = store
             .create_provider(&provider_input("  My Provider  "))
@@ -581,5 +711,210 @@ mod tests {
         store.delete_provider(&provider.provider_id).await.unwrap();
         assert!(store.providers().await.unwrap().is_empty());
         assert!(store.models().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn create_and_update_manage_sort_order_per_provider() {
+        let (_directory, store) = test_store().await;
+
+        let p1 = store
+            .create_provider(&provider_input("Provider One"))
+            .await
+            .unwrap();
+        let p2 = store
+            .create_provider(&provider_input("Provider Two"))
+            .await
+            .unwrap();
+        assert_eq!(p1.sort_order, 1);
+        assert_eq!(p2.sort_order, 2);
+
+        let batch = store
+            .create_models(&[
+                model_input(&p1.provider_id, "P1 First"),
+                model_input(&p1.provider_id, "P1 Second"),
+            ])
+            .await
+            .unwrap();
+        assert_eq!(batch[0].sort_order, 1);
+        assert_eq!(batch[1].sort_order, 2);
+
+        let p1_third = store
+            .create_model(&model_input(&p1.provider_id, "P1 Third"))
+            .await
+            .unwrap();
+        assert_eq!(p1_third.sort_order, 3);
+
+        let p2_first = store
+            .create_model(&model_input(&p2.provider_id, "P2 First"))
+            .await
+            .unwrap();
+        assert_eq!(p2_first.sort_order, 1);
+
+        let updated_p2 = store
+            .update_provider(&p2.provider_id, &provider_input("Provider Two Renamed"))
+            .await
+            .unwrap();
+        assert_eq!(updated_p2.sort_order, 2);
+
+        let mut edit_same_provider = model_input(&p1.provider_id, "P1 Second Edited");
+        edit_same_provider.sort_order = 0;
+        let updated_same = store
+            .update_model(&batch[1].model_hash, &edit_same_provider)
+            .await
+            .unwrap();
+        assert_eq!(updated_same.sort_order, 2);
+
+        let mut move_provider = model_input(&p2.provider_id, "P1 Moved to P2");
+        move_provider.sort_order = 0;
+        let moved = store
+            .update_model(&updated_same.model_hash, &move_provider)
+            .await
+            .unwrap();
+        assert_eq!(moved.provider_id, p2.provider_id);
+        assert_eq!(moved.sort_order, 2);
+    }
+
+    #[tokio::test]
+    async fn reorder_providers_and_models_enforce_provider_first_ordering() {
+        let (_directory, store) = test_store().await;
+
+        let p1 = store
+            .create_provider(&provider_input("Alpha"))
+            .await
+            .unwrap();
+        let p2 = store
+            .create_provider(&provider_input("Beta"))
+            .await
+            .unwrap();
+
+        let p1_a = store
+            .create_model(&model_input(&p1.provider_id, "Alpha A"))
+            .await
+            .unwrap();
+        let p1_b = store
+            .create_model(&model_input(&p1.provider_id, "Alpha B"))
+            .await
+            .unwrap();
+        let p2_a = store
+            .create_model(&model_input(&p2.provider_id, "Beta A"))
+            .await
+            .unwrap();
+        let p2_b = store
+            .create_model(&model_input(&p2.provider_id, "Beta B"))
+            .await
+            .unwrap();
+
+        let reordered_models = store
+            .reorder_models(
+                &p1.provider_id,
+                &[p1_b.model_hash.clone(), p1_a.model_hash.clone()],
+            )
+            .await
+            .unwrap();
+        let hashes: Vec<_> = reordered_models
+            .iter()
+            .map(|m| m.model_hash.as_str())
+            .collect();
+        assert_eq!(
+            hashes,
+            vec![
+                p1_b.model_hash.as_str(),
+                p1_a.model_hash.as_str(),
+                p2_a.model_hash.as_str(),
+                p2_b.model_hash.as_str(),
+            ]
+        );
+        // Provider 2's model sort_orders remain isolated and untouched.
+        assert_eq!(reordered_models[2].sort_order, 1);
+        assert_eq!(reordered_models[3].sort_order, 2);
+
+        let reordered_providers = store
+            .reorder_providers(&[p2.provider_id.clone(), p1.provider_id.clone()])
+            .await
+            .unwrap();
+        assert_eq!(
+            reordered_providers
+                .iter()
+                .map(|p| (p.provider_id.as_str(), p.sort_order))
+                .collect::<Vec<_>>(),
+            vec![(p2.provider_id.as_str(), 1), (p1.provider_id.as_str(), 2)]
+        );
+
+        let models_after = store.models().await.unwrap();
+        assert_eq!(
+            models_after
+                .iter()
+                .map(|m| m.model_hash.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                p2_a.model_hash.as_str(),
+                p2_b.model_hash.as_str(),
+                p1_b.model_hash.as_str(),
+                p1_a.model_hash.as_str(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn reorder_rejects_mismatched_or_missing_targets() {
+        let (_directory, store) = test_store().await;
+
+        let p1 = store
+            .create_provider(&provider_input("Alpha"))
+            .await
+            .unwrap();
+        let p2 = store
+            .create_provider(&provider_input("Beta"))
+            .await
+            .unwrap();
+        let m1 = store
+            .create_model(&model_input(&p1.provider_id, "Alpha 1"))
+            .await
+            .unwrap();
+        let m2 = store
+            .create_model(&model_input(&p2.provider_id, "Beta 1"))
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            store.reorder_providers(&[p1.provider_id.clone()]).await,
+            Err(Error::Config(_))
+        ));
+        assert!(matches!(
+            store
+                .reorder_providers(&[p1.provider_id.clone(), p1.provider_id.clone()])
+                .await,
+            Err(Error::Config(_))
+        ));
+        assert!(matches!(
+            store
+                .reorder_providers(&[p1.provider_id.clone(), "unknown".into()])
+                .await,
+            Err(Error::Config(_))
+        ));
+
+        assert!(matches!(
+            store.reorder_models("missing-provider", &[]).await,
+            Err(Error::RunNotFound(_))
+        ));
+        assert!(matches!(
+            store
+                .reorder_models(&p1.provider_id, &[m2.model_hash.clone()])
+                .await,
+            Err(Error::Config(_))
+        ));
+        assert!(matches!(
+            store
+                .reorder_models(
+                    &p1.provider_id,
+                    &[m1.model_hash.clone(), m1.model_hash.clone()],
+                )
+                .await,
+            Err(Error::Config(_))
+        ));
+        assert!(matches!(
+            store.reorder_models(&p1.provider_id, &[]).await,
+            Err(Error::Config(_))
+        ));
     }
 }

@@ -815,4 +815,193 @@ mod tests {
             vec!["local-model-hash"]
         );
     }
+
+    struct DummyProvider;
+
+    impl crate::provider::Provider for DummyProvider {
+        fn stream(
+            &self,
+            _invocation: crate::model::ModelInvocation,
+            _cancellation: tokio_util::sync::CancellationToken,
+        ) -> crate::provider::ProviderStream {
+            Box::pin(futures_util::stream::empty())
+        }
+    }
+
+    fn test_provider_input(name: &str) -> crate::model::ProviderConfigInput {
+        crate::model::ProviderConfigInput {
+            sort_order: 0,
+            name: name.into(),
+            model_type: ModelType::OpenAi,
+            base_url: "https://provider.example/v1/chat/completions".into(),
+            use_full_url: true,
+            api_key: "provider-secret".into(),
+            openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
+            custom_headers_enabled: false,
+            custom_headers: serde_json::json!({}),
+            extra_params_enabled: false,
+            extra_params: serde_json::json!({}),
+        }
+    }
+
+    fn test_model_input(provider_id: &str, display_name: &str) -> crate::model::ModelConfigInput {
+        crate::model::ModelConfigInput {
+            provider_id: provider_id.into(),
+            sort_order: 0,
+            display_name: display_name.into(),
+            tooltip_data: display_name.into(),
+            model_id: "upstream-model".into(),
+            reasoning_effort: None,
+            context_window_tokens: None,
+            max_output_tokens: None,
+            anthropic_thinking_effort: None,
+            thinking_budget_tokens: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn catalog_and_defaults_follow_provider_first_order() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = crate::store::Store::connect(&format!(
+            "sqlite://{}",
+            directory.path().join("test.db").display()
+        ))
+        .await
+        .unwrap();
+
+        let p1 = store
+            .create_provider(&test_provider_input("First Provider"))
+            .await
+            .unwrap();
+        let p2 = store
+            .create_provider(&test_provider_input("Second Provider"))
+            .await
+            .unwrap();
+        let m1_a = store
+            .create_model(&test_model_input(&p1.provider_id, "P1 A"))
+            .await
+            .unwrap();
+        let m1_b = store
+            .create_model(&test_model_input(&p1.provider_id, "P1 B"))
+            .await
+            .unwrap();
+        let m2_a = store
+            .create_model(&test_model_input(&p2.provider_id, "P2 A"))
+            .await
+            .unwrap();
+        let m2_b = store
+            .create_model(&test_model_input(&p2.provider_id, "P2 B"))
+            .await
+            .unwrap();
+
+        // Reorder providers so p2 is first, and reorder p2's models so m2_b is first.
+        store
+            .reorder_providers(&[p2.provider_id.clone(), p1.provider_id.clone()])
+            .await
+            .unwrap();
+        store
+            .reorder_models(
+                &p2.provider_id,
+                &[m2_b.model_hash.clone(), m2_a.model_hash.clone()],
+            )
+            .await
+            .unwrap();
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let upstream = axum::Router::new().fallback(|| async { StatusCode::SERVICE_UNAVAILABLE });
+        let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+
+        let proxy = CursorProxy::with_upstream(
+            crate::network::NetworkClients::new(store.clone()),
+            format!("http://127.0.0.1:{port}"),
+        );
+        let assets = crate::cursor::prompting::PromptAssets::embedded().unwrap();
+        let registry = TransportRegistry::new(
+            store,
+            std::sync::Arc::new(DummyProvider),
+            crate::cursor::prompting::PromptCompiler::new(assets),
+        );
+
+        let expected = vec![
+            m2_b.model_hash.clone(),
+            m2_a.model_hash.clone(),
+            m1_a.model_hash.clone(),
+            m1_b.model_hash.clone(),
+        ];
+
+        let avail_resp = available_models(
+            State(registry.clone()),
+            Extension(proxy.clone()),
+            Request::post("/aiserver.v1.AiService/AvailableModels")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        let avail_bytes = axum::body::to_bytes(avail_resp.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let avail = AvailableModelsAddition::decode(avail_bytes).unwrap();
+        assert_eq!(avail.model_names, expected);
+        assert_eq!(
+            avail
+                .models
+                .iter()
+                .map(|m| m.name.as_str())
+                .collect::<Vec<_>>(),
+            expected.iter().map(String::as_str).collect::<Vec<_>>()
+        );
+
+        let usable_resp = usable_models(
+            State(registry.clone()),
+            Extension(proxy),
+            Request::post("/agent.v1.AgentService/GetUsableModels")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        let usable_bytes = axum::body::to_bytes(usable_resp.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let usable = UsableModelsAddition::decode(usable_bytes).unwrap();
+        assert_eq!(
+            usable
+                .models
+                .iter()
+                .map(|m| m.model_id.as_str())
+                .collect::<Vec<_>>(),
+            expected.iter().map(String::as_str).collect::<Vec<_>>()
+        );
+
+        let cli_default_resp = default_model_for_cli(State(registry.clone()))
+            .await
+            .unwrap();
+        let cli_default_bytes = axum::body::to_bytes(cli_default_resp.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let cli_default = agent::GetDefaultModelForCliResponse::decode(cli_default_bytes).unwrap();
+        assert_eq!(
+            cli_default.model.unwrap().model_id,
+            m2_b.model_hash.as_str()
+        );
+
+        let default_resp = default_model(State(registry.clone())).await.unwrap();
+        let default_bytes = axum::body::to_bytes(default_resp.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let default_decoded = DefaultModelResponse::decode(default_bytes).unwrap();
+        assert_eq!(default_decoded.model, m2_b.model_hash);
+        assert_eq!(default_decoded.thinking_model, m2_b.model_hash);
+
+        let nudge_resp = default_model_nudge(State(registry)).await.unwrap();
+        let nudge_bytes = axum::body::to_bytes(nudge_resp.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let nudge = DefaultModelNudgeDataResponse::decode(nudge_bytes).unwrap();
+        assert_eq!(nudge.models_with_no_default_switch, expected);
+
+        server.abort();
+    }
 }

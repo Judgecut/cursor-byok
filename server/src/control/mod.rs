@@ -127,12 +127,20 @@ pub fn api_router(service: ControlService) -> Router {
             get(models::list_providers).post(models::create_provider),
         )
         .route(
+            "/__byok-api__/api/providers/order",
+            put(models::reorder_providers),
+        )
+        .route(
             "/__byok-api__/api/providers/{provider_id}",
             put(models::update_provider).delete(models::remove_provider),
         )
         .route(
             "/__byok-api__/api/providers/{provider_id}/discover",
             post(models::discover_provider_models),
+        )
+        .route(
+            "/__byok-api__/api/providers/{provider_id}/models/order",
+            put(models::reorder),
         )
         .route(
             "/__byok-api__/api/models",
@@ -142,7 +150,6 @@ pub fn api_router(service: ControlService) -> Router {
             "/__byok-api__/api/models/import-v0049",
             get(models::preview_v0049).post(models::import_v0049),
         )
-        .route("/__byok-api__/api/models/order", put(models::reorder))
         .route("/__byok-api__/api/overview", get(overview::get))
         .route(
             "/__byok-api__/api/models/{model_hash}",

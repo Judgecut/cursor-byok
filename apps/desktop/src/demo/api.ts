@@ -40,7 +40,7 @@ const DAY_MS = 24 * HOUR_MS;
 const MAX_RANGE_BUCKETS = 60;
 const MIN_SPEED_GENERATION_MS = 200;
 
-const models: Model[] = [
+let models: Model[] = [
   createModel({ hash: "mock-claude-sonnet", order: 1, name: "Claude Sonnet 4", type: "anthropic", url: "https://api.anthropic.com", modelId: "claude-sonnet-4-20250514" }),
   createModel({ hash: "mock-claude-opus", order: 2, name: "Claude Opus 4", type: "anthropic", url: "https://api.anthropic.com", modelId: "claude-opus-4-20250514" }),
   createModel({ hash: "mock-gpt", order: 3, name: "GPT-5.2", type: "openai", url: "https://api.openai.com", modelId: "gpt-5.2" }),
@@ -59,11 +59,11 @@ const models: Model[] = [
   createModel({ hash: "mock-mistral-small", order: 16, name: "Mistral Small", type: "openai", url: "https://api.mistral.ai", modelId: "mistral-small-latest", endpoint: "/v1/chat/completions" }),
 ];
 
-const providers: Provider[] = [...new Map(models.map((model, index) => [
+let providers: Provider[] = [...new Map(models.map((model) => [
   model.provider_id,
   {
     provider_id: model.provider_id,
-    sort_order: index + 1,
+    sort_order: 0,
     name: model.provider_name,
     type: model.type,
     base_url: model.base_url,
@@ -77,7 +77,7 @@ const providers: Provider[] = [...new Map(models.map((model, index) => [
     created_at_ms: model.created_at_ms,
     updated_at_ms: model.updated_at_ms,
   },
-])).values()];
+])).values()].map((provider, index) => ({ ...provider, sort_order: index + 1 }));
 
 const DEMO_CATALOG: CatalogModel[] = [
   catalogEntry("anthropic", "Anthropic", "https://api.anthropic.com", "claude-sonnet-4-20250514", "Claude Sonnet 4", { input_per_million: "3", output_per_million: "15", cache_read_per_million: "0.3", cache_write_per_million: "3.75" }),
@@ -321,17 +321,53 @@ export function installDemoApi(initialInterface?: Partial<Pick<InterfaceSettings
     if (path === "/plugins" && method === "GET") return json([]);
     if (path === "/providers" && method === "GET") return json(providers);
     if (path === "/providers" && method === "POST") return json(providers[0]);
+    if (path === "/providers/order" && method === "PUT") {
+      const providerIds = readStringList(body, "provider_ids");
+      const byId = new Map(providers.map((provider) => [provider.provider_id, provider]));
+      if (!providerIds || providerIds.length !== providers.length || new Set(providerIds).size !== providers.length || providerIds.some((id) => !byId.has(id))) {
+        return json({ message: "provider configuration changed; refresh and try sorting again" }, 400);
+      }
+      const now = Date.now();
+      providers = providerIds.map((id, index) => ({
+        ...byId.get(id)!,
+        sort_order: index + 1,
+        updated_at_ms: now,
+      }));
+      models = sortDemoModels(models, providers);
+      return json(providers);
+    }
     if (/^\/providers\/[^/]+\/discover$/.test(path) && method === "POST") {
       const providerId = path.split("/")[2];
       const discovered = models.filter((model) => model.provider_id === providerId).map((model) => model.model_id);
       return json({ models: discovered.length > 0 ? discovered : models.map((model) => model.model_id) });
+    }
+    const providerModelsOrderMatch = path.match(/^\/providers\/([^/]+)\/models\/order$/);
+    if (providerModelsOrderMatch && method === "PUT") {
+      const providerId = decodeURIComponent(providerModelsOrderMatch[1]);
+      if (!providers.some((provider) => provider.provider_id === providerId)) {
+        return json({ message: `provider ${providerId} not found` }, 404);
+      }
+      const modelHashes = readStringList(body, "model_hashes");
+      const scoped = models.filter((model) => model.provider_id === providerId);
+      const byHash = new Map(scoped.map((model) => [model.model_hash, model]));
+      if (!modelHashes || modelHashes.length !== scoped.length || new Set(modelHashes).size !== scoped.length || modelHashes.some((hash) => !byHash.has(hash))) {
+        return json({ message: "model configuration changed; refresh and try sorting again" }, 400);
+      }
+      const now = Date.now();
+      const updatedByHash = new Map(
+        modelHashes.map((hash, index) => [hash, { ...byHash.get(hash)!, sort_order: index + 1, updated_at_ms: now }]),
+      );
+      models = sortDemoModels(
+        models.map((model) => updatedByHash.get(model.model_hash) ?? model),
+        providers,
+      );
+      return json(models);
     }
     if (/^\/providers\/[^/]+$/.test(path)) {
       return method === "DELETE" ? empty() : json(providers[0]);
     }
     if (path === "/models" && method === "GET") return json(models);
     if (path === "/models" && method === "POST") return json(models);
-    if (path === "/models/order") return json(models);
     if (path === "/models/import-v0049" && method === "GET") {
       return json({ source: "demo", total: 0, new_models: 0, existing_models: 0, models: [] });
     }
@@ -1120,6 +1156,32 @@ function applyDemoInterfacePatch(
     next.currency = patch.currency;
   }
   return { settings: next };
+}
+
+function readStringList(body: unknown, field: string): string[] | null {
+  if (!body || typeof body !== "object") return null;
+  const value = (body as Record<string, unknown>)[field];
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) return null;
+  return value;
+}
+
+function sortDemoModels(list: Model[], providerList: Provider[]): Model[] {
+  const providerMap = new Map(providerList.map((provider) => [provider.provider_id, provider]));
+  return list.slice().sort((left, right) => {
+    const leftProvider = providerMap.get(left.provider_id);
+    const rightProvider = providerMap.get(right.provider_id);
+    const providerOrderDiff = (leftProvider?.sort_order ?? Number.MAX_SAFE_INTEGER)
+      - (rightProvider?.sort_order ?? Number.MAX_SAFE_INTEGER);
+    if (providerOrderDiff !== 0) return providerOrderDiff;
+    const providerNameDiff = (leftProvider?.name ?? left.provider_name).localeCompare(rightProvider?.name ?? right.provider_name);
+    if (providerNameDiff !== 0) return providerNameDiff;
+    const providerIdDiff = left.provider_id.localeCompare(right.provider_id);
+    if (providerIdDiff !== 0) return providerIdDiff;
+    if (left.sort_order !== right.sort_order) return left.sort_order - right.sort_order;
+    const displayNameDiff = left.display_name.localeCompare(right.display_name);
+    if (displayNameDiff !== 0) return displayNameDiff;
+    return left.model_hash.localeCompare(right.model_hash);
+  });
 }
 
 function empty() {

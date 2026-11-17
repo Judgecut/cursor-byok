@@ -361,6 +361,10 @@ impl ControlService {
         self.store.providers().await
     }
 
+    pub async fn reorder_providers(&self, provider_ids: &[String]) -> Result<Vec<ProviderConfig>> {
+        self.store.reorder_providers(provider_ids).await
+    }
+
     pub async fn create_provider(&self, input: &ProviderConfigInput) -> Result<ProviderConfig> {
         self.store.create_provider(input).await
     }
@@ -406,8 +410,12 @@ impl ControlService {
         self.store.create_models(models).await
     }
 
-    pub async fn reorder_models(&self, model_hashes: &[String]) -> Result<Vec<ModelConfig>> {
-        self.store.reorder_models(model_hashes).await
+    pub async fn reorder_models(
+        &self,
+        provider_id: &str,
+        model_hashes: &[String],
+    ) -> Result<Vec<ModelConfig>> {
+        self.store.reorder_models(provider_id, model_hashes).await
     }
 
     pub async fn delete_model(&self, model_hash: &str) -> Result<()> {

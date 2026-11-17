@@ -14,13 +14,7 @@ pub(super) struct ListedModel {
 pub(super) async fn list(store: &Store, plugins: &PluginRegistry) -> Result<Vec<ListedModel>> {
     let mut models = Vec::new();
     let mut ids = HashSet::new();
-    let mut configured = store.models().await?;
-    configured.sort_by(|left, right| {
-        left.sort_order
-            .cmp(&right.sort_order)
-            .then_with(|| left.display_name.cmp(&right.display_name))
-            .then_with(|| left.model_hash.cmp(&right.model_hash))
-    });
+    let configured = store.models().await?;
     for model in configured {
         let group = model.provider_name.trim();
         let public_id = format!("{group}/{}", model.model_id);

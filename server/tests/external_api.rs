@@ -260,6 +260,175 @@ async fn duplicate_public_model_ids_use_the_first_configured_model() {
 }
 
 #[tokio::test]
+async fn control_reorder_routes_and_external_api_follow_provider_first_order() {
+    let (router, provider, store, _directory) = setup().await;
+    store
+        .set_external_api_settings(ExternalApiSettings {
+            enabled: true,
+            api_key: "secret".into(),
+        })
+        .await
+        .unwrap();
+
+    let first_model = store.models().await.unwrap().remove(0);
+    let p1_id = first_model.provider_id.clone();
+
+    let p2 = store
+        .create_provider(&provider_input("work", "https://backup.example.com/v1"))
+        .await
+        .unwrap();
+    let mut p2_first = model_input(&p2.provider_id);
+    p2_first.sort_order = 1;
+    p2_first.display_name = "Backup First".into();
+    let p2_first = store.create_model(&p2_first).await.unwrap();
+
+    let mut p2_second = model_input(&p2.provider_id);
+    p2_second.sort_order = 2;
+    p2_second.display_name = "Backup Second".into();
+    p2_second.model_id = "qwen/extra".into();
+    let p2_second = store.create_model(&p2_second).await.unwrap();
+
+    // Give p1's model a higher model sort_order than p2's models to prove
+    // provider sort_order takes precedence over model sort_order.
+    let mut p1_second = model_input(&p1_id);
+    p1_second.sort_order = 10;
+    p1_second.display_name = "Primary Second".into();
+    p1_second.model_id = "qwen/primary-two".into();
+    let p1_second = store.create_model(&p1_second).await.unwrap();
+
+    // Obsolete global /models/order route must be removed: Axum routes it
+    // to /models/{model_hash} ("order"), which rejects the ModelOrder body.
+    let (legacy_status, _) = send(
+        router.clone(),
+        "PUT",
+        "/__byok-api__/api/models/order",
+        None,
+        json!({"model_hashes": []}),
+    )
+    .await;
+    assert_eq!(legacy_status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Reorder providers via HTTP so p2 comes first.
+    let (status, body) = send(
+        router.clone(),
+        "PUT",
+        "/__byok-api__/api/providers/order",
+        None,
+        json!({"provider_ids": [p2.provider_id, p1_id]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let reordered_providers: Vec<Value> = serde_json::from_str(&body).unwrap();
+    assert_eq!(reordered_providers[0]["provider_id"], p2.provider_id);
+    assert_eq!(reordered_providers[0]["sort_order"], 1);
+    assert_eq!(reordered_providers[1]["provider_id"], p1_id);
+    assert_eq!(reordered_providers[1]["sort_order"], 2);
+
+    // Reorder p2's models via per-provider HTTP route.
+    let (status, body) = send(
+        router.clone(),
+        "PUT",
+        &format!(
+            "/__byok-api__/api/providers/{}/models/order",
+            p2.provider_id
+        ),
+        None,
+        json!({"model_hashes": [p2_second.model_hash, p2_first.model_hash]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let all_models: Vec<Value> = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        all_models
+            .iter()
+            .map(|m| m["model_hash"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec![
+            p2_second.model_hash.as_str(),
+            p2_first.model_hash.as_str(),
+            first_model.model_hash.as_str(),
+            p1_second.model_hash.as_str(),
+        ]
+    );
+
+    // Mismatch / unknown provider checks on HTTP routes.
+    let (bad_provider_order, _) = send(
+        router.clone(),
+        "PUT",
+        "/__byok-api__/api/providers/order",
+        None,
+        json!({"provider_ids": [p2.provider_id]}),
+    )
+    .await;
+    assert_eq!(bad_provider_order, StatusCode::BAD_REQUEST);
+
+    let (missing_provider, _) = send(
+        router.clone(),
+        "PUT",
+        "/__byok-api__/api/providers/nonexistent/models/order",
+        None,
+        json!({"model_hashes": []}),
+    )
+    .await;
+    assert_eq!(missing_provider, StatusCode::NOT_FOUND);
+
+    let (cross_provider_model, _) = send(
+        router.clone(),
+        "PUT",
+        &format!(
+            "/__byok-api__/api/providers/{}/models/order",
+            p2.provider_id
+        ),
+        None,
+        json!({"model_hashes": [p2_second.model_hash, first_model.model_hash]}),
+    )
+    .await;
+    assert_eq!(cross_provider_model, StatusCode::BAD_REQUEST);
+
+    // /byok/v1/models reflects provider-first order, and duplicate work/qwen/model
+    // now resolves to p2_first (because p2 is now provider #1).
+    let (status, body) = send(
+        router.clone(),
+        "GET",
+        "/byok/v1/models",
+        Some("secret"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let listed = serde_json::from_str::<Value>(&body).unwrap();
+    let ids = listed["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|model| model["id"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        ids,
+        [
+            "work/qwen/extra",
+            "work/qwen/model",
+            "work/qwen/primary-two"
+        ]
+    );
+
+    provider.push(vec![
+        ModelEvent::TextDelta("ok".into()),
+        ModelEvent::Done(FinishReason::Stop),
+    ]);
+    let (status, body) = send(
+        router,
+        "POST",
+        "/byok/v1/chat/completions",
+        Some("secret"),
+        json!({"model":"work/qwen/model","messages":[{"role":"user","content":"hello"}]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(provider.requests()[0].model.model_id, p2_first.model_hash);
+}
+
+#[tokio::test]
 async fn all_three_protocols_use_the_public_model_id() {
     let (router, provider, store, _directory) = setup().await;
     store

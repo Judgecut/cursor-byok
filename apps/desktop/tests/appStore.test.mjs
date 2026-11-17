@@ -49,7 +49,9 @@ async function setup()
       });
     },
     providers: async () => [],
+    reorderProviders: async () => [],
     models: async () => [],
+    reorderModels: async () => [],
     calls: async () => ({ items: [], total: 0 }),
     overview: async () => ({}),
     observability: async () => ({ detailed: false }),
@@ -86,7 +88,7 @@ async function setup()
       },
     },
   };
-  const context = createContext({ Error });
+  const context = createContext({ Error, t: (source) => source });
   const module = new SourceTextModule(source, { context });
   await module.link((specifier) =>
   {
@@ -241,4 +243,128 @@ test("selectCurrency allows CNY before a custom rate is configured and clearCnyR
   assert.equal(cleared?.cny_rate, null);
   assert.equal(app.store.getSnapshot().currency, "CNY");
   assert.equal(app.store.getSnapshot().cnyRate, null);
+});
+
+test("reorderProviders optimistically regroups models, fetches sequentially, and rolls back on failure", async () => {
+  const app = await setup();
+  const initialProviders = [
+    { provider_id: "p1", sort_order: 1, name: "P1" },
+    { provider_id: "p2", sort_order: 2, name: "P2" },
+  ];
+  const initialModels = [
+    { model_hash: "p1-a", provider_id: "p1", sort_order: 1 },
+    { model_hash: "p1-b", provider_id: "p1", sort_order: 2 },
+    { model_hash: "p2-a", provider_id: "p2", sort_order: 1 },
+  ];
+  app.api.providers = async () => initialProviders;
+  app.api.models = async () => initialModels;
+  await app.store.refresh();
+
+  assert.equal(await app.store.reorderProviders(["p1"]), false);
+  assert.equal(app.store.getSnapshot().error, "供应商配置已发生变化，请刷新后重试");
+
+  const sequence = [];
+  const reorderReq = deferred();
+  const modelsReq = deferred();
+  app.api.reorderProviders = (ids) => {
+    sequence.push(`reorderProviders:${ids.join(",")}`);
+    return reorderReq.promise;
+  };
+  app.api.models = () => {
+    sequence.push("models");
+    return modelsReq.promise;
+  };
+
+  const reorderPromise = app.store.reorderProviders(["p2", "p1"]);
+  assert.equal(app.store.getSnapshot().cursorBusy, true);
+  assert.deepEqual(
+    Array.from(app.store.getSnapshot().providers, (p) => [p.provider_id, p.sort_order]),
+    [["p2", 1], ["p1", 2]],
+  );
+  assert.deepEqual(
+    Array.from(app.store.getSnapshot().models, (m) => m.model_hash),
+    ["p2-a", "p1-a", "p1-b"],
+  );
+  assert.deepEqual(sequence, ["reorderProviders:p2,p1"]);
+
+  const serverProviders = [
+    { provider_id: "p2", sort_order: 1, name: "P2" },
+    { provider_id: "p1", sort_order: 2, name: "P1" },
+  ];
+  const serverModels = [
+    { model_hash: "p2-a", provider_id: "p2", sort_order: 1 },
+    { model_hash: "p1-a", provider_id: "p1", sort_order: 1 },
+    { model_hash: "p1-b", provider_id: "p1", sort_order: 2 },
+  ];
+  reorderReq.resolve(serverProviders);
+  await setImmediate();
+  assert.deepEqual(sequence, ["reorderProviders:p2,p1", "models"]);
+  modelsReq.resolve(serverModels);
+  assert.equal(await reorderPromise, true);
+  assert.equal(app.store.getSnapshot().cursorBusy, false);
+  assert.equal(app.store.getSnapshot().error, null);
+  assert.deepEqual(app.store.getSnapshot().providers, serverProviders);
+  assert.deepEqual(app.store.getSnapshot().models, serverModels);
+
+  const failingReorder = deferred();
+  app.api.reorderProviders = () => failingReorder.promise;
+  const failPromise = app.store.reorderProviders(["p1", "p2"]);
+  failingReorder.reject(new Error("provider reorder failed"));
+  assert.equal(await failPromise, false);
+  assert.equal(app.store.getSnapshot().cursorBusy, false);
+  assert.equal(app.store.getSnapshot().error, "provider reorder failed");
+  assert.deepEqual(app.store.getSnapshot().providers, serverProviders);
+  assert.deepEqual(app.store.getSnapshot().models, serverModels);
+});
+
+test("reorderCursorModels scopes validation and optimistic splice to providerId and rolls back on failure", async () => {
+  const app = await setup();
+  const initialProviders = [
+    { provider_id: "p1", sort_order: 1, name: "P1" },
+    { provider_id: "p2", sort_order: 2, name: "P2" },
+  ];
+  const initialModels = [
+    { model_hash: "p1-a", provider_id: "p1", sort_order: 1 },
+    { model_hash: "p1-b", provider_id: "p1", sort_order: 2 },
+    { model_hash: "p2-a", provider_id: "p2", sort_order: 1 },
+  ];
+  app.api.providers = async () => initialProviders;
+  app.api.models = async () => initialModels;
+  await app.store.refresh();
+
+  assert.equal(await app.store.reorderCursorModels("p1", ["p1-a", "p2-a"]), false);
+  assert.equal(app.store.getSnapshot().error, "模型配置已发生变化，请刷新后重试");
+
+  const reorderReq = deferred();
+  let calledWith = null;
+  app.api.reorderModels = (providerId, hashes) => {
+    calledWith = { providerId, hashes };
+    return reorderReq.promise;
+  };
+  const promise = app.store.reorderCursorModels("p1", ["p1-b", "p1-a"]);
+  assert.equal(app.store.getSnapshot().cursorBusy, true);
+  assert.deepEqual(
+    Array.from(app.store.getSnapshot().models, (m) => [m.model_hash, m.sort_order]),
+    [["p1-b", 1], ["p1-a", 2], ["p2-a", 1]],
+  );
+  assert.deepEqual(calledWith, { providerId: "p1", hashes: ["p1-b", "p1-a"] });
+
+  const serverModels = [
+    { model_hash: "p1-b", provider_id: "p1", sort_order: 1 },
+    { model_hash: "p1-a", provider_id: "p1", sort_order: 2 },
+    { model_hash: "p2-a", provider_id: "p2", sort_order: 1 },
+  ];
+  reorderReq.resolve(serverModels);
+  assert.equal(await promise, true);
+  assert.equal(app.store.getSnapshot().cursorBusy, false);
+  assert.deepEqual(app.store.getSnapshot().models, serverModels);
+
+  const failingReq = deferred();
+  app.api.reorderModels = () => failingReq.promise;
+  const failPromise = app.store.reorderCursorModels("p1", ["p1-a", "p1-b"]);
+  failingReq.reject(new Error("model reorder failed"));
+  assert.equal(await failPromise, false);
+  assert.equal(app.store.getSnapshot().cursorBusy, false);
+  assert.equal(app.store.getSnapshot().error, "model reorder failed");
+  assert.deepEqual(app.store.getSnapshot().models, serverModels);
 });

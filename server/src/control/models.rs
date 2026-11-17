@@ -22,6 +22,11 @@ pub struct SaveModels {
 }
 
 #[derive(Deserialize)]
+pub struct ProviderOrder {
+    pub provider_ids: Vec<String>,
+}
+
+#[derive(Deserialize)]
 pub struct ModelOrder {
     pub model_hashes: Vec<String>,
 }
@@ -30,6 +35,13 @@ pub async fn list_providers(
     State(service): State<ControlService>,
 ) -> Result<Json<Vec<ProviderConfig>>> {
     Ok(Json(service.providers().await?))
+}
+
+pub async fn reorder_providers(
+    State(service): State<ControlService>,
+    Json(input): Json<ProviderOrder>,
+) -> Result<Json<Vec<ProviderConfig>>> {
+    Ok(Json(service.reorder_providers(&input.provider_ids).await?))
 }
 
 pub async fn create_provider(
@@ -81,9 +93,14 @@ pub async fn create(
 
 pub async fn reorder(
     State(service): State<ControlService>,
+    Path(provider_id): Path<String>,
     Json(input): Json<ModelOrder>,
 ) -> Result<Json<Vec<ModelConfig>>> {
-    Ok(Json(service.reorder_models(&input.model_hashes).await?))
+    Ok(Json(
+        service
+            .reorder_models(&provider_id, &input.model_hashes)
+            .await?,
+    ))
 }
 
 pub async fn remove(

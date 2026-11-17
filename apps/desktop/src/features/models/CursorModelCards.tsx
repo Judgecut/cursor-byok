@@ -4,10 +4,10 @@ import Sortable from "sortablejs";
 import type { Model, PluginModelDescriptor, Provider } from "../../shared/api";
 import { Card } from "../../shared/ui/Card";
 import { Icon } from "../../shared/ui/Icon";
-import { addIcon, chevronDownIcon, chevronRightIcon, claudeIcon, dragIcon, editIcon, flatColorOrganizationIcon, openAiIcon, trashIcon } from "../../shared/ui/icons";
+import { addIcon, chevronDownIcon, chevronRightIcon, claudeIcon, dragIcon, editIcon, openAiIcon, trashIcon } from "../../shared/ui/icons";
 import { TruncatedButton } from "../../shared/ui/TruncatedButton";
 import { CursorModelTestResult, type CursorModelTestState } from "./CursorModelTestResult";
-import { cursorModelGroups, typeGroupDescriptor, type CursorModelGroup, type CursorModelGrouping } from "./cursorModelGrouping";
+import { cursorModelGroups, replaceOrderedSubset, typeGroupDescriptor, type CursorModelGroup, type CursorModelGrouping } from "./cursorModelGrouping";
 import styles from "./CursorSettings.module.scss";
 
 export { cursorModelGroups, type CursorModelGroup, type CursorModelGrouping };
@@ -26,92 +26,156 @@ type CursorModelCardsProps = {
   onDelete: (model: Model) => void;
   onTestPluginModel: (model: PluginModelDescriptor) => void;
   onPluginSettings: (model: PluginModelDescriptor) => void;
-  onReorder: (modelHashes: string[]) => void;
+  onReorderProviders: (providerIds: string[]) => void;
+  onReorderModels: (providerId: string, modelHashes: string[]) => void;
   onAddModelForProvider: (provider: Provider) => void;
   onEditProvider: (provider: Provider) => void;
   onDeleteProvider: (provider: Provider) => void;
 };
 
-type ModelGridProps = {
-  models: Model[];
-  sortable: boolean;
+type SortableListConfig = {
+  ids: string[];
+  enabled: boolean;
   disabled: boolean;
-  testingModelHashes: Set<string>;
-  testResults: Map<string, CursorModelTestState>;
-  onTest: (model: Model) => void;
-  onEdit: (model: Model) => void;
-  onDuplicate: (model: Model) => void;
-  onDelete: (model: Model) => void;
-  onReorder: (modelHashes: string[]) => void;
+  draggableSelector: string;
+  handleSelector: string;
+  dataIdAttr: string;
+  onReorder: (nextIds: string[]) => void;
 };
 
+/** Manages a SortableJS container while keeping React in control of final DOM order. */
+function useSortableList<T extends HTMLElement>({
+  ids,
+  enabled,
+  disabled,
+  draggableSelector,
+  handleSelector,
+  dataIdAttr,
+  onReorder,
+}: SortableListConfig) {
+  const containerRef = useRef<T>(null);
+  const sortableRef = useRef<Sortable | null>(null);
+  const currentIds = useRef(ids);
+  const reorderRef = useRef(onReorder);
+  currentIds.current = ids;
+  reorderRef.current = onReorder;
+  const idsKey = ids.join("\0");
+
+  useEffect(() => {
+    if (!enabled || !containerRef.current) return;
+    sortableRef.current = Sortable.create(containerRef.current, {
+      animation: 160,
+      dataIdAttr,
+      draggable: draggableSelector,
+      handle: handleSelector,
+      ghostClass: styles.sortGhost,
+      chosenClass: styles.sortChosen,
+      dragClass: styles.sortDragging,
+      forceFallback: true,
+      fallbackOnBody: true,
+      fallbackTolerance: 3,
+      disabled,
+      onEnd: (event) => {
+        const expectedIds = currentIds.current;
+        const oldIndex = event.oldDraggableIndex ?? event.oldIndex;
+        const newIndex = event.newDraggableIndex ?? event.newIndex;
+        // Restore React's current order synchronously before state updates or error rollbacks.
+        sortableRef.current?.sort(expectedIds, false);
+        if (
+          typeof oldIndex !== "number"
+          || typeof newIndex !== "number"
+          || oldIndex === newIndex
+        ) {
+          return;
+        }
+        const reordered = expectedIds.slice();
+        const [moved] = reordered.splice(oldIndex, 1);
+        if (!moved || newIndex < 0 || newIndex > reordered.length) {
+          return;
+        }
+        reordered.splice(newIndex, 0, moved);
+        reorderRef.current(reordered);
+      },
+    });
+    return () => {
+      sortableRef.current?.destroy();
+      sortableRef.current = null;
+    };
+  }, [dataIdAttr, draggableSelector, enabled, handleSelector]);
+
+  useEffect(() => {
+    const instance = sortableRef.current;
+    if (!instance) return;
+    instance.option("disabled", disabled);
+    const currentDomOrder = instance.toArray();
+    if (
+      currentDomOrder.length !== currentIds.current.length
+      || currentDomOrder.some((id, index) => id !== currentIds.current[index])
+    ) {
+      instance.sort(currentIds.current, false);
+    }
+  }, [disabled, idsKey]);
+
+  return containerRef;
+}
+
+function SortHandle({ className, disabled }: { className: string; disabled: boolean }) {
+  return <button
+    type="button"
+    className={`${styles.sortHandle} ${className}`}
+    disabled={disabled}
+    aria-label={t("拖动排序")}
+    title={t("拖动排序")}
+    onClick={(event) => event.stopPropagation()}
+  >
+    <Icon icon={dragIcon} size="1.15em" />
+  </button>;
+}
+
 export function CursorModelCards(props: CursorModelCardsProps) {
-  const modelsByProvider = new Map<string, Model[]>();
-  for (const model of props.models) {
-    const list = modelsByProvider.get(model.provider_id);
-    if (list) list.push(model);
-    else modelsByProvider.set(model.provider_id, [model]);
-  }
-  const hasEmptyProvider = props.providers.some((provider) => !modelsByProvider.has(provider.provider_id));
-  const builtins = props.grouping === "flat"
-    ? <>
-      {props.models.length > 0 && <div style={{ paddingTop: "10px" }}>
-        <ModelGrid
-          models={props.models}
-          sortable
-          disabled={props.disabled}
-          testingModelHashes={props.testingModelHashes}
-          testResults={props.testResults}
-          onTest={props.onTest}
-          onEdit={props.onEdit}
-          onDuplicate={props.onDuplicate}
-          onDelete={props.onDelete}
-          onReorder={props.onReorder}
-        />
-      </div>}
-      {props.providers.length > 0 && <CollapsibleGroup
-        key={hasEmptyProvider ? "flat:providers:empty" : "flat:providers"}
-        label={t("供应商")}
-        icon={flatColorOrganizationIcon}
-        defaultOpen={hasEmptyProvider || props.models.length === 0}
-      >
-        {props.providers.map((provider) => {
-          const providerModels = modelsByProvider.get(provider.provider_id) ?? [];
-          return <div className={styles.modelRow} key={provider.provider_id}>
-            <div className={styles.providerSubheaderTitle}>
-              <Icon icon={provider.type === "anthropic" ? claudeIcon : openAiIcon} size="1em" />
-              <span className={styles.providerSubheaderName}>{provider.name}</span>
-              <span className={styles.providerSubheaderMeta}>
-                {providerModels.length === 0
-                  ? t("该供应商下暂无模型，点击「添加模型」即可配置。")
-                  : t("{count} 个模型", { count: providerModels.length })}
-              </span>
-            </div>
-            <ProviderActionButtons
-              provider={provider}
-              disabled={props.disabled}
-              onAddModel={props.onAddModelForProvider}
-              onEdit={props.onEditProvider}
-              onDelete={props.onDeleteProvider}
-            />
-          </div>;
-        })}
-      </CollapsibleGroup>}
-    </>
-    : <div className={styles.modelGroups}>
-      {cursorModelGroups(props.models, props.grouping, props.providers).map((group) => (
-        props.grouping === "type"
-          ? renderTypeGroupCard(group, props)
-          : renderGroupCard(group, true, props)
-      ))}
-    </div>;
+  const groups = cursorModelGroups(props.models, props.grouping, props.providers);
+  const providerGroups = props.grouping === "provider"
+    ? groups.filter((group): group is CursorModelGroup & { provider: Provider } => Boolean(group.provider))
+    : [];
+  const orphanProviderGroups = props.grouping === "provider"
+    ? groups.filter((group) => !group.provider)
+    : [];
+  const pluginsDefaultOpen = props.providers.length === 0;
+
   return <div className={styles.modelGroups}>
-    {builtins}
+    {props.grouping === "provider"
+      ? <>
+        {providerGroups.length > 0 && <ProviderGroupsList groups={providerGroups} props={props} />}
+        {orphanProviderGroups.length > 0 && <div className={styles.groupStack}>
+          {orphanProviderGroups.map((group) => <CollapsibleGroup
+            key={group.key}
+            label={group.label}
+            icon={group.protocol === "anthropic" ? claudeIcon : openAiIcon}
+            defaultOpen
+          >
+            <SortableModelList
+              models={group.models}
+              sortable={false}
+              disabled={props.disabled}
+              testingModelHashes={props.testingModelHashes}
+              testResults={props.testResults}
+              onTest={props.onTest}
+              onEdit={props.onEdit}
+              onDuplicate={props.onDuplicate}
+              onDelete={props.onDelete}
+              onReorder={() => undefined}
+            />
+          </CollapsibleGroup>)}
+        </div>}
+      </>
+      : groups.length > 0 && <div className={styles.groupStack}>
+        {groups.map((group) => <TypeGroupCard key={group.key} group={group} props={props} />)}
+      </div>}
     {pluginGroups(props.pluginModels).map((group) => <CollapsibleGroup
-      key={`${props.grouping}:${group.pluginId}`}
+      key={group.pluginId}
       label={group.pluginName}
       iconSrc={group.icon}
-      defaultOpen={props.grouping === "flat"}
+      defaultOpen={pluginsDefaultOpen}
     >
       {group.models.map((model) => <PluginModelRow
         key={model.id}
@@ -123,6 +187,203 @@ export function CursorModelCards(props: CursorModelCardsProps) {
         onSettings={() => props.onPluginSettings(model)}
       />)}
     </CollapsibleGroup>)}
+  </div>;
+}
+
+function ProviderGroupsList({
+  groups,
+  props,
+}: {
+  groups: Array<CursorModelGroup & { provider: Provider }>;
+  props: CursorModelCardsProps;
+}) {
+  const canSortProviders = groups.length > 1;
+  const listRef = useSortableList<HTMLDivElement>({
+    ids: groups.map((group) => group.provider.provider_id),
+    enabled: canSortProviders,
+    disabled: props.disabled,
+    draggableSelector: `.${styles.providerCard}`,
+    handleSelector: `.${styles.providerSortHandle}`,
+    dataIdAttr: "data-provider-id",
+    onReorder: props.onReorderProviders,
+  });
+
+  return <div ref={listRef} className={styles.groupStack}>
+    {groups.map((group) => <CollapsibleGroup
+      key={group.key}
+      className={styles.providerCard}
+      providerId={group.provider.provider_id}
+      label={group.label}
+      icon={group.protocol === "anthropic" ? claudeIcon : openAiIcon}
+      defaultOpen
+      dragHandle={canSortProviders ? <SortHandle className={styles.providerSortHandle} disabled={props.disabled} /> : undefined}
+      actions={<ProviderActionButtons
+        provider={group.provider}
+        disabled={props.disabled}
+        onAddModel={props.onAddModelForProvider}
+        onEdit={props.onEditProvider}
+        onDelete={props.onDeleteProvider}
+      />}
+    >
+      {group.models.length === 0
+        ? <div className={styles.emptyGroupRow}>{t("该供应商下暂无模型，点击「添加模型」即可配置。")}</div>
+        : <SortableModelList
+          models={group.models}
+          sortable
+          disabled={props.disabled}
+          testingModelHashes={props.testingModelHashes}
+          testResults={props.testResults}
+          onTest={props.onTest}
+          onEdit={props.onEdit}
+          onDuplicate={props.onDuplicate}
+          onDelete={props.onDelete}
+          onReorder={(modelHashes) => props.onReorderModels(group.provider.provider_id, modelHashes)}
+        />}
+    </CollapsibleGroup>)}
+  </div>;
+}
+
+function TypeGroupCard({ group, props }: { group: CursorModelGroup; props: CursorModelCardsProps }) {
+  const providersInType = props.providers.filter((provider) => typeGroupDescriptor(provider).key === group.key);
+  const matchedProviderIds = new Set(providersInType.map((provider) => provider.provider_id));
+  const orphanModels = group.models.filter((model) => !matchedProviderIds.has(model.provider_id));
+
+  return <CollapsibleGroup
+    label={group.label}
+    icon={group.protocol === "anthropic" ? claudeIcon : openAiIcon}
+    defaultOpen
+  >
+    {providersInType.length > 0 && <TypeProviderSubgroups
+      providersInType={providersInType}
+      groupModels={group.models}
+      allProviders={props.providers}
+      props={props}
+    />}
+    {orphanModels.length > 0 && <SortableModelList
+      models={orphanModels}
+      sortable={false}
+      disabled={props.disabled}
+      testingModelHashes={props.testingModelHashes}
+      testResults={props.testResults}
+      onTest={props.onTest}
+      onEdit={props.onEdit}
+      onDuplicate={props.onDuplicate}
+      onDelete={props.onDelete}
+      onReorder={() => undefined}
+    />}
+  </CollapsibleGroup>;
+}
+
+function TypeProviderSubgroups({
+  providersInType,
+  groupModels,
+  allProviders,
+  props,
+}: {
+  providersInType: Provider[];
+  groupModels: Model[];
+  allProviders: Provider[];
+  props: CursorModelCardsProps;
+}) {
+  const canSortProviders = providersInType.length > 1;
+  const subgroupListRef = useSortableList<HTMLDivElement>({
+    ids: providersInType.map((provider) => provider.provider_id),
+    enabled: canSortProviders,
+    disabled: props.disabled,
+    draggableSelector: `.${styles.providerSubgroup}`,
+    handleSelector: `.${styles.providerSortHandle}`,
+    dataIdAttr: "data-provider-id",
+    onReorder: (reorderedTypeIds) => {
+      props.onReorderProviders(
+        replaceOrderedSubset(allProviders.map((provider) => provider.provider_id), reorderedTypeIds),
+      );
+    },
+  });
+
+  return <div ref={subgroupListRef} className={styles.providerSubgroups}>
+    {providersInType.map((provider) => {
+      const providerModels = groupModels.filter((model) => model.provider_id === provider.provider_id);
+      return <div className={styles.providerSubgroup} data-provider-id={provider.provider_id} key={provider.provider_id}>
+        <div className={styles.providerSubheader}>
+          {canSortProviders && <SortHandle className={styles.providerSortHandle} disabled={props.disabled} />}
+          <div className={styles.providerSubheaderTitle}>
+            <Icon icon={provider.type === "anthropic" ? claudeIcon : openAiIcon} size="1em" />
+            <span className={styles.providerSubheaderName}>{provider.name}</span>
+          </div>
+          <ProviderActionButtons
+            provider={provider}
+            disabled={props.disabled}
+            onAddModel={props.onAddModelForProvider}
+            onEdit={props.onEditProvider}
+            onDelete={props.onDeleteProvider}
+          />
+        </div>
+        {providerModels.length === 0
+          ? <div className={styles.emptyGroupRow}>{t("该供应商下暂无模型，点击「添加模型」即可配置。")}</div>
+          : <SortableModelList
+            models={providerModels}
+            sortable
+            disabled={props.disabled}
+            testingModelHashes={props.testingModelHashes}
+            testResults={props.testResults}
+            onTest={props.onTest}
+            onEdit={props.onEdit}
+            onDuplicate={props.onDuplicate}
+            onDelete={props.onDelete}
+            onReorder={(modelHashes) => props.onReorderModels(provider.provider_id, modelHashes)}
+          />}
+      </div>;
+    })}
+  </div>;
+}
+
+function SortableModelList({
+  models,
+  sortable,
+  disabled,
+  testingModelHashes,
+  testResults,
+  onTest,
+  onEdit,
+  onDuplicate,
+  onDelete,
+  onReorder,
+}: {
+  models: Model[];
+  sortable: boolean;
+  disabled: boolean;
+  testingModelHashes: Set<string>;
+  testResults: Map<string, CursorModelTestState>;
+  onTest: (model: Model) => void;
+  onEdit: (model: Model) => void;
+  onDuplicate: (model: Model) => void;
+  onDelete: (model: Model) => void;
+  onReorder: (modelHashes: string[]) => void;
+}) {
+  const canSort = sortable && models.length > 1;
+  const listRef = useSortableList<HTMLDivElement>({
+    ids: models.map((model) => model.model_hash),
+    enabled: canSort,
+    disabled,
+    draggableSelector: `.${styles.modelRow}`,
+    handleSelector: `.${styles.modelSortHandle}`,
+    dataIdAttr: "data-model-hash",
+    onReorder,
+  });
+
+  return <div ref={listRef} className={styles.modelList}>
+    {models.map((model) => <ModelListRow
+      key={model.model_hash}
+      model={model}
+      sortable={canSort}
+      disabled={disabled}
+      testing={testingModelHashes.has(model.model_hash)}
+      result={testResults.get(model.model_hash)}
+      onTest={() => onTest(model)}
+      onEdit={() => onEdit(model)}
+      onDuplicate={() => onDuplicate(model)}
+      onDelete={() => onDelete(model)}
+    />)}
   </div>;
 }
 
@@ -149,76 +410,6 @@ function ProviderActionButtons({ provider, disabled, onAddModel, onEdit, onDelet
   </div>;
 }
 
-function renderGroupCard(group: CursorModelGroup, defaultOpen: boolean, props: CursorModelCardsProps) {
-  const provider = group.provider;
-  return <CollapsibleGroup
-    key={group.key}
-    label={group.label}
-    icon={group.protocol === "anthropic" ? claudeIcon : openAiIcon}
-    defaultOpen={defaultOpen}
-    actions={provider ? <ProviderActionButtons
-      provider={provider}
-      disabled={props.disabled}
-      onAddModel={props.onAddModelForProvider}
-      onEdit={props.onEditProvider}
-      onDelete={props.onDeleteProvider}
-    /> : undefined}
-  >
-    {group.models.length === 0
-      ? <div className={styles.emptyGroupRow}>{t("该供应商下暂无模型，点击「添加模型」即可配置。")}</div>
-      : renderModelRows(group.models, props)}
-  </CollapsibleGroup>;
-}
-
-function renderTypeGroupCard(group: CursorModelGroup, props: CursorModelCardsProps) {
-  const providersInType = props.providers.filter((provider) => typeGroupDescriptor(provider).key === group.key);
-  const matchedProviderIds = new Set(providersInType.map((provider) => provider.provider_id));
-  const orphanModels = group.models.filter((model) => !matchedProviderIds.has(model.provider_id));
-  return <CollapsibleGroup
-    key={group.key}
-    label={group.label}
-    icon={group.protocol === "anthropic" ? claudeIcon : openAiIcon}
-    defaultOpen
-  >
-    {providersInType.map((provider) => {
-      const providerModels = group.models.filter((model) => model.provider_id === provider.provider_id);
-      return <div className={styles.providerSubgroup} key={provider.provider_id}>
-        <div className={styles.providerSubheader}>
-          <div className={styles.providerSubheaderTitle}>
-            <Icon icon={provider.type === "anthropic" ? claudeIcon : openAiIcon} size="1em" />
-            <span className={styles.providerSubheaderName}>{provider.name}</span>
-          </div>
-          <ProviderActionButtons
-            provider={provider}
-            disabled={props.disabled}
-            onAddModel={props.onAddModelForProvider}
-            onEdit={props.onEditProvider}
-            onDelete={props.onDeleteProvider}
-          />
-        </div>
-        {providerModels.length === 0
-          ? <div className={styles.emptyGroupRow}>{t("该供应商下暂无模型，点击「添加模型」即可配置。")}</div>
-          : renderModelRows(providerModels, props)}
-      </div>;
-    })}
-    {renderModelRows(orphanModels, props)}
-  </CollapsibleGroup>;
-}
-
-function renderModelRows(models: Model[], props: CursorModelCardsProps) {
-  return models.map((model) => <ModelListRow
-    key={model.model_hash}
-    model={model}
-    disabled={props.disabled}
-    testing={props.testingModelHashes.has(model.model_hash)}
-    result={props.testResults.get(model.model_hash)}
-    onTest={() => props.onTest(model)}
-    onEdit={() => props.onEdit(model)}
-    onDuplicate={() => props.onDuplicate(model)}
-    onDelete={() => props.onDelete(model)}
-  />);
-}
-
 function pluginGroups(models: PluginModelDescriptor[]) {
   const groups: { pluginId: string; pluginName: string; icon: string; models: PluginModelDescriptor[] }[] = [];
   for (const model of models) {
@@ -232,17 +423,21 @@ function pluginGroups(models: PluginModelDescriptor[]) {
   return groups;
 }
 
-function CollapsibleGroup({ label, icon, iconSrc, defaultOpen = true, actions, children }: {
+function CollapsibleGroup({ label, icon, iconSrc, defaultOpen = true, className, providerId, dragHandle, actions, children }: {
   label: string;
   icon?: IconifyIcon;
   iconSrc?: string;
   defaultOpen?: boolean;
+  className?: string;
+  providerId?: string;
+  dragHandle?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  return <Card className={styles.groupCard}>
+  return <Card className={[styles.groupCard, className].filter(Boolean).join(" ")} data-provider-id={providerId}>
     <div className={styles.groupHeader}>
+      {dragHandle}
       <button
         type="button"
         className={styles.groupToggle}
@@ -268,8 +463,9 @@ function CollapsibleGroup({ label, icon, iconSrc, defaultOpen = true, actions, c
   </Card>;
 }
 
-function ModelListRow({ model, disabled, testing, result, onTest, onEdit, onDuplicate, onDelete }: {
+function ModelListRow({ model, sortable, disabled, testing, result, onTest, onEdit, onDuplicate, onDelete }: {
   model: Model;
+  sortable: boolean;
   disabled: boolean;
   testing: boolean;
   result: CursorModelTestState | undefined;
@@ -278,7 +474,8 @@ function ModelListRow({ model, disabled, testing, result, onTest, onEdit, onDupl
   onDuplicate: () => void;
   onDelete: () => void;
 }) {
-  return <div className={styles.modelRow}>
+  return <div className={styles.modelRow} data-model-hash={model.model_hash}>
+    {sortable && <SortHandle className={styles.modelSortHandle} disabled={disabled} />}
     <div className={styles.modelRowName}>
       <span className={styles.modelRowNameText}>{model.display_name}</span>
       <span className={styles.modelRowModelId}>{model.model_id}</span>
@@ -311,101 +508,5 @@ function PluginModelRow({ model, disabled, testing, result, onTest, onSettings }
       <TruncatedButton size="small" disabled={disabled && !testing} label={testing ? t("取消测试") : t("测试")} onClick={onTest} />
       <TruncatedButton size="small" disabled={disabled} label={t("设置")} onClick={onSettings} />
     </div>
-  </div>;
-}
-
-function ModelGrid({
-  models,
-  sortable: sortableEnabled,
-  disabled,
-  testingModelHashes,
-  testResults,
-  onTest,
-  onEdit,
-  onDuplicate,
-  onDelete,
-  onReorder,
-}: ModelGridProps) {
-  const grid = useRef<HTMLDivElement>(null);
-  const sortable = useRef<Sortable | null>(null);
-  const currentModels = useRef(models);
-  const reorder = useRef(onReorder);
-  currentModels.current = models;
-  reorder.current = onReorder;
-
-  useEffect(() => {
-    if (!sortableEnabled || !grid.current) return;
-    sortable.current = Sortable.create(grid.current, {
-      animation: 160,
-      dataIdAttr: "data-model-hash",
-      draggable: `.${styles.modelCard}`,
-      handle: `.${styles.sortHandle}`,
-      ghostClass: styles.sortGhost,
-      chosenClass: styles.sortChosen,
-      dragClass: styles.sortDragging,
-      forceFallback: true,
-      fallbackOnBody: true,
-      fallbackTolerance: 3,
-      onEnd: (event) => {
-        const oldIndex = event.oldDraggableIndex ?? event.oldIndex;
-        const newIndex = event.newDraggableIndex ?? event.newIndex;
-        if (typeof oldIndex !== "number"
-          || typeof newIndex !== "number"
-          || oldIndex === newIndex) {
-          sortable.current?.sort(currentModels.current.map((model) => model.model_hash), false);
-          return;
-        }
-        const reordered = currentModels.current.slice();
-        const [moved] = reordered.splice(oldIndex, 1);
-        if (!moved || newIndex < 0 || newIndex > reordered.length) {
-          sortable.current?.sort(currentModels.current.map((model) => model.model_hash), false);
-          return;
-        }
-        reordered.splice(newIndex, 0, moved);
-        reorder.current(reordered.map((model) => model.model_hash));
-      },
-    });
-    return () => {
-      sortable.current?.destroy();
-      sortable.current = null;
-    };
-  }, [sortableEnabled]);
-
-  useEffect(() => {
-    sortable.current?.option("disabled", disabled);
-    sortable.current?.sort(models.map((model) => model.model_hash), false);
-  }, [disabled, models]);
-
-  return <div ref={grid} className={styles.modelGrid}>
-    {models.map((model) => {
-      const result = testResults.get(model.model_hash);
-      const testing = testingModelHashes.has(model.model_hash);
-      return <Card className={styles.modelCard} data-model-hash={model.model_hash} key={model.model_hash}>
-        {sortableEnabled && <button type="button" className={styles.sortHandle} disabled={disabled} aria-label={t("拖动排序")} title={t("拖动排序")} onClick={(event) => event.stopPropagation()}>
-          <Icon icon={dragIcon} size="1.25em" />
-        </button>}
-        <div className={styles.modelCardContent}>
-          <div className={styles.modelCardTop}>
-            <div className={styles.modelCardName}>
-              <span className={styles.modelCardNameText}>{model.display_name}</span>
-              <span className={styles.modelCardModelId}>{model.model_id}</span>
-            </div>
-            <span className={styles.modelTypeBadge} title={model.provider_name}>
-              <Icon icon={model.type === "anthropic" ? claudeIcon : openAiIcon} />
-              <span className={styles.modelTypeBadgeLabel}>{model.provider_name}</span>
-            </span>
-          </div>
-          <div className={styles.modelCardTest}>
-            <CursorModelTestResult state={result} testing={testing} />
-          </div>
-          <div className={styles.modelCardActions}>
-            <TruncatedButton size="small" disabled={disabled && !testing} label={testing ? t("取消测试") : t("测试")} onClick={() => onTest(model)} />
-            <TruncatedButton size="small" disabled={disabled} label={t("编辑")} onClick={() => onEdit(model)} />
-            <TruncatedButton size="small" disabled={disabled} label={t("复制")} onClick={() => onDuplicate(model)} />
-            <TruncatedButton size="small" className={styles.deleteButton} disabled={disabled} label={t("删除")} onClick={() => onDelete(model)} />
-          </div>
-        </div>
-      </Card>;
-    })}
   </div>;
 }

@@ -378,6 +378,60 @@ export const appStore = {
       return false;
     } finally { update({ cursorBusy: false }); }
   },
+  async reorderProviders(providerIds: string[]) {
+    const previousProviders = snapshot.providers;
+    const previousModels = snapshot.models;
+    const byId = new Map(previousProviders.map((provider) => [provider.provider_id, provider]));
+    if (providerIds.length !== previousProviders.length || new Set(providerIds).size !== previousProviders.length) {
+      update({ error: t("供应商配置已发生变化，请刷新后重试") });
+      return false;
+    }
+    const reorderedProviders: Provider[] = [];
+    for (const [index, providerId] of providerIds.entries()) {
+      const provider = byId.get(providerId);
+      if (!provider) {
+        update({ error: t("供应商配置已发生变化，请刷新后重试") });
+        return false;
+      }
+      reorderedProviders.push({ ...provider, sort_order: index + 1 });
+    }
+    const modelsByProvider = new Map<string, Model[]>();
+    const orphanModels: Model[] = [];
+    for (const model of previousModels) {
+      if (byId.has(model.provider_id)) {
+        const list = modelsByProvider.get(model.provider_id);
+        if (list) list.push(model);
+        else modelsByProvider.set(model.provider_id, [model]);
+      } else {
+        orphanModels.push(model);
+      }
+    }
+    const reorderedModels = [
+      ...providerIds.flatMap((providerId) => modelsByProvider.get(providerId) ?? []),
+      ...orphanModels,
+    ];
+    update({
+      providers: reorderedProviders,
+      models: reorderedModels,
+      cursorBusy: true,
+      error: null,
+    });
+    try {
+      const providers = await api.reorderProviders(providerIds);
+      const models = await api.models();
+      update({ providers, models });
+      return true;
+    } catch (cause) {
+      update({
+        providers: previousProviders,
+        models: previousModels,
+        error: cause instanceof Error ? cause.message : String(cause),
+      });
+      return false;
+    } finally {
+      update({ cursorBusy: false });
+    }
+  },
   async deleteModel(modelHash: string) {
     await perform(async () => {
       await api.deleteModel(modelHash);
@@ -484,25 +538,28 @@ export const appStore = {
       return null;
     } finally { update({ cursorBusy: false }); }
   },
-  async reorderCursorModels(modelHashes: string[]) {
+  async reorderCursorModels(providerId: string, modelHashes: string[]) {
     const previous = snapshot.models;
-    const byHash = new Map(previous.map((model) => [model.model_hash, model]));
-    if (modelHashes.length !== previous.length || new Set(modelHashes).size !== previous.length) {
+    const scoped = previous.filter((model) => model.provider_id === providerId);
+    const byHash = new Map(scoped.map((model) => [model.model_hash, model]));
+    if (modelHashes.length !== scoped.length || new Set(modelHashes).size !== scoped.length) {
       update({ error: t("模型配置已发生变化，请刷新后重试") });
       return false;
     }
-    const reordered: Model[] = [];
+    const reorderedGroup: Model[] = [];
     for (const [index, hash] of modelHashes.entries()) {
       const model = byHash.get(hash);
       if (!model) {
         update({ error: t("模型配置已发生变化，请刷新后重试") });
         return false;
       }
-      reordered.push({ ...model, sort_order: index + 1 });
+      reorderedGroup.push({ ...model, sort_order: index + 1 });
     }
+    let cursor = 0;
+    const reordered = previous.map((model) => (model.provider_id === providerId ? reorderedGroup[cursor++] : model));
     update({ models: reordered, cursorBusy: true, error: null });
     try {
-      update({ models: await api.reorderModels(modelHashes) });
+      update({ models: await api.reorderModels(providerId, modelHashes) });
       return true;
     } catch (cause) {
       update({

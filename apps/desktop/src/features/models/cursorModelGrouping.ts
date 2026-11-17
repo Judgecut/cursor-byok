@@ -1,6 +1,6 @@
 import type { Model, ModelType, Provider } from "../../shared/api";
 
-export type CursorModelGrouping = "flat" | "provider" | "type";
+export type CursorModelGrouping = "provider" | "type";
 
 export type CursorModelGroup = {
   key: string;
@@ -26,17 +26,27 @@ export function typeGroupDescriptor(provider: Pick<Provider, "type" | "openai_en
 
 export function resolveCursorModelGrouping(
   preferred: CursorModelGrouping,
-  canGroupByProvider: boolean,
   canGroupByType: boolean,
 ): CursorModelGrouping {
-  if (preferred === "provider" && !canGroupByProvider) return "flat";
-  if (preferred === "type" && !canGroupByType) return "flat";
+  if (preferred === "type" && !canGroupByType) return "provider";
   return preferred;
+}
+
+export function replaceOrderedSubset(
+  allIds: readonly string[],
+  reorderedSubset: readonly string[],
+): string[] {
+  const subsetSet = new Set(reorderedSubset);
+  if (subsetSet.size !== reorderedSubset.length) return [...allIds];
+  const expectedCount = allIds.filter((id) => subsetSet.has(id)).length;
+  if (expectedCount !== reorderedSubset.length) return [...allIds];
+  let cursor = 0;
+  return allIds.map((id) => (subsetSet.has(id) ? reorderedSubset[cursor++] : id));
 }
 
 export function cursorModelGroups(
   models: Model[],
-  grouping: Exclude<CursorModelGrouping, "flat">,
+  grouping: CursorModelGrouping,
   providers: Provider[] = [],
 ): CursorModelGroup[] {
   const groups = new Map<string, CursorModelGroup>();
