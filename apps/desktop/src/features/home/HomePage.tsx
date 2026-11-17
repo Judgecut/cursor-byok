@@ -39,8 +39,10 @@ export function HomePage() {
     plugins,
     currency,
     cnyRate,
+    overviewRangePreset,
     overviewChartMode,
     overviewChartType,
+    overviewCalendarWindow,
     homeRefreshIntervalSeconds,
     refreshTick,
   } = useAppStore();
@@ -54,9 +56,9 @@ export function HomePage() {
     () => typeof document === "undefined" || document.visibilityState === "visible",
   );
   const [activeTab, setActiveTab] = useState<OverviewTabId>("models");
-  const [preset, setPreset] = useState<OverviewRangePreset>("month");
   const [quick, setQuick] = useState<QuickPreset | null>(null);
   const [customRange, setCustomRange] = useState<TimeRange | null>(null);
+  const preset: OverviewRangePreset = quick !== null || customRange !== null ? "custom" : overviewRangePreset;
   const [customOpen, setCustomOpen] = useState(false);
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -669,7 +671,6 @@ export function HomePage() {
     setCustomRange({ startMs, endMs });
     setAppliedModels(selectedModels);
     setQuick(null);
-    setPreset("custom");
     setCustomOpen(false);
     setCallsPage(1);
   };
@@ -691,7 +692,6 @@ export function HomePage() {
     setCustomRange(null);
     setAppliedModels(selectedModels);
     setQuick(nextQuick);
-    setPreset("custom");
     setCustomOpen(false);
     setCallsPage(1);
     if (filterUnchanged) {
@@ -700,10 +700,11 @@ export function HomePage() {
   };
 
   const selectPreset = (value: Exclude<OverviewRangePreset, "custom">) => {
-    setPreset(value);
     setQuick(null);
+    setCustomRange(null);
     setCustomOpen(false);
     setCallsPage(1);
+    appStore.selectOverviewRangePreset(value);
   };
 
   const refresh = async () => {
@@ -785,6 +786,8 @@ export function HomePage() {
       estimatedHeight: 210,
       content: <ContributionCalendarChart
         data={contribution}
+        windowMode={overviewCalendarWindow}
+        onWindowModeChange={(value) => appStore.selectOverviewCalendarWindow(value)}
         loading={rangeBusy && !hasMatchingOverview}
         error={effectiveOverviewError}
       />,

@@ -77,8 +77,10 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
             "theme": "default-dark",
             "currency": "USD",
             "cny_rate": null,
+            "overview_range_preset": "month",
             "overview_chart_mode": "tokens",
             "overview_chart_type": "bar",
+            "overview_calendar_window": "year",
             "home_refresh_interval_seconds": 30
         })
     );
@@ -133,8 +135,10 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
         Some(json!({
             "locale": "en-US",
             "currency": "CNY",
+            "overview_range_preset": "week",
             "overview_chart_mode": "cost",
             "overview_chart_type": "line",
+            "overview_calendar_window": "month",
             "home_refresh_interval_seconds": 45
         })),
     )
@@ -147,8 +151,10 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
             "theme": "default-light",
             "currency": "CNY",
             "cny_rate": "7.2",
+            "overview_range_preset": "week",
             "overview_chart_mode": "cost",
             "overview_chart_type": "line",
+            "overview_calendar_window": "month",
             "home_refresh_interval_seconds": 45
         })
     );
@@ -182,8 +188,10 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
             "theme": "default-light",
             "currency": "CNY",
             "cny_rate": null,
+            "overview_range_preset": "week",
             "overview_chart_mode": "cost",
             "overview_chart_type": "line",
+            "overview_calendar_window": "month",
             "home_refresh_interval_seconds": 45
         })
     );

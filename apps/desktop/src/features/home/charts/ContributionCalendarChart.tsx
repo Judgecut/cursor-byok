@@ -17,6 +17,8 @@ export type { ContributionDay };
 
 type ContributionCalendarChartProps = {
   data: ContributionDay[];
+  windowMode: ContributionWindow;
+  onWindowModeChange: (value: ContributionWindow) => void;
   loading?: boolean;
   error?: string | null;
 };
@@ -118,9 +120,14 @@ function isCellExtra(value: unknown): value is CellExtra {
   return typeof value === "object" && value !== null && (value as CellExtra).kind === "calendar-cell";
 }
 
-export function ContributionCalendarChart({ data, loading = false, error = null }: ContributionCalendarChartProps) {
+export function ContributionCalendarChart({
+  data,
+  windowMode,
+  onWindowModeChange,
+  loading = false,
+  error = null,
+}: ContributionCalendarChartProps) {
   const { locale } = useI18n();
-  const [windowMode, setWindowMode] = useState<ContributionWindow>("year");
   const bodyRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const layoutRef = useRef<CalendarLayout | null>(null);
@@ -382,37 +389,37 @@ export function ContributionCalendarChart({ data, loading = false, error = null 
   const windowTitle = windowMode === "year"
     ? t("年度活动日历（近 365 天，按当前供应商筛选）")
     : windowMode === "month"
-      ? t("月度活动日历（近 30 天，按当前供应商筛选）")
-      : t("周度活动日历（近 7 天，按当前供应商筛选）");
+      ? t("月度活动日历（本月，按当前供应商筛选）")
+      : t("周度活动日历（本周，按当前供应商筛选）");
 
   const sectionAriaLabel = windowMode === "year"
     ? t("过去一年的 Token 用量")
     : windowMode === "month"
-      ? t("过去一个月的 Token 用量")
-      : t("过去一周的 Token 用量");
+      ? t("本月的 Token 用量")
+      : t("本周的 Token 用量");
 
   const canvasAriaLabel = windowMode === "year"
     ? t("过去一年的 Token 用量日历")
     : windowMode === "month"
-      ? t("过去一个月的 Token 用量日历")
-      : t("过去一周的 Token 用量日历");
+      ? t("本月的 Token 用量日历")
+      : t("本周的 Token 用量日历");
 
   const renderWindowSwitcher = () => (
     <div className={styles.windowSwitcher} role="group" aria-label={t("活动日历时间维度")}>
       <button
         type="button"
         aria-pressed={windowMode === "year"}
-        onClick={() => setWindowMode("year")}
+        onClick={() => onWindowModeChange("year")}
       >{t("年")}</button>
       <button
         type="button"
         aria-pressed={windowMode === "month"}
-        onClick={() => setWindowMode("month")}
+        onClick={() => onWindowModeChange("month")}
       >{t("月")}</button>
       <button
         type="button"
         aria-pressed={windowMode === "week"}
-        onClick={() => setWindowMode("week")}
+        onClick={() => onWindowModeChange("week")}
       >{t("周")}</button>
     </div>
   );
@@ -446,6 +453,26 @@ export function ContributionCalendarChart({ data, loading = false, error = null 
   const bodyStyle = geometry?.gridTemplateColumns
     ? { gridTemplateColumns: geometry.gridTemplateColumns }
     : undefined;
+  const summaryTotalLabel = windowMode === "year"
+    ? t("近 {days} 天累计", { days: summary.windowDays })
+    : windowMode === "month"
+      ? t("本月累计")
+      : t("本周累计");
+  const inlineStatsLabel = windowMode === "year"
+    ? t("近 {days} 天累计 {total} · 活跃 {active} 天", {
+        days: summary.windowDays,
+        total: formatCompactInteger(summary.totalTokens),
+        active: formatInteger(summary.activeDays),
+      })
+    : windowMode === "month"
+      ? t("本月累计 {total} · 活跃 {active} 天", {
+          total: formatCompactInteger(summary.totalTokens),
+          active: formatInteger(summary.activeDays),
+        })
+      : t("本周累计 {total} · 活跃 {active} 天", {
+          total: formatCompactInteger(summary.totalTokens),
+          active: formatInteger(summary.activeDays),
+        });
 
   return (
     <section className={styles.root} aria-label={sectionAriaLabel}>
@@ -454,11 +481,7 @@ export function ContributionCalendarChart({ data, loading = false, error = null 
         <div className={styles.headerMeta}>
           {!isWide && (
             <span className={styles.inlineStats}>
-              {t("近 {days} 天累计 {total} · 活跃 {active} 天", {
-                days: summary.windowDays,
-                total: formatCompactInteger(summary.totalTokens),
-                active: formatInteger(summary.activeDays),
-              })}
+              {inlineStatsLabel}
             </span>
           )}
           {renderWindowSwitcher()}
@@ -532,7 +555,7 @@ export function ContributionCalendarChart({ data, loading = false, error = null 
         {isWide && (
           <div className={styles.summaryPane}>
             <div className={styles.summaryCell}>
-              <div className={styles.summaryLabel}>{t("近 {days} 天累计", { days: summary.windowDays })}</div>
+              <div className={styles.summaryLabel}>{summaryTotalLabel}</div>
               <div className={styles.summaryBody}>
                 <div className={styles.summaryValue} title={formatInteger(summary.totalTokens)}>
                   {formatCompactInteger(summary.totalTokens)}

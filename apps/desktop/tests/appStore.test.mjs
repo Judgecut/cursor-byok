@@ -6,7 +6,17 @@ import { test } from "node:test";
 import { createContext, SourceTextModule, SyntheticModule } from "node:vm";
 
 const source = stripTypeScriptTypes(await readFile(new URL("../src/shared/store/appStore.ts", import.meta.url), "utf8"));
-const defaults = { locale: "system", theme: "default-dark", currency: "USD", cny_rate: null, overview_chart_mode: "tokens", overview_chart_type: "bar", home_refresh_interval_seconds: 30 };
+const defaults = {
+  locale: "system",
+  theme: "default-dark",
+  currency: "USD",
+  cny_rate: null,
+  overview_range_preset: "month",
+  overview_chart_mode: "tokens",
+  overview_chart_type: "bar",
+  overview_calendar_window: "year",
+  home_refresh_interval_seconds: 30,
+};
 
 function deferred()
 {
@@ -120,6 +130,18 @@ test("a failed queued save preserves an earlier successful save and allows retry
   await setImmediate();
   assert.equal(app.store.getSnapshot().overviewChartType, "line");
   assert.equal(app.store.getSnapshot().error, null);
+
+  app.store.selectOverviewRangePreset("week");
+  app.store.selectOverviewCalendarWindow("month");
+  await setImmediate();
+  assert.equal(app.store.getSnapshot().overviewRangePreset, "week");
+  assert.equal(app.store.getSnapshot().overviewCalendarWindow, "month");
+  app.writes[3].resolve({ ...app.saved(), overview_range_preset: "week" });
+  await setImmediate();
+  app.writes[4].resolve({ ...app.saved(), overview_calendar_window: "month" });
+  await setImmediate();
+  assert.equal(app.store.getSnapshot().overviewRangePreset, "week");
+  assert.equal(app.store.getSnapshot().overviewCalendarWindow, "month");
 });
 
 for (const readMethod of ["refresh", "hydrateInterfaceSettings"])

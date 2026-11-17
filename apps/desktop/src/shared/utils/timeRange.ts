@@ -29,13 +29,19 @@ export function presetRange(preset: Exclude<OverviewRangePreset, "custom">, now 
     start.setHours(0, 0, 0, 0);
     return { startMs: start.getTime(), endMs };
   }
-  if (preset === "month") {
+  if (preset === "week") {
     const start = new Date(now);
-    start.setMonth(start.getMonth() - 1);
+    const mondayOffset = (start.getDay() + 6) % 7;
+    start.setDate(start.getDate() - mondayOffset);
+    start.setHours(0, 0, 0, 0);
     return { startMs: start.getTime(), endMs };
   }
-  const duration = preset === "ten-minutes" ? 10 * 60_000
-    : preset === "hour" ? 60 * 60_000
-    : 7 * 24 * 60 * 60_000;
-  return { startMs: now.getTime() - duration, endMs };
+  if (preset === "month") {
+    const start = new Date(now);
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+    return { startMs: start.getTime(), endMs };
+  }
+  const duration = preset === "ten-minutes" ? 10 * 60_000 : 60 * 60_000;
+  return { startMs: endMs - duration, endMs };
 }

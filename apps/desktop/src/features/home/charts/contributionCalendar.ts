@@ -5,11 +5,7 @@ export type ContributionDay = {
 
 export type ContributionWindow = "year" | "month" | "week";
 
-export const CONTRIBUTION_WINDOW_DAYS: Record<ContributionWindow, number> = {
-  year: 365,
-  month: 30,
-  week: 7,
-};
+export const CONTRIBUTION_YEAR_DAYS = 365;
 
 export type CalendarCell = ContributionDay & {
   column: number;
@@ -64,7 +60,14 @@ export function sliceContributionData(
   const sorted = [...data].sort((left, right) =>
     left.date < right.date ? -1 : left.date > right.date ? 1 : 0,
   );
-  return sorted.slice(-CONTRIBUTION_WINDOW_DAYS[window]);
+  if (window === "year") {
+    return sorted.slice(-CONTRIBUTION_YEAR_DAYS);
+  }
+  const latestDate = parseDate(sorted[sorted.length - 1].date);
+  const startMs = window === "month"
+    ? Date.UTC(latestDate.getUTCFullYear(), latestDate.getUTCMonth(), 1)
+    : latestDate.getTime() - mondayIndex(latestDate) * DAY_IN_MS;
+  return sorted.filter((day) => parseDate(day.date).getTime() >= startMs);
 }
 
 export function buildCalendarLayout(

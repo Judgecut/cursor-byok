@@ -15,7 +15,7 @@ await module.link((specifier) => {
 await module.evaluate();
 
 const {
-  CONTRIBUTION_WINDOW_DAYS,
+  CONTRIBUTION_YEAR_DAYS,
   buildCalendarLayout,
   sliceContributionData,
   summarizeContribution,
@@ -31,7 +31,7 @@ function makeSeries(startDate, count, tokenForIndex) {
 }
 
 test("empty input returns empty slice and null layout/summary across all windows", () => {
-  assert.deepEqual({ ...CONTRIBUTION_WINDOW_DAYS }, { year: 365, month: 30, week: 7 });
+  assert.equal(CONTRIBUTION_YEAR_DAYS, 365);
 
   for (const window of ["year", "month", "week"]) {
     assert.deepEqual([...sliceContributionData([], window)], []);
@@ -40,29 +40,36 @@ test("empty input returns empty slice and null layout/summary across all windows
   }
 });
 
-test("sliceContributionData sorts chronologically and slices latest window entries", () => {
-  const series = makeSeries("2025-01-01", 400, (index) => index * 10);
+test("sliceContributionData slices year as rolling 365 days, month from the 1st, and week from Monday", () => {
+  // 400 days from 2025-10-14 through 2026-11-17 (Tuesday)
+  const series = makeSeries("2025-10-14", 400, (index) => index * 10);
   const reversed = [...series].reverse();
 
   const yearSlice = sliceContributionData(reversed, "year");
   assert.equal(yearSlice.length, 365);
-  assert.equal(yearSlice[0].date, series[35].date);
-  assert.equal(yearSlice[364].date, series[399].date);
+  assert.equal(yearSlice[0].date, "2025-11-18");
+  assert.equal(yearSlice[364].date, "2026-11-17");
 
   const monthSlice = sliceContributionData(reversed, "month");
-  assert.equal(monthSlice.length, 30);
-  assert.equal(monthSlice[0].date, series[370].date);
-  assert.equal(monthSlice[29].date, series[399].date);
+  assert.equal(monthSlice.length, 17);
+  assert.equal(monthSlice[0].date, "2026-11-01");
+  assert.equal(monthSlice[16].date, "2026-11-17");
 
   const weekSlice = sliceContributionData(reversed, "week");
-  assert.equal(weekSlice.length, 7);
-  assert.equal(weekSlice[0].date, series[393].date);
-  assert.equal(weekSlice[6].date, series[399].date);
+  assert.equal(weekSlice.length, 2);
+  assert.equal(weekSlice[0].date, "2026-11-16");
+  assert.equal(weekSlice[1].date, "2026-11-17");
 
-  const shortSeries = makeSeries("2026-11-10", 4, (index) => (index + 1) * 100);
-  assert.equal(sliceContributionData(shortSeries, "week").length, 4);
-  assert.equal(sliceContributionData(shortSeries, "month").length, 4);
-  assert.equal(sliceContributionData(shortSeries, "year").length, 4);
+  // Week crossing month boundary: latest day is Sunday 2026-11-01 -> week starts Monday 2026-10-26
+  const crossMonth = makeSeries("2026-10-20", 13, (index) => (index + 1) * 10);
+  const crossMonthWeek = sliceContributionData(crossMonth, "week");
+  assert.equal(crossMonthWeek.length, 7);
+  assert.equal(crossMonthWeek[0].date, "2026-10-26");
+  assert.equal(crossMonthWeek[6].date, "2026-11-01");
+
+  const crossMonthMonth = sliceContributionData(crossMonth, "month");
+  assert.equal(crossMonthMonth.length, 1);
+  assert.equal(crossMonthMonth[0].date, "2026-11-01");
 });
 
 test("buildCalendarLayout computes year 7-row grid, month ticks, and levels", () => {
@@ -105,44 +112,45 @@ test("buildCalendarLayout computes year 7-row grid, month ticks, and levels", ()
   assert.equal(layout.axisTicks[0].column, 0);
 });
 
-test("buildCalendarLayout computes month 30-day multi-week grid and weekly date ticks", () => {
-  // 2026-10-14 (Wed) -> 2026-11-12 (Thu), 30 days
-  const series = makeSeries("2026-10-14", 30, (index) => (index + 1) * 10);
+test("buildCalendarLayout computes month grid from the 1st of the current month and weekly date ticks", () => {
+  // 2026-10-14 (Wed) -> 2026-11-17 (Tue), 35 days; current month is Nov 1 (Sun) -> Nov 17 (Tue), 17 days
+  const series = makeSeries("2026-10-14", 35, (index) => (index + 1) * 10);
   const layout = buildCalendarLayout(series, "month", "en-US");
   assert.ok(layout);
   assert.equal(layout.window, "month");
   assert.equal(layout.rowCount, 7);
-  assert.equal(layout.cells.length, 30);
-  assert.equal(layout.columnCount, 5);
+  assert.equal(layout.cells.length, 17);
+  assert.equal(layout.columnCount, 4);
 
-  // 2026-10-14 is Wednesday (row 2), column 0
-  assert.equal(layout.cells[0].row, 2);
+  // 2026-11-01 is Sunday (row 6), column 0
+  assert.equal(layout.cells[0].date, "2026-11-01");
+  assert.equal(layout.cells[0].row, 6);
   assert.equal(layout.cells[0].column, 0);
-  // 2026-10-19 is Monday (row 0), column 1
-  assert.equal(layout.cells[5].row, 0);
-  assert.equal(layout.cells[5].column, 1);
+  // 2026-11-02 is Monday (row 0), column 1
+  assert.equal(layout.cells[1].date, "2026-11-02");
+  assert.equal(layout.cells[1].row, 0);
+  assert.equal(layout.cells[1].column, 1);
 
   // One tick per column using the first cell date in that column
   assert.deepEqual(
     Array.from(layout.axisTicks, (tick) => ({ key: tick.key, text: tick.text, column: tick.column })),
     [
-      { key: "2026-10-14", text: "10/14", column: 0 },
-      { key: "2026-10-19", text: "10/19", column: 1 },
-      { key: "2026-10-26", text: "10/26", column: 2 },
-      { key: "2026-11-02", text: "11/2", column: 3 },
-      { key: "2026-11-09", text: "11/9", column: 4 },
+      { key: "2026-11-01", text: "11/1", column: 0 },
+      { key: "2026-11-02", text: "11/2", column: 1 },
+      { key: "2026-11-09", text: "11/9", column: 2 },
+      { key: "2026-11-16", text: "11/16", column: 3 },
     ],
   );
 });
 
-test("buildCalendarLayout computes week single-row card layout and handles partial or invalid data", () => {
-  // 14 days where early days have huge peak (10000) and last 7 days peak at 400
-  const series = makeSeries("2026-11-01", 14, (index) => {
+test("buildCalendarLayout computes week single-row card layout starting from Monday and handles partial or invalid data", () => {
+  // 15 days from 2026-11-01 (Sun) through 2026-11-15 (Sun); current week is Mon 2026-11-09 .. Sun 2026-11-15
+  const series = makeSeries("2026-11-01", 15, (index) => {
     if (index === 0) return 10000;
-    if (index === 7) return -50;
-    if (index === 8) return Number.NaN;
-    if (index === 9) return 100;
-    if (index === 13) return 400;
+    if (index === 8) return -50;
+    if (index === 9) return Number.NaN;
+    if (index === 10) return 100;
+    if (index === 14) return 400;
     return 200;
   });
 
@@ -169,25 +177,27 @@ test("buildCalendarLayout computes week single-row card layout and handles parti
   assert.equal(weekLayout.cells[6].tokens, 400);
   assert.equal(weekLayout.cells[6].level, 4);
 
-  // One tick per cell with short weekday + date
+  // One tick per cell with short weekday + date starting on Monday
   assert.equal(weekLayout.axisTicks.length, 7);
   assert.equal(weekLayout.axisTicks[0].column, 0);
-  assert.equal(weekLayout.axisTicks[0].key, "2026-11-08");
-  assert.match(weekLayout.axisTicks[0].text, /Sun.*11\/8/);
+  assert.equal(weekLayout.axisTicks[0].key, "2026-11-09");
+  assert.match(weekLayout.axisTicks[0].text, /Mon.*11\/9/);
 
-  // Partial input (<7 days)
-  const partial = makeSeries("2026-11-10", 3, (index) => (index + 1) * 50);
+  // Mid-week series ending on Wednesday 2026-11-11 -> slices Mon 11/9 .. Wed 11/11 (3 days)
+  const partial = makeSeries("2026-11-05", 7, (index) => (index + 1) * 50);
   const partialWeek = buildCalendarLayout(partial, "week", "zh-CN");
   assert.ok(partialWeek);
   assert.equal(partialWeek.rowCount, 1);
   assert.equal(partialWeek.columnCount, 3);
   assert.equal(partialWeek.cells.length, 3);
+  assert.equal(partialWeek.cells[0].date, "2026-11-09");
   assert.equal(partialWeek.axisTicks.length, 3);
 });
 
 test("summarizeContribution computes window-scoped totals, streaks, peaks, averages, and ranges", () => {
-  // 10 days: days 0..2 have huge tokens + 3-day streak; days 3..9 (week window) have 2-day streak + 1-day streak
+  // Series ending on Thursday 2026-11-12 -> week starts Monday 2026-11-09 (4 days), month starts 2026-11-01 (12 days)
   const series = [
+    { date: "2026-10-31", tokens: 50000 },
     { date: "2026-11-01", tokens: 9000 },
     { date: "2026-11-02", tokens: 9000 },
     { date: "2026-11-03", tokens: 9000 },
@@ -196,31 +206,33 @@ test("summarizeContribution computes window-scoped totals, streaks, peaks, avera
     { date: "2026-11-06", tokens: 300 },
     { date: "2026-11-07", tokens: 0 },
     { date: "2026-11-08", tokens: 0 },
-    { date: "2026-11-09", tokens: 200 },
-    { date: "2026-11-10", tokens: 0 },
+    { date: "2026-11-09", tokens: 100 },
+    { date: "2026-11-10", tokens: 300 },
+    { date: "2026-11-11", tokens: 0 },
+    { date: "2026-11-12", tokens: 200 },
   ];
 
   const weekSummary = summarizeContribution(series, "week");
   assert.ok(weekSummary);
-  assert.equal(weekSummary.windowDays, 7);
+  assert.equal(weekSummary.windowDays, 4);
   assert.equal(weekSummary.totalTokens, 600);
   assert.equal(weekSummary.activeDays, 3);
-  assert.equal(weekSummary.activeRateLabel, "42.9%");
+  assert.equal(weekSummary.activeRateLabel, "75%");
   assert.equal(weekSummary.averageActiveTokens, 200);
   assert.equal(weekSummary.longestStreak, 2);
-  assert.deepEqual({ ...weekSummary.peakDay }, { date: "2026-11-06", tokens: 300 });
-  assert.equal(weekSummary.dateRangeLabel, "2026-11-04 ~ 2026-11-10");
+  assert.deepEqual({ ...weekSummary.peakDay }, { date: "2026-11-10", tokens: 300 });
+  assert.equal(weekSummary.dateRangeLabel, "2026-11-09 ~ 2026-11-12");
 
   const monthSummary = summarizeContribution(series, "month");
   assert.ok(monthSummary);
-  assert.equal(monthSummary.windowDays, 10);
-  assert.equal(monthSummary.totalTokens, 27600);
-  assert.equal(monthSummary.activeDays, 6);
-  assert.equal(monthSummary.activeRateLabel, "60%");
-  assert.equal(monthSummary.averageActiveTokens, 4600);
+  assert.equal(monthSummary.windowDays, 12);
+  assert.equal(monthSummary.totalTokens, 28000);
+  assert.equal(monthSummary.activeDays, 8);
+  assert.equal(monthSummary.activeRateLabel, "66.7%");
+  assert.equal(monthSummary.averageActiveTokens, 3500);
   assert.equal(monthSummary.longestStreak, 3);
   assert.deepEqual({ ...monthSummary.peakDay }, { date: "2026-11-01", tokens: 9000 });
-  assert.equal(monthSummary.dateRangeLabel, "2026-11-01 ~ 2026-11-10");
+  assert.equal(monthSummary.dateRangeLabel, "2026-11-01 ~ 2026-11-12");
 
   // Single inactive day
   const singleZero = summarizeContribution([{ date: "2026-11-10", tokens: 0 }], "week");

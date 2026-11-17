@@ -216,16 +216,20 @@ export interface CommitSettingsView extends CommitSettings {
   default_prompt: string;
 }
 
+export type OverviewRangePresetOption = "ten-minutes" | "hour" | "today" | "week" | "month";
 export type OverviewChartMode = "tokens" | "cost";
 export type OverviewChartType = "bar" | "line";
+export type OverviewCalendarWindow = "year" | "month" | "week";
 
 export interface InterfaceSettings {
   locale: LocalePreference;
   theme: ThemeId;
   currency: DisplayCurrency;
   cny_rate: string | null;
+  overview_range_preset: OverviewRangePresetOption;
   overview_chart_mode: OverviewChartMode;
   overview_chart_type: OverviewChartType;
+  overview_calendar_window: OverviewCalendarWindow;
   home_refresh_interval_seconds: number;
 }
 
@@ -234,8 +238,10 @@ export interface InterfaceSettingsPatch {
   theme?: ThemeId;
   currency?: DisplayCurrency;
   cny_rate?: string | null;
+  overview_range_preset?: OverviewRangePresetOption;
   overview_chart_mode?: OverviewChartMode;
   overview_chart_type?: OverviewChartType;
+  overview_calendar_window?: OverviewCalendarWindow;
   home_refresh_interval_seconds?: number;
 }
 

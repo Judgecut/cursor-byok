@@ -242,6 +242,18 @@
         }
       ]
     },
+    "054bbcb7e25368f7": {
+      "source": "周度活动日历（本周，按当前供应商筛选）",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 393,
+          "column": 9
+        }
+      ]
+    },
     "05655c8fa849f6a7": {
       "source": "已选 {count} 家",
       "kind": "template",
@@ -907,8 +919,8 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 457,
-          "column": 16
+          "line": 462,
+          "column": 7
         }
       ]
     },
@@ -936,7 +948,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 411,
+          "line": 418,
           "column": 9
         }
       ]
@@ -1041,7 +1053,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 472,
+          "line": 495,
           "column": 20
         }
       ]
@@ -1084,7 +1096,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 550,
+          "line": 573,
           "column": 20
         }
       ]
@@ -1352,6 +1364,18 @@
           "file": "features/calls/CallDetails.tsx",
           "line": 87,
           "column": 12
+        }
+      ]
+    },
+    "2004a20c129fc340": {
+      "source": "本月的 Token 用量",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 398,
+          "column": 9
         }
       ]
     },
@@ -1720,7 +1744,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 571,
+          "line": 594,
           "column": 23
         }
       ]
@@ -2102,18 +2126,6 @@
           "file": "features/plugins/PluginResourcePanels.tsx",
           "line": 143,
           "column": 64
-        }
-      ]
-    },
-    "32e61cb1f1ed7706": {
-      "source": "过去一个月的 Token 用量",
-      "kind": "text",
-      "placeholders": [],
-      "refs": [
-        {
-          "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 391,
-          "column": 9
         }
       ]
     },
@@ -2504,7 +2516,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 172,
+          "line": 179,
           "column": 16
         }
       ]
@@ -2831,6 +2843,18 @@
         }
       ]
     },
+    "4836e1c8566ffe77": {
+      "source": "本周的 Token 用量日历",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 405,
+          "column": 9
+        }
+      ]
+    },
     "4862ea091cbe0ebc": {
       "source": "选择公开价目表条目",
       "kind": "text",
@@ -2850,7 +2874,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 439,
+          "line": 446,
           "column": 67
         }
       ]
@@ -3273,6 +3297,18 @@
         }
       ]
     },
+    "5068927be60187e2": {
+      "source": "月度活动日历（本月，按当前供应商筛选）",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 392,
+          "column": 9
+        }
+      ]
+    },
     "51d04bc3d286f018": {
       "source": "近1自然日",
       "kind": "text",
@@ -3597,6 +3633,18 @@
         }
       ]
     },
+    "59d846d25522459a": {
+      "source": "本周的 Token 用量",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 399,
+          "column": 9
+        }
+      ]
+    },
     "5a284a1a2be8da0e": {
       "source": "从本机旧版配置读取模型；确认前会显示新增和已存在的模型。",
       "kind": "text",
@@ -3695,7 +3743,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 416,
+          "line": 423,
           "column": 9
         }
       ]
@@ -3954,7 +4002,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 406,
+          "line": 413,
           "column": 9
         }
       ]
@@ -3966,7 +4014,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 466,
+          "line": 489,
           "column": 20
         }
       ]
@@ -4560,6 +4608,21 @@
         }
       ]
     },
+    "70948ebb704bc222": {
+      "source": "本周累计 {total} · 活跃 {active} 天",
+      "kind": "template",
+      "placeholders": [
+        "total",
+        "active"
+      ],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 472,
+          "column": 9
+        }
+      ]
+    },
     "71a6b628307c018f": {
       "source": "目录厂商筛选",
       "kind": "text",
@@ -5025,7 +5088,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 547,
+          "line": 570,
           "column": 53
         }
       ]
@@ -5264,6 +5327,18 @@
         }
       ]
     },
+    "874394e287d63953": {
+      "source": "本周累计",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 460,
+          "column": 9
+        }
+      ]
+    },
     "877652b580b2c803": {
       "source": "已恢复为所绑定的公开目录定价",
       "kind": "text",
@@ -5399,7 +5474,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 401,
+          "line": 408,
           "column": 69
         }
       ]
@@ -5918,6 +5993,18 @@
         }
       ]
     },
+    "9a5379f09f48c5f9": {
+      "source": "本月累计",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 459,
+          "column": 9
+        }
+      ]
+    },
     "9a84733cc9ab1706": {
       "source": "资源详情",
       "kind": "text",
@@ -6391,6 +6478,21 @@
           "file": "features/models/CursorGates.tsx",
           "line": 22,
           "column": 153
+        }
+      ]
+    },
+    "a37aced45979e2da": {
+      "source": "本月累计 {total} · 活跃 {active} 天",
+      "kind": "template",
+      "placeholders": [
+        "total",
+        "active"
+      ],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 468,
+          "column": 9
         }
       ]
     },
@@ -7112,8 +7214,8 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 535,
-          "column": 53
+          "line": 457,
+          "column": 7
         }
       ]
     },
@@ -7550,7 +7652,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 587,
+          "line": 610,
           "column": 61
         }
       ]
@@ -7590,6 +7692,18 @@
           "file": "shared/utils/speedFormat.ts",
           "line": 63,
           "column": 16
+        }
+      ]
+    },
+    "be069ec3586a49b4": {
+      "source": "本月的 Token 用量日历",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/charts/ContributionCalendarChart.tsx",
+          "line": 404,
+          "column": 9
         }
       ]
     },
@@ -7755,18 +7869,6 @@
           "file": "features/calls/CallDetails.tsx",
           "line": 272,
           "column": 51
-        }
-      ]
-    },
-    "c3a977d6d5eb5336": {
-      "source": "过去一周的 Token 用量",
-      "kind": "text",
-      "placeholders": [],
-      "refs": [
-        {
-          "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 392,
-          "column": 9
         }
       ]
     },
@@ -7978,18 +8080,6 @@
         }
       ]
     },
-    "cae6736ef303164f": {
-      "source": "周度活动日历（近 7 天，按当前供应商筛选）",
-      "kind": "text",
-      "placeholders": [],
-      "refs": [
-        {
-          "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 386,
-          "column": 9
-        }
-      ]
-    },
     "cb2f1709f983d2f4": {
       "source": "模型名称",
       "kind": "text",
@@ -8055,20 +8145,8 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 555,
+          "line": 578,
           "column": 23
-        }
-      ]
-    },
-    "cd4fb896b513c225": {
-      "source": "月度活动日历（近 30 天，按当前供应商筛选）",
-      "kind": "text",
-      "placeholders": [],
-      "refs": [
-        {
-          "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 385,
-          "column": 9
         }
       ]
     },
@@ -8276,7 +8354,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 578,
+          "line": 601,
           "column": 53
         }
       ]
@@ -8566,7 +8644,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 427,
+          "line": 434,
           "column": 40
         }
       ]
@@ -8821,7 +8899,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 389,
+          "line": 396,
           "column": 7
         }
       ]
@@ -8893,7 +8971,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 561,
+          "line": 584,
           "column": 53
         }
       ]
@@ -9016,18 +9094,6 @@
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
           "line": 90,
-          "column": 9
-        }
-      ]
-    },
-    "e4c421d2e1cd6abb": {
-      "source": "过去一周的 Token 用量日历",
-      "kind": "text",
-      "placeholders": [],
-      "refs": [
-        {
-          "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 398,
           "column": 9
         }
       ]
@@ -9198,18 +9264,6 @@
         }
       ]
     },
-    "ea7701dbaa35aff8": {
-      "source": "过去一个月的 Token 用量日历",
-      "kind": "text",
-      "placeholders": [],
-      "refs": [
-        {
-          "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 397,
-          "column": 9
-        }
-      ]
-    },
     "eb11e2df1d8ae387": {
       "source": "上游地址",
       "kind": "text",
@@ -9282,7 +9336,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 572,
+          "line": 595,
           "column": 23
         }
       ]
@@ -9370,7 +9424,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 554,
+          "line": 577,
           "column": 23
         }
       ]
@@ -9410,7 +9464,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 439,
+          "line": 446,
           "column": 50
         }
       ]
@@ -9473,7 +9527,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 395,
+          "line": 402,
           "column": 7
         }
       ]
@@ -9560,7 +9614,7 @@
       "refs": [
         {
           "file": "features/home/charts/ContributionCalendarChart.tsx",
-          "line": 383,
+          "line": 390,
           "column": 7
         }
       ]

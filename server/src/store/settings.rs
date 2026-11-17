@@ -219,6 +219,21 @@ pub enum DisplayCurrency {
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub enum OverviewRangePreset {
+    #[serde(rename = "ten-minutes")]
+    TenMinutes,
+    #[serde(rename = "hour")]
+    Hour,
+    #[serde(rename = "today")]
+    Today,
+    #[serde(rename = "week")]
+    Week,
+    #[default]
+    #[serde(rename = "month")]
+    Month,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OverviewChartMode {
     #[default]
@@ -234,6 +249,15 @@ pub enum OverviewChartType {
     Line,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OverviewCalendarWindow {
+    #[default]
+    Year,
+    Month,
+    Week,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct InterfaceSettings {
     #[serde(default)]
@@ -245,9 +269,13 @@ pub struct InterfaceSettings {
     #[serde(default)]
     pub cny_rate: Option<String>,
     #[serde(default)]
+    pub overview_range_preset: OverviewRangePreset,
+    #[serde(default)]
     pub overview_chart_mode: OverviewChartMode,
     #[serde(default)]
     pub overview_chart_type: OverviewChartType,
+    #[serde(default)]
+    pub overview_calendar_window: OverviewCalendarWindow,
     #[serde(default = "default_home_refresh_interval_seconds")]
     pub home_refresh_interval_seconds: u64,
 }
@@ -259,8 +287,10 @@ impl Default for InterfaceSettings {
             theme: InterfaceTheme::default(),
             currency: DisplayCurrency::default(),
             cny_rate: None,
+            overview_range_preset: OverviewRangePreset::default(),
             overview_chart_mode: OverviewChartMode::default(),
             overview_chart_type: OverviewChartType::default(),
+            overview_calendar_window: OverviewCalendarWindow::default(),
             home_refresh_interval_seconds: DEFAULT_HOME_REFRESH_INTERVAL_SECONDS,
         }
     }
@@ -277,9 +307,13 @@ pub struct InterfaceSettingsPatch {
     #[serde(default, deserialize_with = "deserialize_optional_nullable_string")]
     pub cny_rate: Option<Option<String>>,
     #[serde(default)]
+    pub overview_range_preset: Option<OverviewRangePreset>,
+    #[serde(default)]
     pub overview_chart_mode: Option<OverviewChartMode>,
     #[serde(default)]
     pub overview_chart_type: Option<OverviewChartType>,
+    #[serde(default)]
+    pub overview_calendar_window: Option<OverviewCalendarWindow>,
     #[serde(default)]
     pub home_refresh_interval_seconds: Option<u64>,
 }
@@ -669,11 +703,17 @@ impl Store {
         if let Some(theme) = patch.theme {
             settings.theme = theme;
         }
+        if let Some(overview_range_preset) = patch.overview_range_preset {
+            settings.overview_range_preset = overview_range_preset;
+        }
         if let Some(overview_chart_mode) = patch.overview_chart_mode {
             settings.overview_chart_mode = overview_chart_mode;
         }
         if let Some(overview_chart_type) = patch.overview_chart_type {
             settings.overview_chart_type = overview_chart_type;
+        }
+        if let Some(overview_calendar_window) = patch.overview_calendar_window {
+            settings.overview_calendar_window = overview_calendar_window;
         }
         if let Some(interval) = patch.home_refresh_interval_seconds {
             if interval == 0 {
@@ -724,8 +764,9 @@ mod tests {
     use super::{
         read_proxy_settings, CommitPromptLocale, CommitSettings, DisplayCurrency,
         ExternalApiSettings, InterfaceLocale, InterfaceSettings, InterfaceSettingsPatch,
-        InterfaceTheme, OverviewChartMode, OverviewChartType, ProxyMode, ProxySettingsInput,
-        ProxySettingsSecret, Store, DEFAULT_COMMIT_PROMPT_EN_US, DEFAULT_COMMIT_PROMPT_ZH_CN,
+        InterfaceTheme, OverviewCalendarWindow, OverviewChartMode, OverviewChartType,
+        OverviewRangePreset, ProxyMode, ProxySettingsInput, ProxySettingsSecret, Store,
+        DEFAULT_COMMIT_PROMPT_EN_US, DEFAULT_COMMIT_PROMPT_ZH_CN,
         DEFAULT_HOME_REFRESH_INTERVAL_SECONDS, PROXY_SETTINGS_KEY,
     };
 
@@ -905,8 +946,10 @@ mod tests {
                 theme: InterfaceTheme::DefaultDark,
                 currency: DisplayCurrency::Usd,
                 cny_rate: None,
+                overview_range_preset: OverviewRangePreset::Month,
                 overview_chart_mode: OverviewChartMode::Tokens,
                 overview_chart_type: OverviewChartType::Bar,
+                overview_calendar_window: OverviewCalendarWindow::Year,
                 home_refresh_interval_seconds: DEFAULT_HOME_REFRESH_INTERVAL_SECONDS,
             }
         );
@@ -965,8 +1008,10 @@ mod tests {
             .update_interface_settings(InterfaceSettingsPatch {
                 locale: Some(InterfaceLocale::EnUs),
                 currency: Some(DisplayCurrency::Cny),
+                overview_range_preset: Some(OverviewRangePreset::Week),
                 overview_chart_mode: Some(OverviewChartMode::Cost),
                 overview_chart_type: Some(OverviewChartType::Line),
+                overview_calendar_window: Some(OverviewCalendarWindow::Month),
                 home_refresh_interval_seconds: Some(15),
                 ..InterfaceSettingsPatch::default()
             })
@@ -976,8 +1021,10 @@ mod tests {
         assert_eq!(saved.theme, InterfaceTheme::System);
         assert_eq!(saved.currency, DisplayCurrency::Cny);
         assert_eq!(saved.cny_rate.as_deref(), Some("7.2"));
+        assert_eq!(saved.overview_range_preset, OverviewRangePreset::Week);
         assert_eq!(saved.overview_chart_mode, OverviewChartMode::Cost);
         assert_eq!(saved.overview_chart_type, OverviewChartType::Line);
+        assert_eq!(saved.overview_calendar_window, OverviewCalendarWindow::Month);
         assert_eq!(saved.home_refresh_interval_seconds, 15);
 
         // Reconnecting to SQLite preserves every field.

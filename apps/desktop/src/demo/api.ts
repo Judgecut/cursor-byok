@@ -282,8 +282,10 @@ let interfaceSettings: InterfaceSettings = {
   theme: "default-dark",
   currency: "USD",
   cny_rate: null,
+  overview_range_preset: "month",
   overview_chart_mode: "tokens",
   overview_chart_type: "bar",
+  overview_calendar_window: "year",
   home_refresh_interval_seconds: 30,
 };
 
@@ -1057,6 +1059,12 @@ function applyDemoInterfacePatch(
     }
     next.theme = patch.theme;
   }
+  if (patch.overview_range_preset !== undefined) {
+    if (!["ten-minutes", "hour", "today", "week", "month"].includes(patch.overview_range_preset)) {
+      return { error: "invalid overview range preset" };
+    }
+    next.overview_range_preset = patch.overview_range_preset;
+  }
   if (patch.overview_chart_mode !== undefined) {
     if (!["tokens", "cost"].includes(patch.overview_chart_mode)) {
       return { error: "invalid overview chart mode" };
@@ -1068,6 +1076,12 @@ function applyDemoInterfacePatch(
       return { error: "invalid overview chart type" };
     }
     next.overview_chart_type = patch.overview_chart_type;
+  }
+  if (patch.overview_calendar_window !== undefined) {
+    if (!["year", "month", "week"].includes(patch.overview_calendar_window)) {
+      return { error: "invalid overview calendar window" };
+    }
+    next.overview_calendar_window = patch.overview_calendar_window;
   }
   if (patch.home_refresh_interval_seconds !== undefined) {
     if (

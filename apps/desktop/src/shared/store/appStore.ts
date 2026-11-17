@@ -13,8 +13,10 @@ import {
   type Model,
   type ModelInput,
   type Overview,
+  type OverviewCalendarWindow,
   type OverviewChartMode,
   type OverviewChartType,
+  type OverviewRangePresetOption,
   type PluginDescriptor,
   type PluginRuntimeStatus,
   type PortSettings,
@@ -28,8 +30,8 @@ import {
 import { applyTheme, type ThemeId } from "../theme/theme";
 import { normalizeExchangeRate, type DisplayCurrency } from "../utils/costFormat";
 
-export type { OverviewChartMode, OverviewChartType } from "../api";
-export type OverviewRangePresetValue = "ten-minutes" | "hour" | "today" | "week" | "month" | "custom";
+export type { OverviewCalendarWindow, OverviewChartMode, OverviewChartType, OverviewRangePresetOption } from "../api";
+export type OverviewRangePresetValue = OverviewRangePresetOption | "custom";
 export type OverviewQuickPresetValue = "four-hours" | "twenty-four-hours";
 
 export const DEFAULT_HOME_REFRESH_INTERVAL_SECONDS = 30;
@@ -39,8 +41,10 @@ const DEFAULT_INTERFACE_SETTINGS: InterfaceSettings = {
   theme: "default-dark",
   currency: "USD",
   cny_rate: null,
+  overview_range_preset: "month",
   overview_chart_mode: "tokens",
   overview_chart_type: "bar",
+  overview_calendar_window: "year",
   home_refresh_interval_seconds: DEFAULT_HOME_REFRESH_INTERVAL_SECONDS,
 };
 
@@ -78,8 +82,10 @@ export type AppSnapshot = {
   theme: ThemeId;
   currency: DisplayCurrency;
   cnyRate: string | null;
+  overviewRangePreset: OverviewRangePresetOption;
   overviewChartMode: OverviewChartMode;
   overviewChartType: OverviewChartType;
+  overviewCalendarWindow: OverviewCalendarWindow;
   homeRefreshIntervalSeconds: number;
   refreshTick: number;
   pendingCallsFilter: CallsFilterHandoff | null;
@@ -147,8 +153,10 @@ let snapshot: AppSnapshot = {
   theme: DEFAULT_INTERFACE_SETTINGS.theme,
   currency: DEFAULT_INTERFACE_SETTINGS.currency,
   cnyRate: DEFAULT_INTERFACE_SETTINGS.cny_rate,
+  overviewRangePreset: DEFAULT_INTERFACE_SETTINGS.overview_range_preset,
   overviewChartMode: DEFAULT_INTERFACE_SETTINGS.overview_chart_mode,
   overviewChartType: DEFAULT_INTERFACE_SETTINGS.overview_chart_type,
+  overviewCalendarWindow: DEFAULT_INTERFACE_SETTINGS.overview_calendar_window,
   homeRefreshIntervalSeconds: DEFAULT_INTERFACE_SETTINGS.home_refresh_interval_seconds,
   refreshTick: 0,
   pendingCallsFilter: null,
@@ -178,8 +186,10 @@ function applyInterfaceSettings(
     theme: next.theme,
     currency: next.currency,
     cnyRate: next.cny_rate,
+    overviewRangePreset: next.overview_range_preset,
     overviewChartMode: next.overview_chart_mode,
     overviewChartType: next.overview_chart_type,
+    overviewCalendarWindow: next.overview_calendar_window,
     homeRefreshIntervalSeconds: next.home_refresh_interval_seconds,
     ...options?.extra,
   });
@@ -213,8 +223,14 @@ async function persistInterfacePatch(
     }
     if (patch.currency !== undefined) optimisticPatch.currency = patch.currency;
     if (patch.cny_rate !== undefined) optimisticPatch.cnyRate = patch.cny_rate;
+    if (patch.overview_range_preset !== undefined) {
+      optimisticPatch.overviewRangePreset = patch.overview_range_preset;
+    }
     if (patch.overview_chart_mode !== undefined) optimisticPatch.overviewChartMode = patch.overview_chart_mode;
     if (patch.overview_chart_type !== undefined) optimisticPatch.overviewChartType = patch.overview_chart_type;
+    if (patch.overview_calendar_window !== undefined) {
+      optimisticPatch.overviewCalendarWindow = patch.overview_calendar_window;
+    }
     if (patch.home_refresh_interval_seconds !== undefined) {
       optimisticPatch.homeRefreshIntervalSeconds = patch.home_refresh_interval_seconds;
     }
@@ -606,6 +622,15 @@ export const appStore = {
   async clearCnyRate(): Promise<InterfaceSettings | null> {
     return persistInterfacePatch({ cny_rate: null }, { optimistic: false });
   },
+  selectOverviewRangePreset(overviewRangePreset: OverviewRangePresetOption) {
+    if (
+      snapshot.overviewRangePreset === overviewRangePreset
+      && persistedInterface.overview_range_preset === overviewRangePreset
+    ) {
+      return;
+    }
+    void persistInterfacePatch({ overview_range_preset: overviewRangePreset }, { optimistic: true });
+  },
   selectOverviewChartMode(overviewChartMode: OverviewChartMode) {
     if (snapshot.overviewChartMode === overviewChartMode && persistedInterface.overview_chart_mode === overviewChartMode) {
       return;
@@ -617,6 +642,15 @@ export const appStore = {
       return;
     }
     void persistInterfacePatch({ overview_chart_type: overviewChartType }, { optimistic: true });
+  },
+  selectOverviewCalendarWindow(overviewCalendarWindow: OverviewCalendarWindow) {
+    if (
+      snapshot.overviewCalendarWindow === overviewCalendarWindow
+      && persistedInterface.overview_calendar_window === overviewCalendarWindow
+    ) {
+      return;
+    }
+    void persistInterfacePatch({ overview_calendar_window: overviewCalendarWindow }, { optimistic: true });
   },
   async saveHomeRefreshIntervalSeconds(rawInterval: string | number): Promise<number | null> {
     const parsed = typeof rawInterval === "number"
