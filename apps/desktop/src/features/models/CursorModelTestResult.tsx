@@ -3,10 +3,9 @@ import { Icon } from "../../shared/ui/Icon";
 import { TooltipTrigger } from "../../shared/ui/TooltipTrigger";
 import { informationOutlineIcon } from "../../shared/ui/icons";
 import {
-  formatFirstOutput,
   formatGeneration,
   formatSpeed,
-  speedUnavailableText,
+  generationSpeedTooltip,
 } from "../../shared/utils/speedFormat";
 import styles from "./CursorModelTestResult.module.scss";
 
@@ -74,26 +73,13 @@ export function CursorModelTestResult({ state, testing = false, compact = false 
 }
 
 /** Lists every measurement behind a passed test, including why a rate is absent. */
-function testDetail(result: ModelConnectivityResult) {
-  const lines: string[] = [];
-  if (result.tokens_per_second == null) {
-    lines.push(speedUnavailableText(result.speed_reason));
-  } else {
-    lines.push(
-      t("生成速度：{speed} tok/s（不含首 Token 等待）", {
-        speed: formatSpeed(result.tokens_per_second, result.speed_status),
-      }),
-    );
-    if (result.speed_status === "estimated") lines.push(t("Token 或计时口径为估算值"));
-  }
-  lines.push(t("首 Token：{value}", { value: formatFirstOutput(result.first_output_ms) }));
-  lines.push(t("生成时间：{value}", { value: formatGeneration(result.generation_ms) }));
+function testDetail(result: ModelConnectivityResult)
+{
+  const lines = [generationSpeedTooltip({ overall_tokens_per_second: result.overall_tokens_per_second, overall_reason: result.overall_reason, tokens_per_second: result.tokens_per_second, speed_status: result.speed_status, reason: result.speed_reason, first_output_ms: result.first_output_ms, generation_ms: result.generation_ms })];
   lines.push(t("总耗时：{value}", { value: formatGeneration(result.duration_ms) }));
+  lines.push(t("单次测试结果；不同模型的 Token 划分不同，横向比较请结合总耗时"));
   lines.push(
-    t("输出：{tokens} tokens{estimated}", {
-      tokens: result.output_tokens,
-      estimated: result.tokens_estimated ? t("（估算）") : "",
-    }),
+    t("输出：{tokens} tokens", { tokens: result.output_tokens ?? "--" }),
   );
   lines.push(t("返回：{output}", { output: result.output || "--" }));
   return lines.join("\n");

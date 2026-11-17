@@ -91,8 +91,9 @@ struct AttemptState {
     first_text_recorded: AtomicBool,
     first_valid_response_recorded: AtomicBool,
     first_output_recorded: AtomicBool,
-    /// Elapsed milliseconds when the first actual output arrived, or -1 while unknown.
-    first_output_elapsed_ms: AtomicI64,
+    generation_started: Option<Instant>,
+    generation_ended: Option<Instant>,
+    generation_output_events: i64,
     thinking_observed: AtomicBool,
 }
 
@@ -105,7 +106,9 @@ impl AttemptState {
             first_text_recorded: AtomicBool::new(false),
             first_valid_response_recorded: AtomicBool::new(false),
             first_output_recorded: AtomicBool::new(false),
-            first_output_elapsed_ms: AtomicI64::new(-1),
+            generation_started: None,
+            generation_ended: None,
+            generation_output_events: 0,
             thinking_observed: AtomicBool::new(false),
         }
     }
@@ -350,7 +353,7 @@ impl CallRecorder {
         Ok(())
     }
 
-    /// Records the first actual output and any observed thinking content.
+    /// Records first-output latency, observed thinking, and the visible output interval.
     /// Another protocol layer, such as the native forwarder, calls this too so
     /// the timing rules stay identical across every provider path.
     pub async fn note_output(&self, thinking: bool) -> Result<()> {
@@ -359,9 +362,14 @@ impl CallRecorder {
 
     async fn note_output_at(&self, thinking: bool, at: Instant) -> Result<()> {
         let elapsed = elapsed_since(self.origin(), at);
-        let attempt = self.inner.attempt.lock().await;
+        let mut attempt = self.inner.attempt.lock().await;
         if self.is_finished() {
             return Ok(());
+        }
+        if !thinking {
+            attempt.generation_started.get_or_insert(at);
+            attempt.generation_ended = Some(at);
+            attempt.generation_output_events = attempt.generation_output_events.saturating_add(1);
         }
         let record_first = attempt
             .first_output_recorded
@@ -385,14 +393,7 @@ impl CallRecorder {
             )
             .await
         {
-            Ok(()) => {
-                if record_first {
-                    attempt
-                        .first_output_elapsed_ms
-                        .store(elapsed, Ordering::Release);
-                }
-                Ok(())
-            }
+            Ok(()) => Ok(()),
             Err(error) => {
                 if record_first {
                     attempt
@@ -454,9 +455,10 @@ impl CallRecorder {
         let ended_at = self.stream_ended_or(fallback_end);
         self.flush_locked(&mut attempt).await?;
         let elapsed_ms = elapsed_since(self.origin(), ended_at);
-        let first_output_elapsed_ms = attempt.first_output_elapsed_ms.load(Ordering::Acquire);
-        let generation_ms =
-            (first_output_elapsed_ms >= 0).then(|| (elapsed_ms - first_output_elapsed_ms).max(0));
+        let generation_ms = attempt
+            .generation_started
+            .zip(attempt.generation_ended)
+            .map(|(first, last)| elapsed_since(first, last));
         self.inner
             .store
             .finish_llm_call(
@@ -466,6 +468,7 @@ impl CallRecorder {
                     finish_reason: reason,
                     elapsed_ms,
                     generation_ms,
+                    generation_output_events: Some(attempt.generation_output_events),
                     error_kind,
                     error_message,
                 },
@@ -670,6 +673,58 @@ mod tests {
             );
             tokio::task::yield_now().await;
         }
+    }
+
+    #[tokio::test]
+    async fn generation_excludes_thinking_and_the_terminal_metadata_wait() {
+        let (_directory, store, recorder) = test_recorder("visible-generation").await;
+        let origin = Instant::now() - Duration::from_secs(5);
+        recorder.inner.request_sent.set(origin).unwrap();
+        recorder
+            .note_output_at(true, origin + Duration::from_millis(500))
+            .await
+            .unwrap();
+        recorder
+            .note_output_at(false, origin + Duration::from_secs(2))
+            .await
+            .unwrap();
+        recorder
+            .note_output_at(false, origin + Duration::from_secs(3))
+            .await
+            .unwrap();
+        recorder.record_stream_ended(origin + Duration::from_secs(4), true);
+        recorder.completed(FinishReason::Stop).await.unwrap();
+        let call = store.llm_call("visible-generation").await.unwrap().unwrap();
+        assert_eq!(call.ttfo_ms, Some(500));
+        assert_eq!(call.generation_ms, Some(1_000));
+        assert_eq!(call.duration_ms, Some(4_000));
+    }
+
+    #[tokio::test]
+    async fn a_buffered_response_has_no_generation_sample() {
+        let (_directory, store, recorder) = test_recorder("buffered-generation").await;
+        let origin = Instant::now() - Duration::from_secs(5);
+        recorder.inner.request_sent.set(origin).unwrap();
+        recorder
+            .note_output_at(false, origin + Duration::from_secs(1))
+            .await
+            .unwrap();
+        recorder
+            .usage(Usage {
+                output_tokens: Some(120),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        recorder.record_stream_ended(origin + Duration::from_secs(3), true);
+        recorder.completed(FinishReason::Stop).await.unwrap();
+        let call = store
+            .llm_call("buffered-generation")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(call.performance.tokens_per_second, None);
+        assert_eq!(call.generation_ms, Some(0));
     }
 
     #[tokio::test]

@@ -42,11 +42,11 @@ test("generationSpeedTooltip prioritizes generation speed and keeps end-to-end s
     generation_ms: 1000,
   });
   const lines = text.split("\n");
-  assert.equal(lines[0], "生成速度：≈120 tok/s（不含首 Token 等待）");
-  assert.equal(lines[1], "首 Token：1.4s");
+  assert.equal(lines[0], "生成速度：≈120 tok/s（首末可见输出之间）");
+  assert.equal(lines[1], "首次输出：1.4s");
   assert.equal(lines[2], "生成时间：1.0s");
-  assert.equal(lines[3], "整体端到端速度：50 tok/s（含首 Token 等待）");
-  assert.equal(lines[4], "Token 或计时口径为估算值");
+  assert.equal(lines[3], "整体端到端速度：50 tok/s（含首次输出等待）");
+  assert.equal(lines[4], "按可见输出 Token 与客户端接收时间估算；首批可能包含多个 Token，分块方式会影响结果");
 });
 
 test("aggregateTooltip reports pooled generation speed and generation_ms", () => {
@@ -58,10 +58,11 @@ test("aggregateTooltip reports pooled generation speed and generation_ms", () =>
     first_output_median_ms: 600,
   });
   const lines = text.split("\n");
-  assert.equal(lines[0], "生成速度：85 tok/s（不含首 Token 等待）");
-  assert.equal(lines[1], "按总生成输出 ÷ 总生成时间（不含首 Token 等待）汇总，不平均每次调用速度");
-  assert.equal(lines[2], "样本：3 次调用 · 1200 Token · 14.1s");
-  assert.equal(lines[3], "首 Token 中位数：0.6s");
+  assert.equal(lines[0], "生成速度：≈85 tok/s（首末可见输出之间）");
+  assert.equal(lines[1], "按首个 Token 之后的可见输出总数 ÷ 首末可见输出间隔汇总");
+  assert.match(lines[2], /首批可能包含多个 Token/);
+  assert.equal(lines[3], "样本：3 次调用 · 1200 Token · 14.1s");
+  assert.equal(lines[4], "首次输出中位数：0.6s");
   assert.equal(formatSpeed(85.4, "measured"), "85");
   assert.equal(formatSpeed(0.4, "estimated"), "≈0.4");
 });
@@ -102,11 +103,12 @@ test("demo api evaluates and pools generation speed with hidden reasoning deduct
     reasoningTokens: null,
     observedThinking: false,
     firstOutputMs: 500,
+    generationOutputEvents: 2,
     generationMs: 250,
     durationMs: 750,
   });
-  assert.equal(shortButValid.speed_status, "measured");
-  assert.equal(shortButValid.tokens_per_second, 160);
+  assert.equal(shortButValid.speed_status, "estimated");
+  assert.equal(shortButValid.tokens_per_second, 156);
   assert.equal(shortButValid.reason, null);
 
   // Hidden reasoning deducts reasoning_tokens and marks as estimated.
@@ -117,11 +119,12 @@ test("demo api evaluates and pools generation speed with hidden reasoning deduct
     reasoningTokens: 300,
     observedThinking: false,
     firstOutputMs: 1000,
+    generationOutputEvents: 2,
     generationMs: 2000,
     durationMs: 3000,
   });
   assert.equal(hiddenReasoning.speed_status, "estimated");
-  assert.equal(hiddenReasoning.tokens_per_second, 100);
+  assert.equal(hiddenReasoning.tokens_per_second, 99.5);
 
   // Under 200ms generation_ms is rejected.
   const tooFast = evaluatePerformance({
@@ -131,12 +134,21 @@ test("demo api evaluates and pools generation speed with hidden reasoning deduct
     reasoningTokens: null,
     observedThinking: false,
     firstOutputMs: 200,
+    generationOutputEvents: 2,
     generationMs: 199,
     durationMs: 399,
   });
   assert.equal(tooFast.speed_status, "unavailable");
   assert.equal(tooFast.reason, "short_generation");
   assert.equal(tooFast.tokens_per_second, null);
+
+  const visibleSample = { status: "completed", streaming: true, outputTokens: 401, reasoningTokens: 300, observedThinking: true, firstOutputMs: 100, generationMs: 1000, generationOutputEvents: 2, durationMs: 1600 };
+  assert.equal(evaluatePerformance(visibleSample).tokens_per_second, 100);
+  assert.equal(evaluatePerformance(visibleSample).speed_status, "estimated");
+  assert.equal(evaluatePerformance({ ...visibleSample, reasoningTokens: null }).reason, "missing_visible_output_tokens");
+  assert.equal(evaluatePerformance({ ...visibleSample, generationOutputEvents: 1 }).reason, "insufficient_output_events");
+  assert.equal(evaluatePerformance({ ...visibleSample, generationOutputEvents: null }).tokens_per_second, null);
+  assert.equal(evaluatePerformance({ ...visibleSample, outputTokens: null }).reason, "missing_output_tokens");
 
   const pooled = mockAggregate([
     {
@@ -146,6 +158,7 @@ test("demo api evaluates and pools generation speed with hidden reasoning deduct
       output_tokens: 40,
       reasoning_tokens: null,
       observed_thinking: false,
+      generation_output_events: 2,
       generation_ms: 250,
       performance: shortButValid,
     },
@@ -156,6 +169,7 @@ test("demo api evaluates and pools generation speed with hidden reasoning deduct
       output_tokens: 500,
       reasoning_tokens: 300,
       observed_thinking: false,
+      generation_output_events: 2,
       generation_ms: 2000,
       performance: hiddenReasoning,
     },
@@ -166,13 +180,14 @@ test("demo api evaluates and pools generation speed with hidden reasoning deduct
       output_tokens: 100,
       reasoning_tokens: null,
       observed_thinking: false,
+      generation_output_events: 2,
       generation_ms: 199,
       performance: tooFast,
     },
   ]);
   assert.equal(pooled.samples, 2);
-  assert.equal(pooled.output_tokens, 240);
+  assert.equal(pooled.output_tokens, 238);
   assert.equal(pooled.generation_ms, 2250);
-  assert.ok(Math.abs(pooled.average_tokens_per_second - (240 / 2.25)) < 1e-9);
+  assert.ok(Math.abs(pooled.average_tokens_per_second - (238 / 2.25)) < 1e-9);
   assert.equal(pooled.first_output_median_ms, 500);
 });

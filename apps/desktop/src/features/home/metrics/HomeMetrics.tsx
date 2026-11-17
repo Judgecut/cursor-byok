@@ -95,7 +95,7 @@ export function HomeMetrics({
       t("缓存命中率"),
       t("LLM 调用"),
       t("生成速度（tok/s）"),
-      t("首 Token（s）"),
+      t("首次输出（s）"),
       t("Token 消耗"),
       t("估算费用"),
     ];
@@ -146,7 +146,7 @@ export function HomeMetrics({
 
   const speedDisplay = data.speed.average_tokens_per_second == null
     ? "—"
-    : `${formatSpeed(data.speed.average_tokens_per_second)} tok/s`;
+    : `${formatSpeed(data.speed.average_tokens_per_second, "estimated")} tok/s`;
   const speedSecondary = data.speed.average_tokens_per_second == null
     ? t("无有效速度样本")
     : t("样本 {count} 条", { count: formatCompactInteger(data.speed.samples) });
@@ -158,12 +158,12 @@ export function HomeMetrics({
   const firstOutputDisplay = formatFirstOutput(data.speed.first_output_median_ms);
   const firstOutputSecondary = data.speed.first_output_median_ms != null
     ? t("成功流式调用中位数")
-    : t("无可用首 Token 样本");
+    : t("无可用首次输出样本");
   const firstOutputTooltip = [
-    t("首 Token（中位数）：{value}", { value: firstOutputDisplay }),
+    t("首次输出（中位数）：{value}", { value: firstOutputDisplay }),
     t("统计成功流式调用首次实际输出等待时间的中位数，不二次平均各行中位数。"),
     t("首次实际输出包含非空正文、思考与工具输出，排除响应头、心跳与空事件。"),
-    t("首 Token 不受生成时间 200ms 门槛限制；模型测试不计入。"),
+    t("首次输出不受生成时间 200ms 门槛限制；模型测试不计入。"),
   ].join("\n");
 
   const tokensTooltip = [
@@ -242,7 +242,7 @@ export function HomeMetrics({
       </div>
     </article>
     <article className={styles.metric}>
-      <div className={styles.label}>{t("首 Token（s）")}<InfoTooltip content={firstOutputTooltip} /></div>
+      <div className={styles.label}>{t("首次输出（s）")}<InfoTooltip content={firstOutputTooltip} /></div>
       <div className={styles.body}>
         <div className={styles.value} title={firstOutputDisplay}>{firstOutputDisplay}</div>
         <div className={styles.secondary} title={firstOutputSecondary}>{firstOutputSecondary}</div>

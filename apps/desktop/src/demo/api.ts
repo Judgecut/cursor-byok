@@ -194,6 +194,7 @@ const calls: LlmCall[] = Array.from({ length: 84 }, (_, index) => {
     ttfo_ms: firstOutputMs,
     duration_ms: failed ? 812 : firstOutputMs + (generationMs ?? 0),
     generation_ms: generationMs,
+    generation_output_events: failed ? 0 : 20,
     streaming,
     call_origin: "run" as const,
     observed_thinking: observedThinking,
@@ -205,6 +206,7 @@ const calls: LlmCall[] = Array.from({ length: 84 }, (_, index) => {
       observedThinking,
       firstOutputMs,
       generationMs,
+      generationOutputEvents: failed ? 0 : 20,
       durationMs: failed ? 812 : firstOutputMs + (generationMs ?? 0),
     }),
     input_tokens: model.type === "anthropic" ? billedInput : billedInput + cacheReadTokens + cacheWriteTokens,
@@ -333,7 +335,7 @@ export function installDemoApi(initialInterface?: Partial<Pick<InterfaceSettings
     }
     if (path === "/models/import-v0049") return json({ imported: 0, skipped: 0, total: 0 });
     if (/^\/models\/[^/]+\/test\/[^/]+$/.test(path) && method === "POST") {
-      return json({ duration_ms: 1_284, generation_ms: 1_020, first_output_ms: 418, output_tokens: 42, tokens_per_second: 41.2, speed_status: "measured", speed_reason: null, tokens_estimated: false, output: "Mock connectivity test passed." });
+      return json({ duration_ms: 1_284, generation_ms: 1_020, first_output_ms: 418, output_tokens: 42, overall_tokens_per_second: 42_000 / 1_284, overall_reason: null, tokens_per_second: 40.2, speed_status: "estimated", speed_reason: null, output: "Mock connectivity test passed." });
     }
     if (/^\/models\/[^/]+\/test\/[^/]+$/.test(path) || /^\/models\/[^/]+$/.test(path)) {
       return method === "DELETE" ? empty() : json(models[0]);
@@ -880,16 +882,10 @@ function mulRate(tokens: number, rate: string | null | undefined): number {
   return Math.round((tokens / 1_000_000) * Number(rate) * 1_000_000_000);
 }
 
-function effectiveVisibleOutputTokens(
-  outputTokens: number,
-  reasoningTokens: number | null,
-  observedThinking: boolean,
-): { tokens: number; hiddenReasoning: boolean } {
-  const hiddenReasoning = (reasoningTokens ?? 0) > 0 && !observedThinking;
-  const tokens = hiddenReasoning
-    ? Math.max(0, outputTokens - Math.max(0, reasoningTokens ?? 0))
-    : Math.max(0, outputTokens);
-  return { tokens, hiddenReasoning };
+function effectiveVisibleOutputTokens(outputTokens: number, reasoningTokens: number | null, observedThinking: boolean): number | null
+{
+  const tokens = observedThinking && reasoningTokens == null ? null : Math.max(0, outputTokens - Math.max(0, reasoningTokens ?? 0) - 1);
+  return tokens;
 }
 
 /** Pools visible output and generation time across eligible streamed runs, matching the server aggregate. */
@@ -902,13 +898,13 @@ function mockAggregate(callList: LlmCall[]): SpeedAggregate {
     if (call.status !== "completed" || call.call_origin !== "run" || call.streaming !== true) continue;
     const first = call.performance.first_output_ms;
     if (first != null) waits.push(first);
-    if (call.output_tokens == null || call.generation_ms == null || call.generation_ms < MIN_SPEED_GENERATION_MS) continue;
-    const { tokens } = effectiveVisibleOutputTokens(
+    if ((call.generation_output_events ?? 0) < 2 || call.output_tokens == null || call.generation_ms == null || call.generation_ms < MIN_SPEED_GENERATION_MS) continue;
+    const tokens = effectiveVisibleOutputTokens(
       call.output_tokens,
       call.reasoning_tokens,
       call.observed_thinking,
     );
-    if (tokens <= 0) continue;
+    if (tokens == null || tokens <= 0) continue;
     outputTokens += tokens;
     generationMs += call.generation_ms;
     samples += 1;
@@ -938,6 +934,7 @@ function evaluatePerformance(sample: {
   observedThinking: boolean;
   firstOutputMs: number | null;
   generationMs: number | null;
+  generationOutputEvents: number | null;
   durationMs: number | null;
 }): CallPerformance {
   const completed = sample.status === "completed";
@@ -960,7 +957,9 @@ function evaluatePerformance(sample: {
         ? "missing_output_tokens"
         : sample.firstOutputMs == null
           ? "missing_first_output"
-          : sample.generationMs == null
+          : (sample.generationOutputEvents ?? 0) < 2
+            ? "insufficient_output_events"
+            : sample.generationMs == null
             ? "missing_generation"
             : sample.generationMs < MIN_SPEED_GENERATION_MS
               ? "short_generation"
@@ -978,18 +977,18 @@ function evaluatePerformance(sample: {
     };
   }
 
-  const { tokens, hiddenReasoning } = effectiveVisibleOutputTokens(
+  const tokens = effectiveVisibleOutputTokens(
     sample.outputTokens!,
     sample.reasoningTokens,
     sample.observedThinking,
   );
-  if (tokens <= 0) {
+  if (tokens == null || tokens <= 0) {
     return {
       overall_tokens_per_second: overall,
       overall_reason: overallReason,
       speed_status: "unavailable",
       tokens_per_second: null,
-      reason: "short_output",
+      reason: tokens == null ? "missing_visible_output_tokens" : "short_output",
       first_output_ms: sample.firstOutputMs,
       generation_ms: sample.generationMs,
     };
@@ -998,7 +997,7 @@ function evaluatePerformance(sample: {
   return {
     overall_tokens_per_second: overall,
     overall_reason: overallReason,
-    speed_status: hiddenReasoning ? "estimated" : "measured",
+    speed_status: "estimated",
     tokens_per_second: tokens / (sample.generationMs! / 1000),
     reason: null,
     first_output_ms: sample.firstOutputMs,

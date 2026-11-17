@@ -39,6 +39,10 @@ export function speedUnavailableText(reason: SpeedUnavailableReason | null): str
       return t("上游未返回输出 Token 数");
     case "missing_first_output":
       return t("未观察到实际输出");
+    case "missing_visible_output_tokens":
+      return t("上游未区分思考与可见输出 Token，无法计算生成速度");
+    case "insufficient_output_events":
+      return t("缺少多段可见流式输出，无法计算生成速度");
     case "missing_generation":
       return t("缺少生成结束时间");
     case "missing_duration":
@@ -61,13 +65,13 @@ export function generationSpeedTooltip(performance: CallPerformance): string {
     }));
   } else {
     lines.push(
-      t("生成速度：{speed} tok/s（不含首 Token 等待）", {
+      t("生成速度：{speed} tok/s（首末可见输出之间）", {
         speed: formatSpeed(performance.tokens_per_second, performance.speed_status),
       }),
     );
   }
   lines.push(
-    t("首 Token：{value}", { value: formatFirstOutput(performance.first_output_ms) }),
+    t("首次输出：{value}", { value: formatFirstOutput(performance.first_output_ms) }),
   );
   lines.push(
     t("生成时间：{value}", { value: formatGeneration(performance.generation_ms) }),
@@ -78,13 +82,13 @@ export function generationSpeedTooltip(performance: CallPerformance): string {
     }));
   } else {
     lines.push(
-      t("整体端到端速度：{speed} tok/s（含首 Token 等待）", {
+      t("整体端到端速度：{speed} tok/s（含首次输出等待）", {
         speed: formatSpeed(performance.overall_tokens_per_second),
       }),
     );
   }
   if (performance.speed_status === "estimated") {
-    lines.push(t("Token 或计时口径为估算值"));
+    lines.push(t("按可见输出 Token 与客户端接收时间估算；首批可能包含多个 Token，分块方式会影响结果"));
   }
   return lines.join("\n");
 }
@@ -96,12 +100,16 @@ export function aggregateTooltip(speed: SpeedAggregate): string {
     lines.push(t("无可用的速度样本"));
   } else {
     lines.push(
-      t("生成速度：{speed} tok/s（不含首 Token 等待）", {
-        speed: formatSpeed(speed.average_tokens_per_second),
+      t("生成速度：{speed} tok/s（首末可见输出之间）", {
+        speed: formatSpeed(speed.average_tokens_per_second, "estimated"),
       }),
     );
   }
-  lines.push(t("按总生成输出 ÷ 总生成时间（不含首 Token 等待）汇总，不平均每次调用速度"));
+  lines.push(t("按首个 Token 之后的可见输出总数 ÷ 首末可见输出间隔汇总"));
+  if (speed.average_tokens_per_second != null)
+  {
+    lines.push(t("按可见输出 Token 与客户端接收时间估算；首批可能包含多个 Token，分块方式会影响结果"));
+  }
   lines.push(
     t("样本：{samples} 次调用 · {tokens} Token · {time}", {
       samples: speed.samples,
@@ -110,7 +118,7 @@ export function aggregateTooltip(speed: SpeedAggregate): string {
     }),
   );
   lines.push(
-    t("首 Token 中位数：{value}", { value: formatFirstOutput(speed.first_output_median_ms) }),
+    t("首次输出中位数：{value}", { value: formatFirstOutput(speed.first_output_median_ms) }),
   );
   return lines.join("\n");
 }

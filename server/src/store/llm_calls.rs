@@ -55,7 +55,7 @@ const LLM_CALL_COLUMNS: &str = r#"
     created_at_ms, request_started_at_ms, response_headers_at_ms,
     first_event_at_ms, first_text_at_ms, first_valid_response_at_ms, finished_at_ms,
     first_output_at_ms, streaming, call_origin, observed_thinking,
-    queue_ms, ttfb_ms, ttft_ms, ttfr_ms, ttfo_ms, duration_ms, generation_ms,
+    queue_ms, ttfb_ms, ttft_ms, ttfr_ms, ttfo_ms, duration_ms, generation_ms, generation_output_events,
     input_tokens, output_tokens, total_tokens,
     cache_read_tokens, cache_write_tokens, reasoning_tokens, usage_json,
     pricing_source, pricing_provider_id, pricing_model_id, pricing_snapshot_at_ms,
@@ -76,6 +76,7 @@ pub struct CallFinish<'a> {
     pub finish_reason: Option<&'a str>,
     pub elapsed_ms: i64,
     pub generation_ms: Option<i64>,
+    pub generation_output_events: Option<i64>,
     pub error_kind: Option<&'a str>,
     pub error_message: Option<&'a str>,
 }
@@ -453,6 +454,7 @@ impl Store {
                 finished_at_ms = ?,
                 duration_ms = ?,
                 generation_ms = COALESCE(generation_ms, ?),
+                generation_output_events = ?,
                 error_kind = ?,
                 error_message = ?,
                 cost_status = COALESCE(cost_status, 'incomplete_usage'),
@@ -464,6 +466,7 @@ impl Store {
         .bind(now)
         .bind(finish.elapsed_ms)
         .bind(finish.generation_ms)
+        .bind(finish.generation_output_events)
         .bind(finish.error_kind)
         .bind(finish.error_message)
         .bind(now)
@@ -705,8 +708,8 @@ fn summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<LlmCallSummary> {
                 .max(0)
         }
     });
-    // Reasoning tokens reported without any observed thinking content hide part
-    // of the generation window, so they are deducted and marked as an estimate.
+    // A thinking summary does not reveal the original reasoning tokens. Visible
+    // generation always excludes reasoning usage, whether or not a summary was observed.
     let performance = evaluate_performance(SpeedSample {
         status: &status,
         streaming,
@@ -715,8 +718,8 @@ fn summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<LlmCallSummary> {
         first_output_ms: ttfo_ms,
         generation_ms,
         duration_ms: row.try_get("duration_ms")?,
-        tokens_estimated: false,
-        hidden_reasoning: reasoning_tokens.unwrap_or(0) > 0 && !observed_thinking,
+        generation_output_events: row.try_get("generation_output_events")?,
+        observed_thinking,
     });
 
     Ok(LlmCallSummary {
@@ -752,6 +755,7 @@ fn summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<LlmCallSummary> {
         ttfo_ms,
         duration_ms: row.try_get("duration_ms")?,
         generation_ms,
+        generation_output_events: row.try_get("generation_output_events")?,
         streaming,
         call_origin: row.try_get("call_origin")?,
         observed_thinking,
@@ -851,6 +855,7 @@ mod tests {
                     finish_reason: None,
                     elapsed_ms: 10,
                     generation_ms: None,
+                    generation_output_events: None,
                     error_kind: None,
                     error_message: None,
                 },
@@ -1075,6 +1080,7 @@ mod tests {
                         finish_reason: Some("stop"),
                         elapsed_ms: ttfo_ms + generation_ms,
                         generation_ms: Some(generation_ms),
+                        generation_output_events: Some(2),
                         error_kind: None,
                         error_message: None,
                     },
@@ -1085,16 +1091,16 @@ mod tests {
 
         let hidden = store.llm_call("hidden-reasoning").await.unwrap().unwrap();
         assert_eq!(hidden.performance.speed_status, SpeedStatus::Estimated);
-        assert_eq!(hidden.performance.tokens_per_second, Some(60.0));
+        assert_eq!(hidden.performance.tokens_per_second, Some(59.8));
         assert_eq!(hidden.performance.reason, None);
 
         let observed = store.llm_call("observed-thinking").await.unwrap().unwrap();
-        assert_eq!(observed.performance.speed_status, SpeedStatus::Measured);
-        assert_eq!(observed.performance.tokens_per_second, Some(100.0));
+        assert_eq!(observed.performance.speed_status, SpeedStatus::Estimated);
+        assert_eq!(observed.performance.tokens_per_second, Some(59.8));
 
         let short_tool = store.llm_call("short-tool-call").await.unwrap().unwrap();
-        assert_eq!(short_tool.performance.speed_status, SpeedStatus::Measured);
-        assert_eq!(short_tool.performance.tokens_per_second, Some(90.0));
+        assert_eq!(short_tool.performance.speed_status, SpeedStatus::Estimated);
+        assert_eq!(short_tool.performance.tokens_per_second, Some(88.0));
         assert_eq!(short_tool.performance.overall_tokens_per_second, Some(45.0));
 
         let only_hidden = store

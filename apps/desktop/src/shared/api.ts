@@ -101,11 +101,12 @@ export interface ModelConnectivityResult {
   duration_ms: number;
   generation_ms: number | null;
   first_output_ms: number | null;
-  output_tokens: number;
+  output_tokens: number | null;
+  overall_tokens_per_second: number | null;
+  overall_reason: SpeedUnavailableReason | null;
   tokens_per_second: number | null;
   speed_status: SpeedStatus;
   speed_reason: SpeedUnavailableReason | null;
-  tokens_estimated: boolean;
   output: string;
 }
 
@@ -117,6 +118,8 @@ export type SpeedUnavailableReason =
   | "not_streaming"
   | "missing_output_tokens"
   | "missing_first_output"
+  | "missing_visible_output_tokens"
+  | "insufficient_output_events"
   | "missing_generation"
   | "missing_duration"
   | "short_output"
@@ -659,6 +662,7 @@ export interface LlmCall {
   ttfo_ms: number | null;
   duration_ms: number | null;
   generation_ms: number | null;
+  generation_output_events: number | null;
   streaming: boolean | null;
   call_origin: "run" | "model_test";
   observed_thinking: boolean;

@@ -365,6 +365,7 @@ mod tests {
                     finish_reason: Some("stop"),
                     elapsed_ms: 10,
                     generation_ms: None,
+                    generation_output_events: None,
                     error_kind: None,
                     error_message: None,
                 },

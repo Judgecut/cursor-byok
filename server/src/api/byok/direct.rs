@@ -375,8 +375,6 @@ async fn observe_events(
         .eventsource();
     futures_util::pin_mut!(source);
     let mut summary = NativeSummary::default();
-    let mut first_output_recorded = false;
-    let mut thinking_observed = false;
     while let Some(event) = source.next().await {
         let Ok(event) = event else {
             break;
@@ -384,23 +382,13 @@ async fn observe_events(
         if let Ok(value) = serde_json::from_str::<Value>(&event.data) {
             // Timing is taken as soon as this payload is parsed, before the
             // stream ends, so forwarded responses stay byte-for-byte unchanged.
-            // Reasoning that arrives after the first text still counts as an
-            // observation, which keeps the hidden-reasoning estimate honest.
-            if let Some(thinking) = native_output_kind(protocol, &value) {
-                let needs_first_output = !first_output_recorded;
-                let needs_thinking = thinking && !thinking_observed;
-                if needs_first_output || needs_thinking {
-                    match recorder.note_output(thinking).await {
-                        Ok(()) => {
-                            first_output_recorded = true;
-                            if thinking {
-                                thinking_observed = true;
-                            }
-                        }
-                        Err(error) => {
-                            tracing::warn!(%error, "failed to record native output timing");
-                        }
-                    }
+            // Every visible output updates the generation interval; the recorder
+            // owns deduplication of first-output and thinking observations.
+            if let Some(thinking) = native_output_kind(protocol, &value)
+            {
+                if let Err(error) = recorder.note_output(thinking).await
+                {
+                    tracing::warn!(%error, "failed to record native output timing");
                 }
             }
             summary.observe(protocol, &value);
@@ -426,7 +414,7 @@ fn native_output_kind(protocol: Protocol, value: &Value) -> Option<bool> {
             if delta
                 .get("content")
                 .and_then(Value::as_str)
-                .is_some_and(|text| !text.is_empty())
+                .is_some_and(|text| !text.trim().is_empty())
             {
                 return Some(false);
             }
@@ -439,7 +427,7 @@ fn native_output_kind(protocol: Protocol, value: &Value) -> Option<bool> {
                         || call
                             .pointer("/function/arguments")
                             .and_then(Value::as_str)
-                            .is_some_and(|arguments| !arguments.is_empty())
+                            .is_some_and(|arguments| !arguments.trim().is_empty())
                 })
                 .then_some(false)
         }
@@ -450,13 +438,13 @@ fn native_output_kind(protocol: Protocol, value: &Value) -> Option<bool> {
                 value
                     .get("delta")
                     .and_then(Value::as_str)
-                    .is_some_and(|delta| !delta.is_empty())
+                    .is_some_and(|delta| !delta.trim().is_empty())
                     .then_some(true)
             }
             Some("response.output_text.delta" | "response.function_call_arguments.delta") => value
                 .get("delta")
                 .and_then(Value::as_str)
-                .is_some_and(|delta| !delta.is_empty())
+                .is_some_and(|delta| !delta.trim().is_empty())
                 .then_some(false),
             Some("response.output_item.added") => value
                 .pointer("/item/type")
@@ -498,12 +486,12 @@ fn native_output_kind(protocol: Protocol, value: &Value) -> Option<bool> {
                     Some("text_delta") => delta
                         .get("text")
                         .and_then(Value::as_str)
-                        .is_some_and(|text| !text.is_empty())
+                        .is_some_and(|text| !text.trim().is_empty())
                         .then_some(false),
                     Some("input_json_delta") => delta
                         .get("partial_json")
                         .and_then(Value::as_str)
-                        .is_some_and(|json| !json.is_empty())
+                        .is_some_and(|json| !json.trim().is_empty())
                         .then_some(false),
                     _ => None,
                 }
@@ -518,6 +506,15 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn whitespace_only_output_matches_normalized_provider_timing()
+    {
+        for (protocol, event) in [(Protocol::Chat, json!({"choices":[{"delta":{"content":" \n\t"}}]})), (Protocol::Responses, json!({"type":"response.output_text.delta","delta":" \n\t"})), (Protocol::Messages, json!({"type":"content_block_delta","delta":{"type":"text_delta","text":" \n\t"}}))]
+        {
+            assert_eq!(native_output_kind(protocol, &event), None);
+        }
+    }
 
     #[test]
     fn redacted_reasoning_counts_as_output() {

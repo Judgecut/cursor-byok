@@ -188,6 +188,7 @@ mod llm_call {
         pub ttfo_ms: Option<i64>,
         pub duration_ms: Option<i64>,
         pub generation_ms: Option<i64>,
+        pub generation_output_events: Option<i64>,
         pub streaming: Option<bool>,
         pub call_origin: String,
         pub observed_thinking: bool,

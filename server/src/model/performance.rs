@@ -10,8 +10,8 @@ pub const MIN_SPEED_GENERATION_MS: i64 = 200;
 const MILLIS_PER_SECOND: f64 = 1000.0;
 const CALL_STATUS_COMPLETED: &str = "completed";
 
-/// How much trust a displayed rate deserves. `Estimated` covers token counts
-/// derived from text and generation windows that hide reasoning time.
+/// How much trust a displayed rate deserves. `Estimated` covers delivery timing
+/// derived from streamed events, whose chunks can contain several tokens.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SpeedStatus {
@@ -34,8 +34,12 @@ pub enum SpeedUnavailableReason {
     MissingOutputTokens,
     /// No actual output was observed, so generation never started by our clock.
     MissingFirstOutput,
-    /// A first output was recorded but the call has no end time.
+    /// The interval between the first and last visible outputs is unknown.
     MissingGeneration,
+    /// Thinking is present but the upstream did not separate reasoning usage.
+    MissingVisibleOutputTokens,
+    /// Fewer than two visible output events were observed, or the count is unknown.
+    InsufficientOutputEvents,
     /// The call has no positive wall-clock duration, so end-to-end throughput
     /// cannot be divided out.
     MissingDuration,
@@ -48,8 +52,8 @@ pub enum SpeedUnavailableReason {
 /// The performance result attached to one call record or model test result.
 ///
 /// `overall_tokens_per_second` divides output by the whole call duration,
-/// while `tokens_per_second` divides effective visible output by the
-/// generation window only (excluding first-output wait).
+/// while `tokens_per_second` estimates visible token delivery between the
+/// first and last visible output events, excluding the first token.
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct CallPerformance {
     pub overall_tokens_per_second: Option<f64>,
@@ -72,10 +76,9 @@ pub struct SpeedSample<'a> {
     pub generation_ms: Option<i64>,
     /// Whole call duration, which is the end-to-end denominator.
     pub duration_ms: Option<i64>,
-    /// Output tokens came from text estimation rather than provider usage.
-    pub tokens_estimated: bool,
-    /// The provider billed reasoning tokens that no output event ever showed.
-    pub hidden_reasoning: bool,
+    pub generation_output_events: Option<i64>,
+    /// Thinking may be a summary, so observing it never proves all reasoning was visible.
+    pub observed_thinking: bool,
 }
 
 /// Applies the shared speed rules to one call.
@@ -104,6 +107,8 @@ pub fn evaluate(sample: SpeedSample<'_>) -> CallPerformance {
         Some(SpeedUnavailableReason::MissingOutputTokens)
     } else if sample.first_output_ms.is_none() {
         Some(SpeedUnavailableReason::MissingFirstOutput)
+    } else if sample.generation_output_events.unwrap_or(0) < 2 {
+        Some(SpeedUnavailableReason::InsufficientOutputEvents)
     } else if sample.generation_ms.is_none() {
         Some(SpeedUnavailableReason::MissingGeneration)
     } else {
@@ -121,20 +126,18 @@ pub fn evaluate(sample: SpeedSample<'_>) -> CallPerformance {
         return performance;
     }
 
-    let (effective_tokens, speed_status) = if sample.hidden_reasoning {
-        let reasoning_tokens = sample.reasoning_tokens.unwrap_or(0).max(0);
-        (
-            (output_tokens - reasoning_tokens).max(0),
-            SpeedStatus::Estimated,
-        )
-    } else {
-        let status = if sample.tokens_estimated {
-            SpeedStatus::Estimated
-        } else {
-            SpeedStatus::Measured
-        };
-        (output_tokens, status)
-    };
+    if sample.observed_thinking && sample.reasoning_tokens.is_none() {
+        performance.reason = Some(SpeedUnavailableReason::MissingVisibleOutputTokens);
+        return performance;
+    }
+    let reasoning_tokens = sample.reasoning_tokens.unwrap_or(0).max(0);
+    // The first output token has already arrived when the generation interval starts.
+    let effective_tokens = output_tokens
+        .saturating_sub(reasoning_tokens)
+        .saturating_sub(1)
+        .max(0);
+    // SSE events may contain several tokens; their per-token generation times are unknown.
+    let speed_status = SpeedStatus::Estimated;
 
     if effective_tokens <= 0 {
         performance.reason = Some(SpeedUnavailableReason::ShortOutput);
@@ -221,6 +224,23 @@ impl std::ops::AddAssign for SpeedTotals {
 mod tests {
     use super::*;
 
+    #[test]
+    fn reasoning_summaries_do_not_make_billed_reasoning_visible() {
+        let performance = evaluate(SpeedSample {
+            observed_thinking: true,
+            reasoning_tokens: Some(800),
+            ..sample(Some(1_000), Some(2_000), Some(1_000))
+        });
+        assert_eq!(performance.tokens_per_second, Some(199.0));
+        assert_eq!(performance.speed_status, SpeedStatus::Estimated);
+    }
+
+    #[test]
+    fn the_first_output_token_is_outside_the_generation_interval() {
+        let performance = evaluate(sample(Some(101), Some(500), Some(1_000)));
+        assert_eq!(performance.tokens_per_second, Some(100.0));
+    }
+
     fn sample(
         output_tokens: Option<i64>,
         first_output_ms: Option<i64>,
@@ -236,8 +256,8 @@ mod tests {
             duration_ms: Some(
                 first_output_ms.unwrap_or_default() + generation_ms.unwrap_or_default(),
             ),
-            tokens_estimated: false,
-            hidden_reasoning: false,
+            generation_output_events: Some(2),
+            observed_thinking: false,
         }
     }
 
@@ -245,13 +265,13 @@ mod tests {
     fn generation_time_excludes_the_first_output_wait() {
         // 1,000 tokens over 12 s of generation; the 2 s wait is not part of the rate.
         let performance = evaluate(sample(Some(1_000), Some(2_000), Some(12_000)));
-        assert_eq!(performance.speed_status, SpeedStatus::Measured);
+        assert_eq!(performance.speed_status, SpeedStatus::Estimated);
         assert_eq!(performance.first_output_ms, Some(2_000));
         assert_eq!(performance.reason, None);
-        assert!((performance.tokens_per_second.unwrap() - 83.333).abs() < 0.001);
+        assert!((performance.tokens_per_second.unwrap() - 83.25).abs() < 0.001);
 
         let performance = evaluate(sample(Some(1_000), Some(0), Some(10_000)));
-        assert!((performance.tokens_per_second.unwrap() - 100.0).abs() < f64::EPSILON);
+        assert!((performance.tokens_per_second.unwrap() - 99.9).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -269,15 +289,15 @@ mod tests {
 
     #[test]
     fn sample_minimums_accept_short_outputs_with_enough_generation_time_and_reject_zero() {
-        let boundary = evaluate(sample(Some(1), Some(0), Some(MIN_SPEED_GENERATION_MS)));
-        assert_eq!(boundary.speed_status, SpeedStatus::Measured);
+        let boundary = evaluate(sample(Some(2), Some(0), Some(MIN_SPEED_GENERATION_MS)));
+        assert_eq!(boundary.speed_status, SpeedStatus::Estimated);
         assert_eq!(boundary.tokens_per_second, Some(5.0));
 
         // Short tool-call output (30-99 tokens) is measured as long as generation_ms >= 200.
         let short_tool_call = evaluate(sample(Some(40), Some(300), Some(500)));
-        assert_eq!(short_tool_call.speed_status, SpeedStatus::Measured);
+        assert_eq!(short_tool_call.speed_status, SpeedStatus::Estimated);
         assert_eq!(short_tool_call.reason, None);
-        assert_eq!(short_tool_call.tokens_per_second, Some(80.0));
+        assert_eq!(short_tool_call.tokens_per_second, Some(78.0));
         assert_eq!(short_tool_call.overall_tokens_per_second, Some(50.0));
 
         let zero_output = evaluate(sample(Some(0), Some(100), Some(MIN_SPEED_GENERATION_MS)));
@@ -305,16 +325,16 @@ mod tests {
     #[test]
     fn hidden_reasoning_deducts_reasoning_tokens_and_rejects_zero_visible_output() {
         let hidden = evaluate(SpeedSample {
-            hidden_reasoning: true,
+            observed_thinking: true,
             reasoning_tokens: Some(200),
             ..sample(Some(500), Some(2_000), Some(5_000))
         });
         assert_eq!(hidden.speed_status, SpeedStatus::Estimated);
         assert_eq!(hidden.reason, None);
-        assert_eq!(hidden.tokens_per_second, Some(60.0));
+        assert_eq!(hidden.tokens_per_second, Some(59.8));
 
         let only_hidden_reasoning = evaluate(SpeedSample {
-            hidden_reasoning: true,
+            observed_thinking: true,
             reasoning_tokens: Some(200),
             ..sample(Some(200), Some(2_000), Some(5_000))
         });
@@ -326,7 +346,7 @@ mod tests {
         assert_eq!(only_hidden_reasoning.tokens_per_second, None);
 
         let clamped_hidden_reasoning = evaluate(SpeedSample {
-            hidden_reasoning: true,
+            observed_thinking: true,
             reasoning_tokens: Some(250),
             ..sample(Some(200), Some(2_000), Some(5_000))
         });
@@ -336,14 +356,14 @@ mod tests {
         );
         assert_eq!(clamped_hidden_reasoning.tokens_per_second, None);
 
-        // When thinking was observed in the stream, reasoning tokens belong to generation_ms.
+        // A thinking summary does not expose the billed reasoning tokens.
         let observed = evaluate(SpeedSample {
-            hidden_reasoning: false,
+            observed_thinking: true,
             reasoning_tokens: Some(200),
             ..sample(Some(500), Some(2_000), Some(5_000))
         });
-        assert_eq!(observed.speed_status, SpeedStatus::Measured);
-        assert_eq!(observed.tokens_per_second, Some(100.0));
+        assert_eq!(observed.speed_status, SpeedStatus::Estimated);
+        assert_eq!(observed.tokens_per_second, Some(59.8));
     }
 
     #[test]
@@ -418,19 +438,27 @@ mod tests {
     }
 
     #[test]
-    fn estimated_inputs_are_marked_instead_of_reported_as_measured() {
-        let hidden = evaluate(SpeedSample {
-            hidden_reasoning: true,
-            ..sample(Some(1_000), Some(2_000), Some(5_000))
+    fn unknown_reasoning_usage_and_unverified_streams_have_no_generation_rate() {
+        let unknown_reasoning = evaluate(SpeedSample {
+            observed_thinking: true,
+            ..sample(Some(1_000), Some(500), Some(1_000))
         });
-        assert_eq!(hidden.speed_status, SpeedStatus::Estimated);
-        assert!(hidden.tokens_per_second.is_some());
-
-        let estimated_tokens = evaluate(SpeedSample {
-            tokens_estimated: true,
-            ..sample(Some(1_000), Some(2_000), Some(5_000))
-        });
-        assert_eq!(estimated_tokens.speed_status, SpeedStatus::Estimated);
+        assert_eq!(
+            unknown_reasoning.reason,
+            Some(SpeedUnavailableReason::MissingVisibleOutputTokens)
+        );
+        for events in [None, Some(0), Some(1)] {
+            let buffered = evaluate(SpeedSample {
+                generation_output_events: events,
+                ..sample(Some(1_000), Some(500), Some(1_000))
+            });
+            assert_eq!(buffered.tokens_per_second, None);
+            assert_eq!(
+                buffered.reason,
+                Some(SpeedUnavailableReason::InsufficientOutputEvents)
+            );
+            assert!(buffered.overall_tokens_per_second.is_some());
+        }
     }
 
     #[test]

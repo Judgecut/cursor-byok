@@ -101,9 +101,9 @@ export function HomeSupplierBreakdown({
                 type="button"
                 className={styles.sortHeader}
                 onClick={() => toggleSort("first_output")}
-                title={t("按首 Token 等待时间排序，无样本的行排在最后")}
+                title={t("按首次输出等待时间排序，无样本的行排在最后")}
               >
-                {t("首 Token（s）")}
+                {t("首次输出（s）")}
                 <span className={styles.sortMarker}>{sortIndicator(sort, "first_output")}</span>
               </button>
             </th>
@@ -182,7 +182,7 @@ export function HomeSupplierBreakdown({
                 </div>
               </td>
               <td className={styles.monoNum} title={aggregateTooltip(supplier.speed)}>
-                {formatSpeed(supplier.speed.average_tokens_per_second)}
+                {formatSpeed(supplier.speed.average_tokens_per_second, "estimated")}
               </td>
               <td className={styles.monoNum} title={aggregateTooltip(supplier.speed)}>
                 {formatFirstOutput(supplier.speed.first_output_median_ms)}

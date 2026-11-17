@@ -1107,9 +1107,7 @@ fn token_usage_buckets(
 }
 
 fn effective_output_tokens_sql() -> &'static str {
-    "CASE WHEN COALESCE(reasoning_tokens, 0) > 0 AND observed_thinking = 0 \
-     THEN MAX(0, output_tokens - reasoning_tokens) \
-     ELSE output_tokens END"
+    "MAX(0, output_tokens - MAX(0, COALESCE(reasoning_tokens, 0)) - 1)"
 }
 
 /// A call contributes to the pooled generation rate when it succeeded, belongs
@@ -1121,6 +1119,8 @@ fn speed_eligible_sql() -> String {
         "status = 'completed' AND call_origin = 'run' \
          AND COALESCE(streaming, 0) = 1 \
          AND output_tokens IS NOT NULL \
+         AND COALESCE(generation_output_events, 0) >= 2 \
+         AND (observed_thinking = 0 OR reasoning_tokens IS NOT NULL) \
          AND COALESCE(generation_ms, 0) >= {min_generation_ms} \
          AND {effective_output} > 0",
         min_generation_ms = crate::model::MIN_SPEED_GENERATION_MS,
@@ -1229,6 +1229,7 @@ mod tests {
                     finish_reason: Some("stop"),
                     elapsed_ms: sample.first_output_ms + sample.generation_ms,
                     generation_ms: Some(sample.generation_ms),
+                    generation_output_events: Some(2),
                     error_kind: None,
                     error_message: None,
                 },
@@ -1385,16 +1386,16 @@ mod tests {
         let overview = store.overview(None, None, None, None, None).await.unwrap();
         assert_eq!(overview.activity_series.len(), 365);
 
-        // Pooled over the three eligible streamed calls: 1,350 effective tokens over 20.0 s.
+        // Pooled over the three eligible streamed calls: 1,347 effective tokens over 20.0 s.
         assert_eq!(overview.metrics.speed.samples, 3);
-        assert_eq!(overview.metrics.speed.output_tokens, 1_350);
+        assert_eq!(overview.metrics.speed.output_tokens, 1_347);
         assert_eq!(overview.metrics.speed.generation_ms, 20_000);
-        assert!((overview.metrics.speed.average_tokens_per_second.unwrap() - 67.5).abs() < 0.001);
+        assert!((overview.metrics.speed.average_tokens_per_second.unwrap() - 67.35).abs() < 0.001);
         assert_eq!(overview.metrics.speed.first_output_median_ms, Some(1_000));
         // The JSON contract the desktop reads; a rename here must update the client type.
         let speed_json = serde_json::to_value(overview.metrics.speed).unwrap();
         assert_eq!(speed_json["samples"], 3);
-        assert_eq!(speed_json["output_tokens"], 1_350);
+        assert_eq!(speed_json["output_tokens"], 1_347);
         assert_eq!(speed_json["generation_ms"], 20_000);
         assert!(speed_json.get("duration_ms").is_none());
 
@@ -1404,9 +1405,9 @@ mod tests {
             .find(|item| item.model_id == "glm-4.6")
             .expect("model summary");
         assert_eq!(model.speed.samples, 3);
-        assert_eq!(model.speed.output_tokens, 1_350);
+        assert_eq!(model.speed.output_tokens, 1_347);
         assert_eq!(model.speed.generation_ms, 20_000);
-        assert!((model.speed.average_tokens_per_second.unwrap() - 67.5).abs() < 0.001);
+        assert!((model.speed.average_tokens_per_second.unwrap() - 67.35).abs() < 0.001);
         assert_eq!(model.speed.first_output_median_ms, Some(1_000));
 
         let supplier = overview
@@ -1415,7 +1416,7 @@ mod tests {
             .find(|item| item.endpoint_key == "https://example.com/v1/chat/completions")
             .expect("supplier breakdown");
         assert_eq!(supplier.speed.samples, 3);
-        assert_eq!(supplier.speed.output_tokens, 1_350);
+        assert_eq!(supplier.speed.output_tokens, 1_347);
         assert_eq!(supplier.speed.generation_ms, 20_000);
         assert_eq!(supplier.speed.first_output_median_ms, Some(1_000));
         assert_eq!(supplier.model_count, 1);
@@ -1512,10 +1513,13 @@ mod tests {
         assert_eq!(all.models[0].model_id, "model-large");
         assert_eq!(all.models[0].token_usage, 6_500);
         assert_eq!(all.models[0].supplier_count, 2);
-        // Observed thinking keeps all 1,000 output tokens in c3: (2,000 + 1,000) / 15s = 200 tok/s.
-        assert_eq!(all.models[0].speed.output_tokens, 3_000);
+        // Visible output excludes 400 reasoning tokens and one initial token per call.
+        assert_eq!(all.models[0].speed.output_tokens, 2_598);
         assert_eq!(all.models[0].speed.generation_ms, 15_000);
-        assert_eq!(all.models[0].speed.average_tokens_per_second, Some(200.0));
+        assert_eq!(
+            all.models[0].speed.average_tokens_per_second,
+            Some(2_598.0 / 15.0)
+        );
         assert_eq!(all.models[1].model_id, "model-small");
         assert_eq!(all.models[1].token_usage, 300);
         assert_eq!(all.models[1].supplier_count, 1);

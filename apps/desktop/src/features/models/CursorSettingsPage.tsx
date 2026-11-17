@@ -7,6 +7,7 @@ import { cursorModelGroups, resolveCursorModelGrouping, type CursorModelGrouping
 import { CursorModelEditor, emptyCursorModelDraft, modelDraftFrom, modelDraftInput, type CursorModelDraft } from "./CursorModelEditor";
 import { CursorProviderEditor, emptyCursorProviderDraft, providerDraftFrom, providerDraftInput, type CursorProviderDraft } from "./CursorProviderEditor";
 import { CursorModelTestResult, type CursorModelTestState } from "./CursorModelTestResult";
+import { runModelTestBatch, type ModelTestOutcome, type ModelTestTarget } from "./modelTestBatch";
 import styles from "./CursorSettings.module.scss";
 import { PageContent } from "../../shell/layout/PageContent";
 import { LegacyModelImport } from "./LegacyModelImport";
@@ -43,6 +44,7 @@ export function CursorSettingsPage() {
   const [batchTesting, setBatchTesting] = useState(false);
   const [grouping, setGrouping] = useState<CursorModelGrouping>("provider");
   const activeModelTests = useRef(new Map<string, { testId: string; controller: AbortController; cancelling: boolean }>());
+  const batchModelTests = useRef<AbortController | null>(null);
   const caReady = cursorHarness?.ca === "ready";
   const cursorTakenOver = cursorHarness?.settings_applied ?? false;
   const takeoverLabel = cursorTakenOver ? t("关闭接管Cursor") : t("开启接管Cursor");
@@ -156,11 +158,16 @@ export function CursorSettingsPage() {
     }
   };
   const cancelAllModelTests = async () => {
+    batchModelTests.current?.abort();
     await Promise.all([...activeModelTests.current.keys()].map((modelHash) => cancelModelTest(modelHash)));
   };
-  const testModel = async (model: { model_hash: string; display_name: string }, notify = true): Promise<"success" | "failure" | "cancelled"> => {
+  const testModel = async (model: ModelTestTarget, notify = true): Promise<ModelTestOutcome> => {
     if (activeModelTests.current.has(model.model_hash)) {
       await cancelModelTest(model.model_hash);
+      return "cancelled";
+    }
+    if (notify && batchModelTests.current)
+    {
       return "cancelled";
     }
     const active = { testId: crypto.randomUUID(), controller: new AbortController(), cancelling: false };
@@ -168,6 +175,7 @@ export function CursorSettingsPage() {
     setTestingModelHashes((current) => new Set(current).add(model.model_hash));
     try {
       const result = await api.testModel(model.model_hash, active.testId, active.controller.signal);
+      active.controller.signal.throwIfAborted();
       setModelTestResults((current) => new Map(current).set(model.model_hash, { status: "success", result }));
       if (notify) message(t("模型 {model} 连通性测试成功（{duration} ms）", { model: model.display_name, duration: result.duration_ms }));
       return "success";
@@ -204,21 +212,31 @@ export function CursorSettingsPage() {
     await testModel(saved);
     await appStore.refresh();
   };
-  const testAllModels = async () => {
-    if (!testTargets.length || batchTesting) return;
+  const testAllModels = async () =>
+  {
+    if (!testTargets.length || batchModelTests.current || activeModelTests.current.size > 0)
+    {
+      return;
+    }
+    const batch = new AbortController();
+    batchModelTests.current = batch;
     setBatchTesting(true);
-    try {
-      const results = await Promise.all(testTargets.map((model) => testModel(model, false)));
+    try
+    {
+      const results = await runModelTestBatch(testTargets, (model) => testModel(model, false), batch.signal);
       const successful = results.filter((result) => result === "success").length;
       const failed = results.filter((result) => result === "failure").length;
-      const cancelled = results.filter((result) => result === "cancelled").length;
-      message(cancelled > 0
+      const cancelled = batch.signal.aborted || results.some((result) => result === "cancelled");
+      message(cancelled
         ? t("连通性测试已取消：成功 {successful}，失败 {failed}", { successful, failed })
         : failed === 0
           ? t("全部 {count} 个模型连通性测试成功", { count: testTargets.length })
           : t("连通性测试完成：成功 {successful}，失败 {failed}", { successful, failed }),
-      { duration: failed === 0 && cancelled === 0 ? 2400 : 5000 });
-    } finally {
+      { duration: failed === 0 && !cancelled ? 2400 : 5000 });
+    }
+    finally
+    {
+      batchModelTests.current = null;
       setBatchTesting(false);
     }
   };
@@ -249,7 +267,7 @@ export function CursorSettingsPage() {
     models={models}
     pluginModels={pluginModels}
     grouping={effectiveGrouping}
-    disabled={cursorBusy}
+    disabled={cursorBusy || batchTesting}
     testingModelHashes={testingModelHashes}
     testResults={modelTestResults}
     onTest={(model) => void testModel(model)}
@@ -345,7 +363,7 @@ export function CursorSettingsPage() {
     >
       {providerDraft && <CursorProviderEditor draft={providerDraft} onChange={setProviderDraft} />}
     </Modal>
-    <Modal fullHeight open={draft !== null} title={editing ? t("编辑模型") : t("添加模型")} banner={draft && (editorTesting || editorTestState) ? <CursorModelTestResult state={editorTestState} testing={editorTesting} /> : undefined} busy={cursorBusy || savingAndTesting} onClose={() => { if (editing && editorTesting) void cancelModelTest(editing.model_hash); setDraft(null); setEditing(null); }} onSubmit={() => void save()} submitLabel={t("保存")} secondaryAction={<button type="button" className={controls.secondary} disabled={cursorBusy || savingAndTesting} onClick={() => void (editorTesting && editing ? cancelModelTest(editing.model_hash) : saveAndTest())}>{savingAndTesting ? t("处理中…") : editorTesting ? t("取消测试") : t("保存并测试")}</button>}>
+    <Modal fullHeight open={draft !== null} title={editing ? t("编辑模型") : t("添加模型")} banner={draft && (editorTesting || editorTestState) ? <CursorModelTestResult state={editorTestState} testing={editorTesting} /> : undefined} busy={cursorBusy || savingAndTesting} onClose={() => { if (editing && editorTesting) void cancelModelTest(editing.model_hash); setDraft(null); setEditing(null); }} onSubmit={() => void save()} submitLabel={t("保存")} secondaryAction={<button type="button" className={controls.secondary} disabled={cursorBusy || savingAndTesting || (batchTesting && !editorTesting)} onClick={() => void (editorTesting && editing ? cancelModelTest(editing.model_hash) : saveAndTest())}>{savingAndTesting ? t("处理中…") : editorTesting ? t("取消测试") : t("保存并测试")}</button>}>
       {draft && <CursorModelEditor draft={draft} providers={providers} modelOptions={activeModelOptions} discovering={discovering} onChange={setDraft} onDiscover={discover} />}
     </Modal>
     <ConfirmDialog open={caCommand !== null} title={t("安装本地 CA")} cancelLabel={t("关闭")} confirmLabel={t("打开终端")} onCancel={() => setCaCommand(null)} onConfirm={openCaTerminal}>

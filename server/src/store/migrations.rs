@@ -476,7 +476,7 @@ mod tests {
             .unwrap();
 
             assert_eq!(checksum_after, checksum_before);
-            assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+            assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
             assert_eq!(checkpoint_table_exists, 1);
             assert_eq!(argument_error_column_exists, 1);
             assert_eq!(pricing_catalog_exists, 1);
@@ -605,6 +605,42 @@ mod tests {
             sidecar_path(database, "-wal"),
             PathBuf::from(r"C:\Users\Test User\cursor-byok.db-wal")
         );
+    }
+
+    #[tokio::test]
+    async fn generation_event_migration_preserves_usage_without_trusting_old_speed() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        let historical = migrator_with_line_endings(MigrationLineEndings::Lf);
+        let previous = Migrator {
+            migrations: Cow::Owned(historical.iter().take(12).cloned().collect()),
+            ..Migrator::DEFAULT
+        };
+        previous.run(&pool).await.unwrap();
+        sqlx::query("INSERT INTO llm_calls(call_id, run_id, conversation_id, provider_call_index, provider_type, provider_url, request_type, request_url, model_id, display_name, status, created_at_ms, output_tokens, message_count, tool_count, detailed, streaming, ttfo_ms, generation_ms) VALUES ('legacy-speed', 'run', 'conv', 0, 'openai-chat', 'https://example.com', 'openai-chat', 'https://example.com', 'test', 'Test', 'completed', 100, 200, 1, 0, 0, 1, 100, 1000)").execute(&pool).await.unwrap();
+        run(&pool, Path::new("generation-events.db")).await.unwrap();
+        let store = crate::store::Store {
+            pool: pool.clone(),
+            writes: Default::default(),
+        };
+        let call = store.llm_call("legacy-speed").await.unwrap().unwrap();
+        assert_eq!(call.output_tokens, Some(200));
+        assert_eq!(call.generation_ms, Some(1_000));
+        assert_eq!(call.generation_output_events, None);
+        assert_eq!(call.performance.tokens_per_second, None);
+        assert_eq!(
+            call.performance.reason,
+            Some(crate::model::SpeedUnavailableReason::InsufficientOutputEvents)
+        );
+        assert!(sqlx::query(
+            "UPDATE llm_calls SET generation_output_events = -1 WHERE call_id = 'legacy-speed'"
+        )
+        .execute(&pool)
+        .await
+        .is_err());
     }
 
     #[tokio::test]

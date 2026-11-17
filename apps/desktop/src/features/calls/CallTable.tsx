@@ -122,7 +122,7 @@ export function CallTable({
     },
     {
       key: "first_output",
-      header: t("首 Token（s）"),
+      header: t("首次输出（s）"),
       title: (call) => generationSpeedTooltip(call.performance),
       render: (call) => formatFirstOutput(call.performance.first_output_ms),
     },

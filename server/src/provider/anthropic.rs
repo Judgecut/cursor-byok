@@ -504,13 +504,49 @@ pub(crate) fn anthropic_usage(value: &Value) -> Usage {
         total_tokens: value.get("total_tokens").and_then(Value::as_u64),
         cache_read_tokens,
         cache_write_tokens,
-        reasoning_tokens: None,
+        reasoning_tokens: value
+            .pointer("/output_tokens_details/thinking_tokens")
+            .and_then(Value::as_u64),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn thinking_usage_is_preserved_including_an_explicit_zero() {
+        for thinking_tokens in [0, 300] {
+            let usage = anthropic_usage(&serde_json::json!({
+                "output_tokens": 401,
+                "output_tokens_details": { "thinking_tokens": thinking_tokens }
+            }));
+            assert_eq!(usage.output_tokens, Some(401));
+            assert_eq!(usage.reasoning_tokens, Some(thinking_tokens));
+        }
+        assert_eq!(
+            anthropic_usage(&serde_json::json!({ "output_tokens": 401 })).reasoning_tokens,
+            None
+        );
+    }
+
+    #[test]
+    fn final_streamed_usage_preserves_thinking_breakdown() {
+        let mut usage = Usage::default();
+        merge_usage(
+            &mut usage,
+            anthropic_usage(&serde_json::json!({ "input_tokens": 10, "output_tokens": 0 })),
+        );
+        merge_usage(
+            &mut usage,
+            anthropic_usage(
+                &serde_json::json!({ "output_tokens": 401, "output_tokens_details": { "thinking_tokens": 300 } }),
+            ),
+        );
+        assert_eq!(usage.output_tokens, Some(401));
+        assert_eq!(usage.reasoning_tokens, Some(300));
+        assert_eq!(usage.total_tokens, Some(411));
+    }
 
     #[test]
     fn cached_tokens_are_included_once_in_anthropic_context_input() {

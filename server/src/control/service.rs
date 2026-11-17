@@ -90,15 +90,16 @@ fn empty_json_object_ref() -> &'static serde_json::Value {
 #[derive(Clone, Debug, Serialize)]
 pub struct ModelConnectivityResult {
     pub duration_ms: u64,
-    /// Generation time from the first actual output to the end of the test call.
+    /// Time between the first and last visible output events.
     pub generation_ms: Option<u64>,
     pub first_output_ms: Option<u64>,
-    pub output_tokens: u64,
+    pub output_tokens: Option<u64>,
+    pub overall_tokens_per_second: Option<f64>,
+    pub overall_reason: Option<SpeedUnavailableReason>,
     pub tokens_per_second: Option<f64>,
     pub speed_status: SpeedStatus,
     /// Why no rate is reported, when the test passed but produced no sample.
     pub speed_reason: Option<SpeedUnavailableReason>,
-    pub tokens_estimated: bool,
     pub output: String,
 }
 
@@ -539,6 +540,7 @@ impl ControlService {
                             finish_reason: None,
                             elapsed_ms: started.elapsed().as_millis().min(i64::MAX as u128) as i64,
                             generation_ms: None,
+                            generation_output_events: None,
                             error_kind: Some("timeout"),
                             error_message: Some(
                                 "model connectivity test timed out after 45 seconds",
@@ -564,33 +566,17 @@ impl ControlService {
                 "model connectivity test received no valid response".into(),
             ));
         };
-        let tokens_estimated = record.output_tokens.is_none();
-        let performance = match record.output_tokens {
-            Some(_) => record.performance.clone(),
-            None => evaluate_performance(SpeedSample {
-                status: record.status.as_str(),
-                streaming: record.streaming,
-                output_tokens: Some(estimate_output_tokens(&output) as i64),
-                reasoning_tokens: record.reasoning_tokens,
-                first_output_ms: record.ttfo_ms,
-                generation_ms: record.generation_ms,
-                duration_ms: record.duration_ms,
-                tokens_estimated: true,
-                hidden_reasoning: false,
-            }),
-        };
+        let performance = &record.performance;
         Ok(ModelConnectivityResult {
             duration_ms: record.duration_ms.unwrap_or_default().max(0) as u64,
             generation_ms: performance.generation_ms.map(|value| value.max(0) as u64),
             first_output_ms: Some(first_output_ms.max(0) as u64),
-            output_tokens: record
-                .output_tokens
-                .map(|tokens| tokens.max(0) as u64)
-                .unwrap_or_else(|| estimate_output_tokens(&output)),
+            output_tokens: record.output_tokens.map(|tokens| tokens.max(0) as u64),
+            overall_tokens_per_second: performance.overall_tokens_per_second,
+            overall_reason: performance.overall_reason,
             tokens_per_second: performance.tokens_per_second,
             speed_status: performance.speed_status,
             speed_reason: performance.reason,
-            tokens_estimated,
             output,
         })
     }
@@ -953,8 +939,8 @@ fn official_call(trace: CursorRunTraceSummary) -> CallSummary {
         first_output_ms: None,
         generation_ms: None,
         duration_ms: None,
-        tokens_estimated: false,
-        hidden_reasoning: false,
+        generation_output_events: None,
+        observed_thinking: false,
     });
     CallSummary {
         call: LlmCallSummary {
@@ -993,6 +979,7 @@ fn official_call(trace: CursorRunTraceSummary) -> CallSummary {
             ttfo_ms: None,
             duration_ms: duration,
             generation_ms: None,
+            generation_output_events: None,
             streaming: Some(true),
             call_origin: CallOrigin::Run.as_str().into(),
             observed_thinking: false,
@@ -1277,17 +1264,6 @@ fn model_ids(value: &serde_json::Value) -> Vec<String> {
             _ => None,
         })
         .collect()
-}
-
-fn estimate_output_tokens(output: &str) -> u64 {
-    let words = output.split_whitespace().count() as u64;
-    if words > 0 {
-        words
-    } else if output.is_empty() {
-        0
-    } else {
-        (output.chars().count() as u64).div_ceil(4)
-    }
 }
 
 fn apply_discovery_headers(
