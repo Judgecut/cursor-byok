@@ -29,6 +29,7 @@ import {
 } from "../api";
 import { applyTheme, type ThemeId } from "../theme/theme";
 import { normalizeExchangeRate, type DisplayCurrency } from "../utils/costFormat";
+import type { CustomRange } from "../utils/timeRange";
 
 export type { OverviewCalendarWindow, OverviewChartMode, OverviewChartType, OverviewRangePresetOption } from "../api";
 export type OverviewRangePresetValue = OverviewRangePresetOption | "custom";
@@ -59,9 +60,7 @@ export function parseHomeRefreshIntervalSeconds(raw: string): number | null {
 export type CallsFilterHandoff = {
   preset: OverviewRangePresetValue;
   quick: OverviewQuickPresetValue | null;
-  customRange: { startMs: number; endMs: number } | null;
-  customStart: string;
-  customEnd: string;
+  customRange: CustomRange | null;
   suppliers: string[];
   models: string[];
   nonce: number;

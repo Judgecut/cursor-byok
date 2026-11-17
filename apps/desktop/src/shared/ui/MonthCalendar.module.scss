@@ -1,0 +1,54 @@
+@use "../../styles/typography" as type;
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: type.$font-size-base;
+  font-weight: 600;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, 34px);
+  gap: 4px;
+}
+
+.weekday {
+  height: 24px;
+  display: grid;
+  place-items: center;
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-2xs;
+}
+
+.day {
+  height: 30px;
+  padding: 0;
+  color: var(--vscode-foreground);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font-size: type.$font-size-xs;
+  font-variant-numeric: tabular-nums;
+
+  &[data-outside] {
+    color: var(--vscode-descriptionForeground);
+    opacity: .6;
+  }
+  &[data-in-range] { background: color-mix(in srgb, var(--vscode-button-background) 20%, transparent); }
+  &:hover { background: var(--vscode-list-hoverBackground); }
+  &[data-today] { border-color: var(--vscode-focusBorder); }
+  &[aria-selected="true"] {
+    color: var(--vscode-button-foreground);
+    background: var(--vscode-button-background);
+    font-weight: 600;
+    opacity: 1;
+  }
+}

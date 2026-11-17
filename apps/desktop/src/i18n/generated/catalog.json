@@ -717,8 +717,8 @@
       "placeholders": [],
       "refs": [
         {
-          "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 58,
+          "file": "features/home/overview/CustomRangePanel.tsx",
+          "line": 33,
           "column": 42
         }
       ]
@@ -792,7 +792,7 @@
       "refs": [
         {
           "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 92,
+          "line": 87,
           "column": 51
         }
       ]
@@ -1735,6 +1735,18 @@
         }
       ]
     },
+    "2ab042861ff545da": {
+      "source": "结束时刻",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/overview/CustomRangePanel.tsx",
+          "line": 95,
+          "column": 72
+        }
+      ]
+    },
     "2b3743723ec820a8": {
       "source": "最长连续 {days} 天",
       "kind": "template",
@@ -1784,9 +1796,9 @@
       "placeholders": [],
       "refs": [
         {
-          "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 147,
-          "column": 105
+          "file": "features/home/overview/CustomRangePanel.tsx",
+          "line": 110,
+          "column": 84
         },
         {
           "file": "features/models/CursorSettingsPage.tsx",
@@ -2343,6 +2355,18 @@
         }
       ]
     },
+    "383413704dfd36fa": {
+      "source": "开始时间不能晚于结束时间",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/overview/CustomRangePanel.tsx",
+          "line": 108,
+          "column": 65
+        }
+      ]
+    },
     "38844b135cf70dfc": {
       "source": "更多",
       "kind": "text",
@@ -2547,6 +2571,18 @@
           "file": "shell/ads/AdMenu.tsx",
           "line": 62,
           "column": 56
+        }
+      ]
+    },
+    "3e0b634699d4c912": {
+      "source": "下个月",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "shared/ui/MonthCalendar.tsx",
+          "line": 50,
+          "column": 73
         }
       ]
     },
@@ -3243,7 +3279,7 @@
       "refs": [
         {
           "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 113,
+          "line": 108,
           "column": 9
         },
         {
@@ -3316,7 +3352,7 @@
       "refs": [
         {
           "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 51,
+          "line": 44,
           "column": 30
         }
       ]
@@ -3332,18 +3368,6 @@
           "file": "features/models/CursorSettingsPage.tsx",
           "line": 233,
           "column": 13
-        }
-      ]
-    },
-    "5228358a6db59fe7": {
-      "source": "如：现在、2026-08-23 18:00",
-      "kind": "text",
-      "placeholders": [],
-      "refs": [
-        {
-          "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 140,
-          "column": 70
         }
       ]
     },
@@ -3755,7 +3779,7 @@
       "refs": [
         {
           "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 98,
+          "line": 93,
           "column": 9
         },
         {
@@ -3920,9 +3944,9 @@
       "placeholders": [],
       "refs": [
         {
-          "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 131,
-          "column": 56
+          "file": "features/home/overview/CustomRangePanel.tsx",
+          "line": 84,
+          "column": 54
         }
       ]
     },
@@ -4066,9 +4090,9 @@
       "placeholders": [],
       "refs": [
         {
-          "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 148,
-          "column": 109
+          "file": "features/home/overview/CustomRangePanel.tsx",
+          "line": 111,
+          "column": 112
         }
       ]
     },
@@ -4230,7 +4254,7 @@
       "refs": [
         {
           "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 120,
+          "line": 115,
           "column": 19
         }
       ]
@@ -4443,9 +4467,9 @@
       "placeholders": [],
       "refs": [
         {
-          "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 139,
-          "column": 21
+          "file": "features/home/overview/CustomRangePanel.tsx",
+          "line": 94,
+          "column": 40
         }
       ]
     },
@@ -4697,6 +4721,18 @@
           "file": "features/settings/SettingsPage.tsx",
           "line": 273,
           "column": 16
+        }
+      ]
+    },
+    "760506491eef1467": {
+      "source": "开始日期",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/overview/CustomRangePanel.tsx",
+          "line": 94,
+          "column": 57
         }
       ]
     },
@@ -5386,6 +5422,18 @@
           "file": "features/plugins/PluginManagementPage.tsx",
           "line": 307,
           "column": 32
+        }
+      ]
+    },
+    "895cd52fbbb64cd4": {
+      "source": "结束日期",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/overview/CustomRangePanel.tsx",
+          "line": 95,
+          "column": 55
         }
       ]
     },
@@ -6161,18 +6209,6 @@
         }
       ]
     },
-    "9e46da6923836182": {
-      "source": "如：2026-08-23 09:00、1小时前",
-      "kind": "text",
-      "placeholders": [],
-      "refs": [
-        {
-          "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 139,
-          "column": 70
-        }
-      ]
-    },
     "9ebeab8c4532d671": {
       "source": "{name} 账号管理",
       "kind": "template",
@@ -6249,7 +6285,7 @@
       "refs": [
         {
           "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 53,
+          "line": 46,
           "column": 29
         }
       ]
@@ -8035,14 +8071,14 @@
           "column": 48
         },
         {
+          "file": "features/home/overview/CustomRangePanel.tsx",
+          "line": 106,
+          "column": 47
+        },
+        {
           "file": "features/home/overview/OverviewTabs.tsx",
           "line": 95,
           "column": 14
-        },
-        {
-          "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 143,
-          "column": 47
         }
       ]
     },
@@ -8239,7 +8275,7 @@
       "refs": [
         {
           "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 54,
+          "line": 47,
           "column": 30
         }
       ]
@@ -8589,7 +8625,7 @@
       "refs": [
         {
           "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 50,
+          "line": 43,
           "column": 29
         }
       ]
@@ -9117,7 +9153,7 @@
       "refs": [
         {
           "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 52,
+          "line": 45,
           "column": 36
         }
       ]
@@ -9469,6 +9505,18 @@
         }
       ]
     },
+    "f3137a3e3c87fc7a": {
+      "source": "结束时间跟随当前时刻",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/overview/CustomRangePanel.tsx",
+          "line": 98,
+          "column": 18
+        }
+      ]
+    },
     "f4694c46b1e19602": {
       "source": "最终请求类型",
       "kind": "text",
@@ -9520,6 +9568,18 @@
         }
       ]
     },
+    "f4f3c06250a29f4d": {
+      "source": "开始时刻",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/overview/CustomRangePanel.tsx",
+          "line": 94,
+          "column": 74
+        }
+      ]
+    },
     "f4fa9f31ea2ae58d": {
       "source": "过去一年的 Token 用量日历",
       "kind": "text",
@@ -9538,9 +9598,9 @@
       "placeholders": [],
       "refs": [
         {
-          "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 140,
-          "column": 21
+          "file": "features/home/overview/CustomRangePanel.tsx",
+          "line": 95,
+          "column": 38
         }
       ]
     },
@@ -9680,8 +9740,8 @@
       "placeholders": [],
       "refs": [
         {
-          "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
-          "line": 57,
+          "file": "features/home/overview/CustomRangePanel.tsx",
+          "line": 32,
           "column": 35
         }
       ]
@@ -9789,6 +9849,18 @@
           "file": "features/settings/ModelPricingCard.tsx",
           "line": 96,
           "column": 14
+        }
+      ]
+    },
+    "f9e727223456b717": {
+      "source": "上个月",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "shared/ui/MonthCalendar.tsx",
+          "line": 46,
+          "column": 73
         }
       ]
     },

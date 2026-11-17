@@ -13,18 +13,34 @@ await module.link((specifier) => {
 await module.evaluate();
 
 const {
+  customRangeBounds,
   presetRange,
   quickPresetRange,
   resolveTimeRange,
 } = module.namespace;
 
-test("resolveTimeRange resolves presets, quick presets, and custom ranges", () => {
+test("customRangeBounds preserves fixed endMs or replaces with query time when endFollowsNow is set", () => {
+  const now = new Date(2026, 10, 17, 14, 0, 0, 0);
+  const startMs = new Date(2026, 10, 10, 9, 30, 0, 0).getTime();
+  const fixedEndMs = new Date(2026, 10, 15, 18, 0, 0, 0).getTime();
+
+  assert.deepEqual(
+    { ...customRangeBounds({ startMs, endMs: fixedEndMs, endFollowsNow: false }, now) },
+    { startMs, endMs: fixedEndMs },
+  );
+  assert.deepEqual(
+    { ...customRangeBounds({ startMs, endMs: fixedEndMs, endFollowsNow: true }, now) },
+    { startMs, endMs: now.getTime() },
+  );
+});
+
+test("resolveTimeRange resolves presets, quick presets, and custom ranges including equal start/end", () => {
   const now = new Date(2026, 10, 17, 14, 0, 0, 0);
   const nowMs = now.getTime();
 
   assert.deepEqual(
-    { ...resolveTimeRange("custom", null, { startMs: nowMs - 60_000, endMs: nowMs }, now) },
-    { startMs: nowMs - 60_000, endMs: nowMs },
+    { ...resolveTimeRange("custom", null, { startMs: nowMs, endMs: nowMs, endFollowsNow: false }, now) },
+    { startMs: nowMs, endMs: nowMs },
   );
   assert.deepEqual(
     { ...resolveTimeRange("custom", "four-hours", null, now) },

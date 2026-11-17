@@ -1,0 +1,102 @@
+@use "../../../styles/typography" as type;
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.quickPresets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--vscode-sideBar-border);
+
+  button {
+    height: 26px;
+    padding: 0 10px;
+    color: var(--vscode-descriptionForeground);
+    background: var(--vscode-button-secondaryBackground, var(--vscode-sideBar-background));
+    border: 1px solid var(--vscode-sideBar-border);
+    border-radius: 4px;
+    font-size: type.$font-size-xs;
+    white-space: nowrap;
+
+    &:hover { color: var(--vscode-foreground); background: var(--vscode-list-hoverBackground); }
+    &[aria-pressed="true"] { color: var(--vscode-list-activeSelectionForeground); background: var(--vscode-list-activeSelectionBackground); border-color: transparent; }
+  }
+}
+
+.body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.form {
+  width: 270px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--vscode-input-border, var(--vscode-sideBar-border));
+  border-radius: 6px;
+  cursor: pointer;
+
+  &[data-active] { border-color: var(--vscode-focusBorder); }
+  &[aria-disabled="true"] { opacity: .55; cursor: default; }
+}
+
+.fieldLabel {
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-2xs;
+}
+
+.fieldInputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  gap: 8px;
+
+  input {
+    min-width: 0;
+    height: 28px;
+    padding: 0 6px;
+    color: var(--vscode-input-foreground);
+    background: var(--vscode-input-background);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    outline: none;
+    font: inherit;
+    font-size: type.$font-size-xs;
+    font-variant-numeric: tabular-nums;
+
+    &:focus { border-color: var(--vscode-focusBorder); }
+    &:disabled { cursor: default; }
+  }
+}
+
+.error {
+  color: var(--vscode-errorForeground);
+  font-size: type.$font-size-2xs;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.calendar {
+  padding: 10px 12px;
+  background: var(--vscode-sideBar-background);
+  border: 1px solid var(--vscode-sideBar-border);
+  border-radius: 6px;
+}

@@ -1,8 +1,11 @@
-export type OverviewRangePreset = "ten-minutes" | "hour" | "today" | "week" | "month" | "custom";
+export type OverviewPreset = "ten-minutes" | "hour" | "today" | "week" | "month";
+export type OverviewRangePreset = OverviewPreset | "custom";
 export type QuickPreset = "four-hours" | "twenty-four-hours";
 export type TimeRange = { startMs: number; endMs: number };
+/** User-chosen range; when `endFollowsNow` is set, `endMs` is replaced by the query time. */
+export type CustomRange = TimeRange & { endFollowsNow: boolean };
 
-export function quickPresetDurationMs(quick: QuickPreset): number {
+function quickPresetDurationMs(quick: QuickPreset): number {
   return quick === "four-hours" ? 4 * 60 * 60_000 : 24 * 60 * 60_000;
 }
 
@@ -11,15 +14,19 @@ export function quickPresetRange(quick: QuickPreset, now = new Date()): TimeRang
   return { startMs: endMs - quickPresetDurationMs(quick), endMs };
 }
 
+export function customRangeBounds(range: CustomRange, now = new Date()): TimeRange {
+  return { startMs: range.startMs, endMs: range.endFollowsNow ? now.getTime() : range.endMs };
+}
+
 export function resolveTimeRange(
   preset: OverviewRangePreset,
   quick: QuickPreset | null,
-  customRange: TimeRange | null,
+  customRange: CustomRange | null,
   now = new Date(),
 ): TimeRange | null {
   if (preset !== "custom") return presetRange(preset, now);
   if (quick) return quickPresetRange(quick, now);
-  return customRange;
+  return customRange && customRangeBounds(customRange, now);
 }
 
 export function presetRange(preset: Exclude<OverviewRangePreset, "custom">, now = new Date()): TimeRange {
