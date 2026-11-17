@@ -384,10 +384,8 @@ async fn observe_events(
             // stream ends, so forwarded responses stay byte-for-byte unchanged.
             // Every visible output updates the generation interval; the recorder
             // owns deduplication of first-output and thinking observations.
-            if let Some(thinking) = native_output_kind(protocol, &value)
-            {
-                if let Err(error) = recorder.note_output(thinking).await
-                {
+            if let Some(thinking) = native_output_kind(protocol, &value) {
+                if let Err(error) = recorder.note_output(thinking).await {
                     tracing::warn!(%error, "failed to record native output timing");
                 }
             }
@@ -508,10 +506,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn whitespace_only_output_matches_normalized_provider_timing()
-    {
-        for (protocol, event) in [(Protocol::Chat, json!({"choices":[{"delta":{"content":" \n\t"}}]})), (Protocol::Responses, json!({"type":"response.output_text.delta","delta":" \n\t"})), (Protocol::Messages, json!({"type":"content_block_delta","delta":{"type":"text_delta","text":" \n\t"}}))]
-        {
+    fn whitespace_only_output_matches_normalized_provider_timing() {
+        for (protocol, event) in [
+            (
+                Protocol::Chat,
+                json!({"choices":[{"delta":{"content":" \n\t"}}]}),
+            ),
+            (
+                Protocol::Responses,
+                json!({"type":"response.output_text.delta","delta":" \n\t"}),
+            ),
+            (
+                Protocol::Messages,
+                json!({"type":"content_block_delta","delta":{"type":"text_delta","text":" \n\t"}}),
+            ),
+        ] {
             assert_eq!(native_output_kind(protocol, &event), None);
         }
     }

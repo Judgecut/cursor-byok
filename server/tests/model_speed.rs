@@ -124,7 +124,10 @@ async fn missing_usage_does_not_turn_words_or_chinese_text_into_tokens() {
     assert_eq!(result.output_tokens, None);
     assert_eq!(result.tokens_per_second, None);
     assert_eq!(result.overall_tokens_per_second, None);
-    assert_eq!(result.overall_reason, Some(SpeedUnavailableReason::MissingOutputTokens));
+    assert_eq!(
+        result.overall_reason,
+        Some(SpeedUnavailableReason::MissingOutputTokens)
+    );
     assert_eq!(
         result.speed_reason,
         Some(SpeedUnavailableReason::MissingOutputTokens)
@@ -148,7 +151,10 @@ async fn reasoning_summary_speed_uses_visible_tokens_and_excludes_terminal_delay
     assert_eq!(record.generation_output_events, Some(2));
     assert_eq!(result.output_tokens, Some(401));
     assert_eq!(result.speed_status, SpeedStatus::Estimated);
-    assert_eq!(result.overall_tokens_per_second, record.performance.overall_tokens_per_second);
+    assert_eq!(
+        result.overall_tokens_per_second,
+        record.performance.overall_tokens_per_second
+    );
     assert_eq!(result.overall_reason, None);
     let generation_ms = result.generation_ms.unwrap();
     assert!(result.duration_ms - generation_ms >= 700);
@@ -176,5 +182,8 @@ async fn buffered_output_is_not_a_generation_sample_even_after_a_long_tail() {
         Some(SpeedUnavailableReason::InsufficientOutputEvents)
     );
     assert!(record.performance.overall_tokens_per_second.is_some());
-    assert_eq!(result.overall_tokens_per_second, record.performance.overall_tokens_per_second);
+    assert_eq!(
+        result.overall_tokens_per_second,
+        record.performance.overall_tokens_per_second
+    );
 }

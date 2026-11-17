@@ -34,6 +34,7 @@ use serde_json::{json, Value};
 use tokio::net::TcpListener;
 use tower::ServiceExt;
 
+#[allow(clippy::too_many_arguments)]
 async fn create_test_model(
     store: &cursor_server::store::Store,
     display_name: &str,

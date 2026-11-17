@@ -1043,7 +1043,10 @@ mod tests {
         assert_eq!(saved.overview_range_preset, OverviewRangePreset::Week);
         assert_eq!(saved.overview_chart_mode, OverviewChartMode::Cost);
         assert_eq!(saved.overview_chart_type, OverviewChartType::Line);
-        assert_eq!(saved.overview_calendar_window, OverviewCalendarWindow::Month);
+        assert_eq!(
+            saved.overview_calendar_window,
+            OverviewCalendarWindow::Month
+        );
         assert_eq!(
             saved.overview_calendar_chart_type,
             OverviewCalendarChartType::Line

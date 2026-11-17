@@ -877,7 +877,9 @@ mod tests {
             .unwrap();
 
         assert!(matches!(
-            store.reorder_providers(&[p1.provider_id.clone()]).await,
+            store
+                .reorder_providers(std::slice::from_ref(&p1.provider_id))
+                .await,
             Err(Error::Config(_))
         ));
         assert!(matches!(
@@ -899,7 +901,7 @@ mod tests {
         ));
         assert!(matches!(
             store
-                .reorder_models(&p1.provider_id, &[m2.model_hash.clone()])
+                .reorder_models(&p1.provider_id, std::slice::from_ref(&m2.model_hash))
                 .await,
             Err(Error::Config(_))
         ));
