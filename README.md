@@ -73,6 +73,8 @@ The output lands in `apps/desktop/src-tauri/target/release/bundle/nsis/`. With `
 
 If you would rather not compile it yourself, built installers go to [Releases](https://github.com/Judgecut/cursor-byok/releases) — currently empty.
 
+For the complete check commands, browser setup, and the dedicated embedding-model check, see [Testing](./TESTING.md).
+
 ## Caveats
 
 - Only Windows is tested; macOS and Linux are unverified.

@@ -34,8 +34,14 @@ jobs:
           node-version: 22
       - name: Verify release configuration
         run: node .github/scripts/check-release.mjs
-      - name: Test release scripts
-        run: node --test .github/scripts/*.test.mjs
+      - name: Test repository scripts
+        run: node --test .github/scripts/*.test.mjs scripts/*.test.mjs
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.9.6
+      - name: Test built-in plugins
+        run: make check-plugins
 
   rust:
     name: Rust (Windows)
@@ -63,6 +69,9 @@ jobs:
       - name: Run tests
         run: cargo test --locked --workspace --all-targets
 
+      - name: Test pinned embedding model
+        run: cargo test --locked -p semble-core embedding::model::tests::loads_and_encodes_the_pinned_model_fixture -- --ignored --exact
+
   frontend:
     name: Frontend
     timeout-minutes: 15
@@ -86,6 +95,10 @@ jobs:
         working-directory: apps/desktop
         run: npm audit --audit-level=high
 
-      - name: Check types, tests, and production build
+      - name: Install browser for interaction tests
+        working-directory: apps/desktop
+        run: npx playwright install --with-deps chromium
+
+      - name: Check types, unit tests, production build, and browser interactions
         working-directory: apps/desktop
         run: npm run check

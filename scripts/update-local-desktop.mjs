@@ -9,7 +9,7 @@ import {
   rmSync,
   statSync,
 } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, resolve, win32 } from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -170,7 +170,7 @@ export function extractUninstallDir(rawValue) {
 
   trimmed = unquoteTrim(trimmed);
   if (!trimmed) return null;
-  const parent = dirname(trimmed);
+  const parent = win32.dirname(trimmed);
   return parent && parent !== "." ? parent : null;
 }
 

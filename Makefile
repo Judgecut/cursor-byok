@@ -1,14 +1,21 @@
 LOCAL_TAURI_SIGNING_KEY := $(CURDIR)/.tauri/cursor-byok.local.key
 
-.PHONY: check dev-web dev-server dev-desktop build-web build-server build-desktop build-docker update-local
+.PHONY: check check-plugins check-embedding dev-web dev-server dev-desktop build-web build-server build-desktop build-docker update-local
 
 check:
 	node .github/scripts/check-release.mjs
-	node --test .github/scripts/*.test.mjs
+	node --test .github/scripts/*.test.mjs scripts/*.test.mjs
+	$(MAKE) check-plugins
 	cargo fmt --all -- --check
 	cargo clippy --workspace --all-targets -- -D warnings
 	cargo test --workspace --all-targets
 	npm --prefix apps/desktop run check
+
+check-plugins:
+	deno test --config server/plugins/build-in/deno.json server/plugins/build-in/
+
+check-embedding:
+	cargo test --locked -p semble-core embedding::model::tests::loads_and_encodes_the_pinned_model_fixture -- --ignored --exact
 
 dev-web:
 	npm --prefix apps/desktop run dev:web

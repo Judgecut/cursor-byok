@@ -13,6 +13,8 @@ logs.zip
 frontend/bindings
 dist
 node_modules
+/apps/desktop/test-results/
+/apps/desktop/playwright-report/
 *.tsbuildinfo
 cursor-server.tar
 /target/

@@ -73,6 +73,8 @@ npm --prefix apps/desktop run tauri:build -- --bundles nsis
 
 不想自己编译的，等装好的包放到 [Releases](https://github.com/Judgecut/cursor-byok/releases) 再下也行，目前还是空的。
 
+完整检查命令、浏览器测试准备和独立嵌入模型检查见[测试说明](./TESTING.md)。
+
 ## 需要注意
 
 - 只有 Windows 经过测试，macOS 和 Linux 没验证过。

@@ -129,14 +129,11 @@ mod tests {
     }
 
     #[test]
-    fn loads_and_encodes_the_pinned_model_fixture_when_available() {
-        let (Some(model), Some(tokenizer)) = (
-            std::env::var_os("SEMBLE_TEST_MODEL"),
-            std::env::var_os("SEMBLE_TEST_TOKENIZER"),
-        ) else {
-            return;
-        };
-        let model = StaticEmbedder::load(Path::new(&model), Path::new(&tokenizer)).unwrap();
+    #[ignore = "downloads checksum-pinned model assets; run make check-embedding"]
+    fn loads_and_encodes_the_pinned_model_fixture() {
+        let directory = tempfile::tempdir().unwrap();
+        let assets = crate::embedding::assets::ModelAssets::ensure(directory.path()).unwrap();
+        let model = StaticEmbedder::load(&assets.model, &assets.tokenizer).unwrap();
         assert_eq!(model.dimensions(), 256);
         let vectors = model
             .encode(&["parse an HTTP response".into(), "create an invoice".into()])

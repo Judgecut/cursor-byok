@@ -1,0 +1,3 @@
+{
+  "workspace": ["./antigravity-auth", "./codex-auth", "./grok-auth"]
+}
