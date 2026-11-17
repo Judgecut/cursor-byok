@@ -1,5 +1,8 @@
 //! Forwards matching HTTP protocols without projecting provider messages.
-use std::time::Duration;
+use std::{
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 use async_stream::try_stream;
 use axum::{
@@ -214,7 +217,7 @@ impl NativeForwarder {
         let idle_timeout = self.stream_idle_timeout;
         let output = try_stream! {
             let _cancel = recorder.cancel_on_drop();
-            let (sender, receiver) = tokio::sync::mpsc::channel::<Bytes>(8);
+            let (sender, receiver) = tokio::sync::mpsc::channel::<(Bytes, Instant)>(8);
             let observer = tokio::spawn(observe_events(protocol, receiver, recorder.clone()));
             let mut upstream = response.bytes_stream();
             loop {
@@ -235,8 +238,9 @@ impl NativeForwarder {
                         Err::<Bytes, Error>(error)?
                     }
                 };
+                let received_at = Instant::now();
                 recorder.response_chunk(&chunk).await?;
-                let _ = sender.send(chunk.clone()).await;
+                let _ = sender.send((chunk.clone(), received_at)).await;
                 yield chunk;
             }
             recorder.mark_stream_ended().await;
@@ -367,11 +371,17 @@ impl NativeSummary {
 
 async fn observe_events(
     protocol: Protocol,
-    receiver: tokio::sync::mpsc::Receiver<Bytes>,
+    receiver: tokio::sync::mpsc::Receiver<(Bytes, Instant)>,
     recorder: CallRecorder,
 ) -> NativeSummary {
+    let received_at = Mutex::new(Instant::now());
     let source = ReceiverStream::new(receiver)
-        .map(Ok::<_, Error>)
+        .map(|(chunk, at)| {
+            *received_at
+                .lock()
+                .expect("native arrival timestamp lock poisoned") = at;
+            Ok::<_, Error>(chunk)
+        })
         .eventsource();
     futures_util::pin_mut!(source);
     let mut summary = NativeSummary::default();
@@ -380,12 +390,14 @@ async fn observe_events(
             break;
         };
         if let Ok(value) = serde_json::from_str::<Value>(&event.data) {
-            // Timing is taken as soon as this payload is parsed, before the
-            // stream ends, so forwarded responses stay byte-for-byte unchanged.
-            // Every visible output updates the generation interval; the recorder
-            // owns deduplication of first-output and thinking observations.
+            // Use the arrival of the chunk completing this event, so observer
+            // scheduling and persistence cannot inflate the generation interval.
+            // Multiple events in one buffered chunk share its arrival timestamp.
             if let Some(thinking) = native_output_kind(protocol, &value) {
-                if let Err(error) = recorder.note_output(thinking).await {
+                let at = *received_at
+                    .lock()
+                    .expect("native arrival timestamp lock poisoned");
+                if let Err(error) = recorder.note_output_at(thinking, at).await {
                     tracing::warn!(%error, "failed to record native output timing");
                 }
             }

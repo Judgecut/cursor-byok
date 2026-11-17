@@ -354,13 +354,8 @@ impl CallRecorder {
     }
 
     /// Records first-output latency, observed thinking, and the visible output interval.
-    /// Another protocol layer, such as the native forwarder, calls this too so
-    /// the timing rules stay identical across every provider path.
-    pub async fn note_output(&self, thinking: bool) -> Result<()> {
-        self.note_output_at(thinking, Instant::now()).await
-    }
-
-    async fn note_output_at(&self, thinking: bool, at: Instant) -> Result<()> {
+    /// Native forwarding supplies chunk arrival time to exclude observer delays.
+    pub(crate) async fn note_output_at(&self, thinking: bool, at: Instant) -> Result<()> {
         let elapsed = elapsed_since(self.origin(), at);
         let mut attempt = self.inner.attempt.lock().await;
         if self.is_finished() {
