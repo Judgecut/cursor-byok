@@ -44,9 +44,11 @@ function PerformanceSection({ call }: { call: LlmCall }) {
   const overall = performance.overall_tokens_per_second;
   const generation = performance.tokens_per_second;
   const generationEstimated = performance.speed_status === "estimated";
-  const badge = overall == null
+  const badge = generation == null
     ? { label: t("不可用"), warn: true }
-    : { label: t("实测"), warn: false };
+    : generationEstimated
+      ? { label: t("估算"), warn: false }
+      : { label: t("实测"), warn: false };
   return <section aria-label={t("速度与首 Token")}>
     <h4>{t("速度与首 Token")}</h4>
     <div className={styles.costCard}>
@@ -56,19 +58,19 @@ function PerformanceSection({ call }: { call: LlmCall }) {
             {badge.label}
           </span>
           <span>
-            {overall != null ? `${formatSpeed(overall)} tok/s` : "—"}
+            {generation != null ? `${formatSpeed(generation, performance.speed_status)} tok/s` : "—"}
           </span>
           <span className={styles.costTag}>{t("首 Token {value}", { value: formatFirstOutput(performance.first_output_ms) })}</span>
         </div>
       </div>
       <div className={styles.meta}>
+        {generationFormula(performance, call)}
+      </div>
+      {generation == null && <div className={styles.empty}>{speedUnavailableText(performance.reason)}</div>}
+      <div className={styles.meta}>
         {overallFormula(performance, call.output_tokens, call.duration_ms)}
       </div>
       {overall == null && <div className={styles.empty}>{speedUnavailableText(performance.overall_reason)}</div>}
-      <div className={styles.meta}>
-        {generationFormula(performance, call.output_tokens)}
-      </div>
-      {generation == null && <div className={styles.empty}>{speedUnavailableText(performance.reason)}</div>}
       {generationEstimated && <div className={styles.meta}>{t("生成速度的 Token 或计时口径为估算值，仅供参考。")}</div>}
     </div>
   </section>;
@@ -82,9 +84,9 @@ function overallFormula(
 ) {
   const rate = performance.overall_tokens_per_second;
   if (rate == null || durationMs == null || outputTokens == null) {
-    return t("计算方式：输出 Token ÷ 总耗时（含首 Token 等待）。");
+    return t("整体端到端速度：输出 Token ÷ 总耗时（含首 Token 等待）。");
   }
-  return t("计算方式：{tokens} Token ÷ {seconds}s = {speed} tok/s（含首 Token 等待）。", {
+  return t("整体端到端速度：{tokens} Token ÷ {seconds}s = {speed} tok/s（含首 Token 等待）。", {
     tokens: formatInteger(outputTokens),
     seconds: (durationMs / 1000).toFixed(durationMs < 100 ? 3 : 1),
     speed: formatSpeed(rate),
@@ -92,14 +94,20 @@ function overallFormula(
 }
 
 /** States the generation-only rate as a division, excluding the first-token wait. */
-function generationFormula(performance: CallPerformance, outputTokens: number | null) {
+function generationFormula(performance: CallPerformance, call: LlmCall) {
   const rate = performance.tokens_per_second;
   const generationMs = performance.generation_ms;
-  if (rate == null || generationMs == null || outputTokens == null) {
-    return t("生成速度：输出 Token ÷ 生成时间（首 Token 之后到调用结束）。");
+  const hiddenReasoning = !call.observed_thinking && (call.reasoning_tokens ?? 0) > 0;
+  const effectiveTokens = call.output_tokens == null
+    ? null
+    : hiddenReasoning
+      ? Math.max(0, call.output_tokens - Math.max(0, call.reasoning_tokens ?? 0))
+      : call.output_tokens;
+  if (rate == null || generationMs == null || effectiveTokens == null) {
+    return t("生成速度：可见输出 Token ÷ 生成时间（首 Token 之后到调用结束）。");
   }
   return t("生成速度：{tokens} Token ÷ {seconds}s = {speed} tok/s（不含首 Token 等待）。", {
-    tokens: formatInteger(outputTokens),
+    tokens: formatInteger(effectiveTokens),
     seconds: (generationMs / 1000).toFixed(1),
     speed: formatSpeed(rate, performance.speed_status),
   });
@@ -231,8 +239,8 @@ export function CallDetails({ detail }: { detail: CallDetail }) {
     ["HTTP Status", show(call.http_status)],
     ["Created At", `${call.created_at_ms} · ${new Date(call.created_at_ms).toLocaleString()}`],
     [t("耗时"), timing(call.duration_ms)],
-    [t("整体速度（tok/s）"), formatSpeed(call.performance.overall_tokens_per_second)],
     [t("生成速度（tok/s）"), formatSpeed(call.performance.tokens_per_second, call.performance.speed_status)],
+    [t("整体端到端速度（tok/s）"), formatSpeed(call.performance.overall_tokens_per_second)],
     [t("生成时间"), formatGeneration(call.performance.generation_ms)],
     [t("首 Token（首个实际输出）"), formatFirstOutput(call.performance.first_output_ms)],
     ["TTFB", timing(call.ttfb_ms)],

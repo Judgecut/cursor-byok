@@ -2,7 +2,7 @@
 use std::{
     sync::{
         atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
-        Arc,
+        Arc, OnceLock,
     },
     time::Instant,
 };
@@ -70,14 +70,22 @@ struct Inner {
     store: Store,
     base_call: NewLlmCall,
     detailed: bool,
+    started: Instant,
+    request_sent: OnceLock<Instant>,
+    stream_ended: std::sync::Mutex<Option<StreamEnded>>,
     attempt: Mutex<AttemptState>,
     next_generation: AtomicU64,
     finished: AtomicBool,
 }
 
+#[derive(Clone, Copy)]
+struct StreamEnded {
+    at: Instant,
+    explicit: bool,
+}
+
 struct AttemptState {
     call_id: String,
-    started: Instant,
     next_chunk: AtomicI64,
     chunks: ChunkBuffer,
     first_text_recorded: AtomicBool,
@@ -92,7 +100,6 @@ impl AttemptState {
     fn new(call_id: String) -> Self {
         Self {
             call_id,
-            started: Instant::now(),
             next_chunk: AtomicI64::new(0),
             chunks: ChunkBuffer::default(),
             first_text_recorded: AtomicBool::new(false),
@@ -125,11 +132,72 @@ impl CallRecorder {
                 store,
                 base_call: call.clone(),
                 detailed: call.detailed,
+                started: Instant::now(),
+                request_sent: OnceLock::new(),
+                stream_ended: std::sync::Mutex::new(None),
                 attempt: Mutex::new(AttemptState::new(call.call_id.clone())),
                 next_generation: AtomicU64::new(0),
                 finished: AtomicBool::new(false),
             }),
         })
+    }
+
+    /// Marks when the upstream HTTP request is actually dispatched so local
+    /// setup, serialization, DB request logging, and plugin IPC are excluded
+    /// from response and generation latencies.
+    pub async fn mark_request_sent(&self) {
+        let _ = self.inner.request_sent.set(Instant::now());
+    }
+
+    /// Marks when the upstream response stream finishes so post-stream DB
+    /// usage/chunk flushes are excluded from `duration_ms` and `generation_ms`.
+    pub async fn mark_stream_ended(&self) {
+        self.record_stream_ended(Instant::now(), true);
+    }
+
+    fn origin(&self) -> Instant {
+        *self.inner.request_sent.get().unwrap_or(&self.inner.started)
+    }
+
+    fn record_stream_ended(&self, at: Instant, explicit: bool) {
+        let mut ended = self
+            .inner
+            .stream_ended
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match *ended {
+            Some(current) if current.explicit => {}
+            Some(current) if explicit => {
+                // Promote a tentative Usage timestamp captured right before DB usage persistence.
+                *ended = Some(StreamEnded {
+                    at: current.at,
+                    explicit: true,
+                });
+            }
+            _ => {
+                *ended = Some(StreamEnded { at, explicit });
+            }
+        }
+    }
+
+    fn clear_tentative_stream_ended(&self) {
+        let mut ended = self
+            .inner
+            .stream_ended
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if matches!(*ended, Some(current) if !current.explicit) {
+            *ended = None;
+        }
+    }
+
+    fn stream_ended_or(&self, fallback: Instant) -> Instant {
+        let ended = self
+            .inner
+            .stream_ended
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        ended.map_or(fallback, |mark| mark.at)
     }
 
     pub fn detailed(&self) -> bool {
@@ -160,14 +228,16 @@ impl CallRecorder {
     }
 
     pub async fn response_headers(&self, status: u16) -> Result<()> {
+        let elapsed = elapsed_since(self.origin(), Instant::now());
         let attempt = self.inner.attempt.lock().await;
         self.inner
             .store
-            .record_llm_response_headers(&attempt.call_id, elapsed_ms(attempt.started), status)
+            .record_llm_response_headers(&attempt.call_id, elapsed, status)
             .await
     }
 
     pub async fn response_chunk(&self, data: &[u8]) -> Result<()> {
+        let elapsed = elapsed_since(self.origin(), Instant::now());
         let mut attempt = self.inner.attempt.lock().await;
         if self.is_finished() {
             return Ok(());
@@ -185,7 +255,6 @@ impl CallRecorder {
             None
         };
         attempt.chunks.bytes += data.len();
-        let elapsed = elapsed_ms(attempt.started);
         attempt.chunks.chunks.push(if self.inner.detailed {
             BufferedLlmChunk::new(seq, elapsed, data)
         } else {
@@ -215,6 +284,11 @@ impl CallRecorder {
     }
 
     pub async fn event(&self, event: &ModelEvent) -> Result<()> {
+        let event_at = Instant::now();
+        if is_stream_continuation_event(event) {
+            self.clear_tentative_stream_ended();
+        }
+        let origin = self.origin();
         let attempt = self.inner.attempt.lock().await;
         if is_valid_response_event(event)
             && attempt
@@ -225,7 +299,7 @@ impl CallRecorder {
             if let Err(error) = self
                 .inner
                 .store
-                .record_llm_first_valid_response(&attempt.call_id, elapsed_ms(attempt.started))
+                .record_llm_first_valid_response(&attempt.call_id, elapsed_since(origin, event_at))
                 .await
             {
                 attempt
@@ -237,7 +311,8 @@ impl CallRecorder {
         drop(attempt);
 
         if is_output_event(event) {
-            self.note_output(is_thinking_event(event)).await?;
+            self.note_output_at(is_thinking_event(event), event_at)
+                .await?;
         }
 
         match event {
@@ -251,7 +326,7 @@ impl CallRecorder {
                     if let Err(error) = self
                         .inner
                         .store
-                        .record_llm_first_text(&attempt.call_id, elapsed_ms(attempt.started))
+                        .record_llm_first_text(&attempt.call_id, elapsed_since(origin, event_at))
                         .await
                     {
                         attempt.first_text_recorded.store(false, Ordering::Release);
@@ -259,8 +334,17 @@ impl CallRecorder {
                     }
                 }
             }
-            ModelEvent::Usage(usage) => self.usage(*usage).await?,
-            ModelEvent::Done(reason) => self.completed(*reason).await?,
+            ModelEvent::Usage(usage) => {
+                // Providers emit Usage at stream end right before Done; capture it
+                // tentatively before SQLite usage writes so DB contention doesn't
+                // inflate duration_ms or generation_ms.
+                self.record_stream_ended(event_at, false);
+                self.usage(*usage).await?;
+            }
+            ModelEvent::Done(reason) => {
+                self.record_stream_ended(event_at, true);
+                self.completed(*reason).await?;
+            }
             _ => {}
         }
         Ok(())
@@ -270,6 +354,11 @@ impl CallRecorder {
     /// Another protocol layer, such as the native forwarder, calls this too so
     /// the timing rules stay identical across every provider path.
     pub async fn note_output(&self, thinking: bool) -> Result<()> {
+        self.note_output_at(thinking, Instant::now()).await
+    }
+
+    async fn note_output_at(&self, thinking: bool, at: Instant) -> Result<()> {
+        let elapsed = elapsed_since(self.origin(), at);
         let attempt = self.inner.attempt.lock().await;
         if self.is_finished() {
             return Ok(());
@@ -286,7 +375,6 @@ impl CallRecorder {
         if !record_first && !record_thinking {
             return Ok(());
         }
-        let elapsed = elapsed_ms(attempt.started);
         match self
             .inner
             .store
@@ -333,6 +421,7 @@ impl CallRecorder {
     }
 
     pub async fn failed(&self, error: &crate::Error) -> Result<()> {
+        self.clear_tentative_stream_ended();
         self.finish(
             "error",
             None,
@@ -343,6 +432,7 @@ impl CallRecorder {
     }
 
     pub async fn cancelled(&self) -> Result<()> {
+        self.clear_tentative_stream_ended();
         self.finish("cancelled", None, None, None).await
     }
 
@@ -356,12 +446,14 @@ impl CallRecorder {
         if self.is_finished() {
             return Ok(());
         }
+        let fallback_end = Instant::now();
         let mut attempt = self.inner.attempt.lock().await;
         if self.is_finished() {
             return Ok(());
         }
+        let ended_at = self.stream_ended_or(fallback_end);
         self.flush_locked(&mut attempt).await?;
-        let elapsed_ms = elapsed_ms(attempt.started);
+        let elapsed_ms = elapsed_since(self.origin(), ended_at);
         let first_output_elapsed_ms = attempt.first_output_elapsed_ms.load(Ordering::Acquire);
         let generation_ms =
             (first_output_elapsed_ms >= 0).then(|| (elapsed_ms - first_output_elapsed_ms).max(0));
@@ -422,8 +514,19 @@ impl CallRecorder {
     }
 }
 
-fn elapsed_ms(started: Instant) -> i64 {
-    started.elapsed().as_millis().min(i64::MAX as u128) as i64
+fn elapsed_since(started: Instant, ended: Instant) -> i64 {
+    ended
+        .saturating_duration_since(started)
+        .as_millis()
+        .min(i64::MAX as u128) as i64
+}
+
+fn is_stream_continuation_event(event: &ModelEvent) -> bool {
+    is_output_event(event)
+        || matches!(
+            event,
+            ModelEvent::TextStart | ModelEvent::ThinkingStart | ModelEvent::ToolCallStart { .. }
+        )
 }
 
 /// Returns whether an event carries actual model output: non-empty text,
@@ -468,14 +571,16 @@ fn error_kind(error: &crate::Error) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use crate::model::{
-        CallOrigin, ModelConfigInput, ModelType, NewLlmCall, ProviderType, OPENAI_CHAT_ENDPOINT,
+        CallOrigin, ModelConfigInput, ModelType, NewLlmCall, ProviderConfigInput, ProviderType,
+        Usage, OPENAI_CHAT_ENDPOINT,
     };
 
     use super::*;
 
-    #[tokio::test]
-    async fn dropping_an_unfinished_call_guard_marks_the_call_cancelled() {
+    async fn test_recorder(call_id: &str) -> (tempfile::TempDir, Store, CallRecorder) {
         let directory = tempfile::tempdir().unwrap();
         let store = Store::connect(&format!(
             "sqlite://{}",
@@ -483,28 +588,32 @@ mod tests {
         ))
         .await
         .unwrap();
-        let model = store
-            .create_model(&ModelConfigInput {
+        let provider = store
+            .create_provider(&ProviderConfigInput {
                 sort_order: 0,
-                display_name: "Test Model".into(),
-                group_name: None,
+                name: "example.com".into(),
                 model_type: ModelType::OpenAi,
                 base_url: "https://example.com/v1/chat/completions".into(),
                 use_full_url: true,
                 api_key: "test-key".into(),
+                openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
+                custom_headers_enabled: false,
+                custom_headers: serde_json::json!({}),
+                extra_params_enabled: false,
+                extra_params: serde_json::json!({}),
+            })
+            .await
+            .unwrap();
+        let model = store
+            .create_model(&ModelConfigInput {
+                provider_id: provider.provider_id,
+                sort_order: 0,
+                display_name: "Test Model".into(),
                 tooltip_data: "Test Model".into(),
                 model_id: "test-model".into(),
                 reasoning_effort: None,
-                openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
-                openai_extra_params_enabled: false,
-                openai_extra_params: serde_json::json!({}),
-                custom_headers_enabled: false,
-                custom_headers: serde_json::json!({}),
-                anthropic_extra_params_enabled: false,
-                anthropic_extra_params: serde_json::json!({}),
                 context_window_tokens: None,
-                max_completion_tokens: None,
-                anthropic_max_tokens: None,
+                max_output_tokens: None,
                 anthropic_thinking_effort: None,
                 thinking_budget_tokens: None,
             })
@@ -513,7 +622,7 @@ mod tests {
         let recorder = CallRecorder::start(
             store.clone(),
             NewLlmCall {
-                call_id: "cancel-on-drop".into(),
+                call_id: call_id.into(),
                 run_id: "run".into(),
                 conversation_id: "conversation".into(),
                 provider_call_index: 0,
@@ -535,10 +644,16 @@ mod tests {
         )
         .await
         .unwrap();
+        (directory, store, recorder)
+    }
+
+    #[tokio::test]
+    async fn dropping_an_unfinished_call_guard_marks_the_call_cancelled() {
+        let (_directory, store, recorder) = test_recorder("cancel-on-drop").await;
 
         drop(recorder.cancel_on_drop());
 
-        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
         loop {
             let status: String =
                 sqlx::query_scalar("SELECT status FROM llm_calls WHERE call_id = ?")
@@ -555,5 +670,194 @@ mod tests {
             );
             tokio::task::yield_now().await;
         }
+    }
+
+    #[tokio::test]
+    async fn mark_request_sent_excludes_pre_send_delay_from_latencies() {
+        let (_directory, store, recorder) = test_recorder("pre-send-delay").await;
+        let test_start = Instant::now();
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let pre_send_ms = test_start.elapsed().as_millis() as i64;
+        recorder.mark_request_sent().await;
+        let post_send_start = Instant::now();
+
+        tokio::time::sleep(Duration::from_millis(15)).await;
+        recorder.response_headers(200).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(15)).await;
+        recorder
+            .event(&ModelEvent::TextDelta("hello".into()))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(15)).await;
+        recorder
+            .event(&ModelEvent::Done(FinishReason::Stop))
+            .await
+            .unwrap();
+        let post_send_ms = post_send_start.elapsed().as_millis() as i64;
+        let total_ms = test_start.elapsed().as_millis() as i64;
+
+        let call = store.llm_call("pre-send-delay").await.unwrap().unwrap();
+        let ttfb = call.ttfb_ms.unwrap();
+        let ttfr = call.ttfr_ms.unwrap();
+        let ttfo = call.ttfo_ms.unwrap();
+        let ttft = call.ttft_ms.unwrap();
+        let duration = call.duration_ms.unwrap();
+        let generation = call.generation_ms.unwrap();
+
+        assert!(
+            ttfb <= post_send_ms && ttfb < pre_send_ms,
+            "ttfb_ms={ttfb} exceeded post_send_ms={post_send_ms} (pre_send_ms={pre_send_ms})"
+        );
+        assert!(
+            ttfr <= post_send_ms && ttfr < pre_send_ms,
+            "ttfr_ms={ttfr} exceeded post_send_ms={post_send_ms}"
+        );
+        assert!(
+            ttfo <= post_send_ms && ttfo < pre_send_ms,
+            "ttfo_ms={ttfo} exceeded post_send_ms={post_send_ms}"
+        );
+        assert!(
+            ttft <= post_send_ms && ttft < pre_send_ms,
+            "ttft_ms={ttft} exceeded post_send_ms={post_send_ms}"
+        );
+        assert!(
+            duration <= post_send_ms && total_ms - duration >= pre_send_ms - 5,
+            "duration_ms={duration} included pre-send delay (total_ms={total_ms}, pre_send_ms={pre_send_ms})"
+        );
+        assert!(
+            generation <= duration,
+            "generation_ms={generation} exceeded duration_ms={duration}"
+        );
+        assert!(ttfb <= ttfo);
+        assert!(ttfo <= duration);
+    }
+
+    #[tokio::test]
+    async fn mark_stream_ended_excludes_post_stream_flush_delay() {
+        let (_directory, store, recorder) = test_recorder("post-stream-delay").await;
+        let send_start = Instant::now();
+
+        recorder.mark_request_sent().await;
+        recorder.response_headers(200).await.unwrap();
+        recorder
+            .event(&ModelEvent::TextDelta("hello".into()))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        recorder.response_chunk(b"data: [DONE]\n\n").await.unwrap();
+        recorder.mark_stream_ended().await;
+        let stream_window_ms = send_start.elapsed().as_millis() as i64;
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        recorder.completed(FinishReason::Stop).await.unwrap();
+        let total_ms = send_start.elapsed().as_millis() as i64;
+
+        let call = store.llm_call("post-stream-delay").await.unwrap().unwrap();
+        let duration = call.duration_ms.unwrap();
+        let generation = call.generation_ms.unwrap();
+        assert!(
+            duration <= stream_window_ms && total_ms - duration >= 180,
+            "duration_ms={duration} included post-stream delay (stream_window_ms={stream_window_ms}, total_ms={total_ms})"
+        );
+        assert!(
+            generation <= stream_window_ms,
+            "generation_ms={generation} included post-stream delay (stream_window_ms={stream_window_ms})"
+        );
+    }
+
+    #[tokio::test]
+    async fn usage_before_done_captures_stream_end_while_mid_stream_usage_resets() {
+        let (_dir_a, store_a, recorder_a) = test_recorder("usage-before-done").await;
+        let send_start_a = Instant::now();
+        recorder_a.mark_request_sent().await;
+        recorder_a
+            .event(&ModelEvent::TextDelta("hello".into()))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let before_usage_ms = send_start_a.elapsed().as_millis() as i64;
+        recorder_a
+            .event(&ModelEvent::Usage(Usage {
+                output_tokens: Some(10),
+                ..Default::default()
+            }))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        recorder_a
+            .event(&ModelEvent::Done(FinishReason::Stop))
+            .await
+            .unwrap();
+        let total_a_ms = send_start_a.elapsed().as_millis() as i64;
+
+        let call_a = store_a
+            .llm_call("usage-before-done")
+            .await
+            .unwrap()
+            .unwrap();
+        let duration_a = call_a.duration_ms.unwrap();
+        let generation_a = call_a.generation_ms.unwrap();
+        assert!(
+            duration_a <= before_usage_ms + 5 && total_a_ms - duration_a >= 180,
+            "duration_ms={duration_a} included post-Usage delay (before_usage_ms={before_usage_ms}, total_a_ms={total_a_ms})"
+        );
+        assert!(
+            generation_a <= before_usage_ms + 5,
+            "generation_ms={generation_a} included post-Usage delay (before_usage_ms={before_usage_ms})"
+        );
+
+        let (_dir_b, store_b, recorder_b) = test_recorder("mid-stream-usage").await;
+        recorder_b.mark_request_sent().await;
+        recorder_b
+            .event(&ModelEvent::TextDelta("part1".into()))
+            .await
+            .unwrap();
+        recorder_b
+            .event(&ModelEvent::Usage(Usage {
+                output_tokens: Some(5),
+                ..Default::default()
+            }))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        recorder_b
+            .event(&ModelEvent::TextDelta("part2".into()))
+            .await
+            .unwrap();
+        recorder_b
+            .event(&ModelEvent::Done(FinishReason::Stop))
+            .await
+            .unwrap();
+
+        let call_b = store_b.llm_call("mid-stream-usage").await.unwrap().unwrap();
+        assert!(
+            call_b.duration_ms.unwrap() >= 180,
+            "duration_ms={:?} froze at mid-stream Usage",
+            call_b.duration_ms
+        );
+        assert!(
+            call_b.generation_ms.unwrap() >= 180,
+            "generation_ms={:?} froze at mid-stream Usage",
+            call_b.generation_ms
+        );
+    }
+
+    #[tokio::test]
+    async fn latencies_fall_back_to_start_when_request_sent_is_not_marked() {
+        let (_directory, store, recorder) = test_recorder("fallback-start").await;
+
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        recorder.response_headers(200).await.unwrap();
+        recorder
+            .event(&ModelEvent::TextDelta("hello".into()))
+            .await
+            .unwrap();
+        recorder.completed(FinishReason::Stop).await.unwrap();
+
+        let call = store.llm_call("fallback-start").await.unwrap().unwrap();
+        assert!(call.ttfb_ms.unwrap() >= 60);
+        assert!(call.ttfo_ms.unwrap() >= 60);
+        assert!(call.duration_ms.unwrap() >= 60);
     }
 }

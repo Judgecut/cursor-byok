@@ -22,17 +22,7 @@ pub(super) async fn list(store: &Store, plugins: &PluginRegistry) -> Result<Vec<
             .then_with(|| left.model_hash.cmp(&right.model_hash))
     });
     for model in configured {
-        let group = model
-            .group_name
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .map(str::to_owned)
-            .unwrap_or_else(|| {
-                url::Url::parse(&model.base_url)
-                    .ok()
-                    .and_then(|url| url.host_str().map(str::to_owned))
-                    .unwrap_or_else(|| model.base_url.clone())
-            });
+        let group = model.provider_name.trim();
         let public_id = format!("{group}/{}", model.model_id);
         if ids.insert(public_id.clone()) {
             models.push(ListedModel {

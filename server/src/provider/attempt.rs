@@ -21,9 +21,13 @@ pub(crate) async fn send_once<F>(
 where
     F: FnOnce() -> reqwest::RequestBuilder,
 {
+    let request = build();
+    if let Some(recorder) = recorder {
+        recorder.mark_request_sent().await;
+    }
     let response = tokio::select! {
         _ = cancellation.cancelled() => return Ok(Attempt::Cancelled),
-        response = build().send() => response,
+        response = request.send() => response,
     }?;
     if let Some(recorder) = recorder {
         recorder
@@ -106,5 +110,106 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, Error::Http(_)));
+    }
+
+    #[tokio::test]
+    async fn send_once_marks_request_sent_before_http_send() {
+        use crate::{
+            model::{
+                CallOrigin, ModelConfigInput, ModelType, NewLlmCall, ProviderConfigInput,
+                ProviderType, OPENAI_CHAT_ENDPOINT,
+            },
+            provider::FinishReason,
+            store::Store,
+        };
+
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::connect(&format!(
+            "sqlite://{}",
+            directory.path().join("test.db").display()
+        ))
+        .await
+        .unwrap();
+        let provider = store
+            .create_provider(&ProviderConfigInput {
+                sort_order: 0,
+                name: "example.com".into(),
+                model_type: ModelType::OpenAi,
+                base_url: "https://example.com/v1/chat/completions".into(),
+                use_full_url: true,
+                api_key: "test-key".into(),
+                openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
+                custom_headers_enabled: false,
+                custom_headers: serde_json::json!({}),
+                extra_params_enabled: false,
+                extra_params: serde_json::json!({}),
+            })
+            .await
+            .unwrap();
+        let model = store
+            .create_model(&ModelConfigInput {
+                provider_id: provider.provider_id,
+                sort_order: 0,
+                display_name: "Test Model".into(),
+                tooltip_data: "Test Model".into(),
+                model_id: "test-model".into(),
+                reasoning_effort: None,
+                context_window_tokens: None,
+                max_output_tokens: None,
+                anthropic_thinking_effort: None,
+                thinking_budget_tokens: None,
+            })
+            .await
+            .unwrap();
+        let recorder = CallRecorder::start(
+            store.clone(),
+            NewLlmCall {
+                call_id: "attempt-send-once".into(),
+                run_id: "run".into(),
+                conversation_id: "conversation".into(),
+                provider_call_index: 0,
+                model_hash: model.model_hash,
+                provider_type: ProviderType::OpenAiChat,
+                provider_url: "https://example.com".into(),
+                request_type: ProviderType::OpenAiChat,
+                request_url: "https://example.com/v1/chat/completions".into(),
+                model_id: "test-model".into(),
+                display_name: "Test Model".into(),
+                reasoning_effort: None,
+                fast: false,
+                message_count: 1,
+                tool_count: 0,
+                detailed: false,
+                origin: CallOrigin::Run,
+                streaming: true,
+            },
+        )
+        .await
+        .unwrap();
+
+        let test_start = std::time::Instant::now();
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        let pre_send_ms = test_start.elapsed().as_millis() as i64;
+        let send_window_start = std::time::Instant::now();
+        let url = server(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok").await;
+        let client = reqwest::Client::new();
+        let attempt = send_once(
+            "test",
+            || client.get(&url),
+            &CancellationToken::new(),
+            Some(&recorder),
+        )
+        .await
+        .unwrap();
+        let send_window_ms = send_window_start.elapsed().as_millis() as i64;
+        assert!(matches!(attempt, Attempt::Response(_)));
+        recorder.completed(FinishReason::Stop).await.unwrap();
+
+        let call = store.llm_call("attempt-send-once").await.unwrap().unwrap();
+        let ttfb = call.ttfb_ms.unwrap();
+        assert!(
+            ttfb <= send_window_ms && ttfb < pre_send_ms,
+            "ttfb_ms={ttfb} exceeded send_window_ms={send_window_ms} (pre_send_ms={pre_send_ms})"
+        );
     }
 }

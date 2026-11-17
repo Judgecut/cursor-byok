@@ -706,11 +706,12 @@ fn summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<LlmCallSummary> {
         }
     });
     // Reasoning tokens reported without any observed thinking content hide part
-    // of the generation window, so the rate is reported as an estimate.
+    // of the generation window, so they are deducted and marked as an estimate.
     let performance = evaluate_performance(SpeedSample {
         status: &status,
         streaming,
         output_tokens,
+        reasoning_tokens,
         first_output_ms: ttfo_ms,
         generation_ms,
         duration_ms: row.try_get("duration_ms")?,
@@ -986,5 +987,129 @@ mod tests {
             })
         );
         assert_eq!(store.latest_context_usage("other").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn call_summary_evaluates_hidden_reasoning_and_short_tool_call_speeds() {
+        use crate::model::{SpeedStatus, SpeedUnavailableReason};
+
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::connect(&format!(
+            "sqlite://{}",
+            directory.path().join("test.db").display()
+        ))
+        .await
+        .unwrap();
+
+        for (call_id, observed_thinking, output_tokens, reasoning_tokens, ttfo_ms, generation_ms) in [
+            (
+                "hidden-reasoning",
+                false,
+                500_u64,
+                200_u64,
+                1_000_i64,
+                5_000_i64,
+            ),
+            (
+                "observed-thinking",
+                true,
+                500_u64,
+                200_u64,
+                1_000_i64,
+                5_000_i64,
+            ),
+            ("short-tool-call", false, 45_u64, 0_u64, 500_i64, 500_i64),
+            (
+                "only-hidden-reasoning",
+                false,
+                150_u64,
+                150_u64,
+                500_i64,
+                2_000_i64,
+            ),
+        ] {
+            store
+                .start_llm_call(&NewLlmCall {
+                    call_id: call_id.into(),
+                    run_id: "run".into(),
+                    conversation_id: "conversation".into(),
+                    provider_call_index: 0,
+                    model_hash: "mh".into(),
+                    provider_type: ProviderType::OpenAiChat,
+                    provider_url: "https://example.com/v1".into(),
+                    request_type: ProviderType::OpenAiChat,
+                    request_url: "https://example.com/v1/chat/completions".into(),
+                    model_id: "gpt-test".into(),
+                    display_name: "GPT Test".into(),
+                    reasoning_effort: None,
+                    fast: false,
+                    message_count: 1,
+                    tool_count: 0,
+                    detailed: false,
+                    origin: CallOrigin::Run,
+                    streaming: true,
+                })
+                .await
+                .unwrap();
+            store
+                .record_llm_output(call_id, Some(ttfo_ms), observed_thinking)
+                .await
+                .unwrap();
+            store
+                .record_llm_usage(
+                    call_id,
+                    Usage {
+                        input_tokens: Some(10),
+                        output_tokens: Some(output_tokens),
+                        reasoning_tokens: Some(reasoning_tokens),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            store
+                .finish_llm_call(
+                    call_id,
+                    CallFinish {
+                        status: "completed",
+                        finish_reason: Some("stop"),
+                        elapsed_ms: ttfo_ms + generation_ms,
+                        generation_ms: Some(generation_ms),
+                        error_kind: None,
+                        error_message: None,
+                    },
+                )
+                .await
+                .unwrap();
+        }
+
+        let hidden = store.llm_call("hidden-reasoning").await.unwrap().unwrap();
+        assert_eq!(hidden.performance.speed_status, SpeedStatus::Estimated);
+        assert_eq!(hidden.performance.tokens_per_second, Some(60.0));
+        assert_eq!(hidden.performance.reason, None);
+
+        let observed = store.llm_call("observed-thinking").await.unwrap().unwrap();
+        assert_eq!(observed.performance.speed_status, SpeedStatus::Measured);
+        assert_eq!(observed.performance.tokens_per_second, Some(100.0));
+
+        let short_tool = store.llm_call("short-tool-call").await.unwrap().unwrap();
+        assert_eq!(short_tool.performance.speed_status, SpeedStatus::Measured);
+        assert_eq!(short_tool.performance.tokens_per_second, Some(90.0));
+        assert_eq!(short_tool.performance.overall_tokens_per_second, Some(45.0));
+
+        let only_hidden = store
+            .llm_call("only-hidden-reasoning")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            only_hidden.performance.speed_status,
+            SpeedStatus::Unavailable
+        );
+        assert_eq!(
+            only_hidden.performance.reason,
+            Some(SpeedUnavailableReason::ShortOutput)
+        );
+        assert_eq!(only_hidden.performance.tokens_per_second, None);
     }
 }

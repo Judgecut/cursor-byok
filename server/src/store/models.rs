@@ -1,28 +1,154 @@
-//! Persists model and provider configuration.
-use std::{collections::HashSet, str::FromStr};
+//! Persists provider and model configuration.
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+};
 
 use sqlx::{Row, Sqlite, Transaction};
 
 use crate::{
-    model::{model_hash, normalize_model_input, ModelConfig, ModelConfigInput, ModelType},
+    model::{
+        generate_provider_id, model_hash, normalize_model_input, normalize_provider_input,
+        ModelConfig, ModelConfigInput, ModelType, ProviderConfig, ProviderConfigInput,
+    },
     Error, Result,
 };
 
 use super::{now_ms, Store};
 
-const MODEL_COLUMNS: &str = r#"
-    model_hash, sort_order, display_name, group_name, model_type, base_url, use_full_url, api_key, tooltip_data,
-    model_id, reasoning_effort, openai_endpoint, openai_extra_params_enabled,
-    openai_extra_params_json, custom_headers_enabled, custom_headers_json,
-    anthropic_extra_params_enabled, anthropic_extra_params_json, context_window_tokens,
-    max_completion_tokens, anthropic_max_tokens, anthropic_thinking_effort,
-    thinking_budget_tokens, created_at_ms, updated_at_ms
+const PROVIDER_COLUMNS: &str = r#"
+    provider_id, sort_order, name, model_type, base_url, use_full_url, api_key,
+    openai_endpoint, custom_headers_enabled, custom_headers_json,
+    extra_params_enabled, extra_params_json, created_at_ms, updated_at_ms
+"#;
+
+const MODEL_JOIN_COLUMNS: &str = r#"
+    m.model_hash, m.provider_id, p.name AS provider_name, m.sort_order, m.display_name,
+    p.model_type, p.base_url, p.use_full_url, p.api_key, p.openai_endpoint,
+    p.custom_headers_enabled, p.custom_headers_json, p.extra_params_enabled, p.extra_params_json,
+    m.tooltip_data, m.model_id, m.reasoning_effort, m.context_window_tokens,
+    m.max_output_tokens, m.anthropic_thinking_effort, m.thinking_budget_tokens,
+    m.created_at_ms, m.updated_at_ms
 "#;
 
 impl Store {
-    pub async fn models(&self) -> Result<Vec<ModelConfig>> {
+    pub async fn providers(&self) -> Result<Vec<ProviderConfig>> {
+        let query = format!(
+            "SELECT {PROVIDER_COLUMNS} FROM provider_configs ORDER BY sort_order, name, provider_id"
+        );
+        sqlx::query(&query)
+            .fetch_all(&self.pool)
+            .await?
+            .into_iter()
+            .map(provider_from_row)
+            .collect()
+    }
+
+    pub async fn provider(&self, provider_id: &str) -> Result<Option<ProviderConfig>> {
         let query =
-            format!("SELECT {MODEL_COLUMNS} FROM model_configs ORDER BY sort_order, display_name");
+            format!("SELECT {PROVIDER_COLUMNS} FROM provider_configs WHERE provider_id = ?");
+        sqlx::query(&query)
+            .bind(provider_id)
+            .fetch_optional(&self.pool)
+            .await?
+            .map(provider_from_row)
+            .transpose()
+    }
+
+    pub async fn create_provider(&self, input: &ProviderConfigInput) -> Result<ProviderConfig> {
+        let input = normalize_provider_input(input)?;
+        let provider_id = generate_provider_id();
+        let now = now_ms();
+        let _write = self.writes.lock().await;
+        let mut transaction = self.pool.begin().await?;
+        insert_provider_with_conflict(&mut transaction, &provider_id, &input, now, false).await?;
+        transaction.commit().await?;
+        Ok(self
+            .provider(&provider_id)
+            .await?
+            .expect("inserted provider must exist"))
+    }
+
+    pub async fn update_provider(
+        &self,
+        provider_id: &str,
+        input: &ProviderConfigInput,
+    ) -> Result<ProviderConfig> {
+        let input = normalize_provider_input(input)?;
+        let now = now_ms();
+        let _write = self.writes.lock().await;
+        let mut transaction = self.pool.begin().await?;
+        let result = sqlx::query(
+            r#"UPDATE provider_configs SET
+                sort_order = ?, name = ?, model_type = ?, base_url = ?, use_full_url = ?,
+                api_key = ?, openai_endpoint = ?, custom_headers_enabled = ?,
+                custom_headers_json = ?, extra_params_enabled = ?, extra_params_json = ?,
+                updated_at_ms = ?
+            WHERE provider_id = ?"#,
+        )
+        .bind(input.sort_order)
+        .bind(&input.name)
+        .bind(input.model_type.as_str())
+        .bind(&input.base_url)
+        .bind(input.use_full_url)
+        .bind(&input.api_key)
+        .bind(&input.openai_endpoint)
+        .bind(input.custom_headers_enabled)
+        .bind(serde_json::to_string(&input.custom_headers)?)
+        .bind(input.extra_params_enabled)
+        .bind(serde_json::to_string(&input.extra_params)?)
+        .bind(now)
+        .bind(provider_id)
+        .execute(&mut *transaction)
+        .await?;
+        if result.rows_affected() != 1 {
+            return Err(Error::RunNotFound(format!("provider {provider_id}")));
+        }
+        if input.model_type == ModelType::Anthropic {
+            sqlx::query(
+                "UPDATE model_configs
+                 SET anthropic_thinking_effort = COALESCE(NULLIF(trim(anthropic_thinking_effort), ''), 'xhigh')
+                 WHERE provider_id = ?",
+            )
+            .bind(provider_id)
+            .execute(&mut *transaction)
+            .await?;
+        }
+        transaction.commit().await?;
+        Ok(self
+            .provider(provider_id)
+            .await?
+            .expect("updated provider must exist"))
+    }
+
+    pub async fn delete_provider(&self, provider_id: &str) -> Result<()> {
+        let _write = self.writes.lock().await;
+        let mut transaction = self.pool.begin().await?;
+        sqlx::query(
+            "UPDATE llm_calls SET model_hash = NULL
+             WHERE model_hash IN (SELECT model_hash FROM model_configs WHERE provider_id = ?)",
+        )
+        .bind(provider_id)
+        .execute(&mut *transaction)
+        .await?;
+        let result = sqlx::query("DELETE FROM provider_configs WHERE provider_id = ?")
+            .bind(provider_id)
+            .execute(&mut *transaction)
+            .await?;
+        if result.rows_affected() != 1 {
+            return Err(Error::RunNotFound(format!("provider {provider_id}")));
+        }
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub async fn models(&self) -> Result<Vec<ModelConfig>> {
+        let query = format!(
+            "SELECT {MODEL_JOIN_COLUMNS}
+             FROM model_configs AS m
+             INNER JOIN provider_configs AS p ON p.provider_id = m.provider_id
+             ORDER BY m.sort_order, m.display_name"
+        );
         sqlx::query(&query)
             .fetch_all(&self.pool)
             .await?
@@ -32,7 +158,12 @@ impl Store {
     }
 
     pub async fn model(&self, hash: &str) -> Result<Option<ModelConfig>> {
-        let query = format!("SELECT {MODEL_COLUMNS} FROM model_configs WHERE model_hash = ?");
+        let query = format!(
+            "SELECT {MODEL_JOIN_COLUMNS}
+             FROM model_configs AS m
+             INNER JOIN provider_configs AS p ON p.provider_id = m.provider_id
+             WHERE m.model_hash = ?"
+        );
         sqlx::query(&query)
             .bind(hash)
             .fetch_optional(&self.pool)
@@ -50,19 +181,23 @@ impl Store {
         if inputs.is_empty() {
             return Err(Error::Config("at least one model is required".into()));
         }
+        let now = now_ms();
+        let _write = self.writes.lock().await;
+        let mut transaction = self.pool.begin().await?;
+        let mut provider_types = HashMap::new();
         let mut normalized = Vec::with_capacity(inputs.len());
         let mut hashes = HashSet::with_capacity(inputs.len());
         for input in inputs {
-            let input = normalize_model_input(input)?;
+            let model_type =
+                lookup_provider_type(&mut transaction, &mut provider_types, &input.provider_id)
+                    .await?;
+            let input = normalize_model_input(input, model_type)?;
             let hash = model_hash(&input)?;
             if !hashes.insert(hash.clone()) {
                 return Err(Error::Config("model configurations must be unique".into()));
             }
             normalized.push((hash, input));
         }
-        let now = now_ms();
-        let _write = self.writes.lock().await;
-        let mut transaction = self.pool.begin().await?;
         for (hash, input) in &normalized {
             insert_model(&mut transaction, hash, input, now).await?;
         }
@@ -75,32 +210,6 @@ impl Store {
         Ok(saved)
     }
 
-    pub(super) async fn create_models_if_missing(
-        &self,
-        inputs: &[ModelConfigInput],
-    ) -> Result<usize> {
-        let mut normalized = Vec::with_capacity(inputs.len());
-        let mut hashes = HashSet::with_capacity(inputs.len());
-        for input in inputs {
-            let input = normalize_model_input(input)?;
-            let hash = model_hash(&input)?;
-            if hashes.insert(hash.clone()) {
-                normalized.push((hash, input));
-            }
-        }
-        let now = now_ms();
-        let _write = self.writes.lock().await;
-        let mut transaction = self.pool.begin().await?;
-        let mut inserted = 0;
-        for (hash, input) in &normalized {
-            inserted += usize::from(
-                insert_model_with_conflict(&mut transaction, hash, input, now, true).await?,
-            );
-        }
-        transaction.commit().await?;
-        Ok(inserted)
-    }
-
     pub async fn update_model(
         &self,
         current_hash: &str,
@@ -110,11 +219,21 @@ impl Store {
             .model(current_hash)
             .await?
             .ok_or_else(|| Error::RunNotFound(format!("model {current_hash}")))?;
-        let input = normalize_model_input(input)?;
-        let next_hash = model_hash(&input)?;
         let now = now_ms();
         let _write = self.writes.lock().await;
         let mut transaction = self.pool.begin().await?;
+        let mut provider_types = HashMap::new();
+        let model_type =
+            lookup_provider_type(&mut transaction, &mut provider_types, &input.provider_id).await?;
+        let input = normalize_model_input(input, model_type)?;
+        let identity_unchanged = current.provider_id == input.provider_id
+            && current.model_id == input.model_id
+            && current.display_name == input.display_name;
+        let next_hash = if identity_unchanged {
+            current.model_hash.clone()
+        } else {
+            model_hash(&input)?
+        };
         if next_hash != current.model_hash {
             sqlx::query("UPDATE llm_calls SET model_hash = NULL WHERE model_hash = ?")
                 .bind(&current.model_hash)
@@ -123,36 +242,21 @@ impl Store {
         }
         let result = sqlx::query(
             r#"UPDATE model_configs SET
-                model_hash = ?, sort_order = ?, display_name = ?, group_name = ?, model_type = ?, base_url = ?,
-                use_full_url = ?, api_key = ?, tooltip_data = ?, model_id = ?, reasoning_effort = ?,
-                openai_endpoint = ?, openai_extra_params_enabled = ?, openai_extra_params_json = ?,
-                custom_headers_enabled = ?, custom_headers_json = ?,
-                anthropic_extra_params_enabled = ?, anthropic_extra_params_json = ?,
-                context_window_tokens = ?, max_completion_tokens = ?, anthropic_max_tokens = ?,
+                model_hash = ?, provider_id = ?, sort_order = ?, display_name = ?,
+                tooltip_data = ?, model_id = ?, reasoning_effort = ?,
+                context_window_tokens = ?, max_output_tokens = ?,
                 anthropic_thinking_effort = ?, thinking_budget_tokens = ?, updated_at_ms = ?
             WHERE model_hash = ?"#,
         )
         .bind(&next_hash)
+        .bind(&input.provider_id)
         .bind(input.sort_order)
         .bind(&input.display_name)
-        .bind(&input.group_name)
-        .bind(input.model_type.as_str())
-        .bind(&input.base_url)
-        .bind(input.use_full_url)
-        .bind(&input.api_key)
         .bind(&input.tooltip_data)
         .bind(&input.model_id)
         .bind(&input.reasoning_effort)
-        .bind(&input.openai_endpoint)
-        .bind(input.openai_extra_params_enabled)
-        .bind(serde_json::to_string(&input.openai_extra_params)?)
-        .bind(input.custom_headers_enabled)
-        .bind(serde_json::to_string(&input.custom_headers)?)
-        .bind(input.anthropic_extra_params_enabled)
-        .bind(serde_json::to_string(&input.anthropic_extra_params)?)
         .bind(input.context_window_tokens.map(to_i64).transpose()?)
-        .bind(input.max_completion_tokens.map(to_i64).transpose()?)
-        .bind(input.anthropic_max_tokens.map(to_i64).transpose()?)
+        .bind(input.max_output_tokens.map(to_i64).transpose()?)
         .bind(&input.anthropic_thinking_effort)
         .bind(input.thinking_budget_tokens.map(to_i64).transpose()?)
         .bind(now)
@@ -224,6 +328,66 @@ impl Store {
     }
 }
 
+async fn lookup_provider_type(
+    transaction: &mut Transaction<'_, Sqlite>,
+    cache: &mut HashMap<String, ModelType>,
+    provider_id: &str,
+) -> Result<ModelType> {
+    let provider_id = provider_id.trim();
+    if provider_id.is_empty() {
+        return Err(Error::Config("provider id cannot be empty".into()));
+    }
+    if let Some(model_type) = cache.get(provider_id) {
+        return Ok(*model_type);
+    }
+    let raw: Option<String> =
+        sqlx::query_scalar("SELECT model_type FROM provider_configs WHERE provider_id = ?")
+            .bind(provider_id)
+            .fetch_optional(&mut **transaction)
+            .await?;
+    let raw = raw.ok_or_else(|| Error::Config(format!("provider {provider_id} not found")))?;
+    let model_type = ModelType::from_str(&raw)?;
+    cache.insert(provider_id.to_owned(), model_type);
+    Ok(model_type)
+}
+
+pub(super) async fn insert_provider_with_conflict(
+    transaction: &mut Transaction<'_, Sqlite>,
+    provider_id: &str,
+    input: &ProviderConfigInput,
+    now: i64,
+    ignore_existing: bool,
+) -> Result<bool> {
+    let mut statement = String::from(
+        r#"INSERT INTO provider_configs(
+            provider_id, sort_order, name, model_type, base_url, use_full_url, api_key,
+            openai_endpoint, custom_headers_enabled, custom_headers_json,
+            extra_params_enabled, extra_params_json, created_at_ms, updated_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+    );
+    if ignore_existing {
+        statement.push_str(" ON CONFLICT(provider_id) DO NOTHING");
+    }
+    let result = sqlx::query(&statement)
+        .bind(provider_id)
+        .bind(input.sort_order)
+        .bind(&input.name)
+        .bind(input.model_type.as_str())
+        .bind(&input.base_url)
+        .bind(input.use_full_url)
+        .bind(&input.api_key)
+        .bind(&input.openai_endpoint)
+        .bind(input.custom_headers_enabled)
+        .bind(serde_json::to_string(&input.custom_headers)?)
+        .bind(input.extra_params_enabled)
+        .bind(serde_json::to_string(&input.extra_params)?)
+        .bind(now)
+        .bind(now)
+        .execute(&mut **transaction)
+        .await?;
+    Ok(result.rows_affected() == 1)
+}
+
 async fn insert_model(
     transaction: &mut Transaction<'_, Sqlite>,
     hash: &str,
@@ -234,7 +398,7 @@ async fn insert_model(
     Ok(())
 }
 
-async fn insert_model_with_conflict(
+pub(super) async fn insert_model_with_conflict(
     transaction: &mut Transaction<'_, Sqlite>,
     hash: &str,
     input: &ModelConfigInput,
@@ -243,39 +407,24 @@ async fn insert_model_with_conflict(
 ) -> Result<bool> {
     let mut statement = String::from(
         r#"INSERT INTO model_configs(
-            model_hash, sort_order, display_name, group_name, model_type, base_url, use_full_url, api_key, tooltip_data,
-            model_id, reasoning_effort, openai_endpoint, openai_extra_params_enabled,
-            openai_extra_params_json, custom_headers_enabled, custom_headers_json,
-            anthropic_extra_params_enabled, anthropic_extra_params_json, context_window_tokens,
-            max_completion_tokens, anthropic_max_tokens, anthropic_thinking_effort,
-            thinking_budget_tokens, created_at_ms, updated_at_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+            model_hash, provider_id, sort_order, display_name, tooltip_data,
+            model_id, reasoning_effort, context_window_tokens, max_output_tokens,
+            anthropic_thinking_effort, thinking_budget_tokens, created_at_ms, updated_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
     );
     if ignore_existing {
         statement.push_str(" ON CONFLICT(model_hash) DO NOTHING");
     }
     let result = sqlx::query(&statement)
         .bind(hash)
+        .bind(&input.provider_id)
         .bind(input.sort_order)
         .bind(&input.display_name)
-        .bind(&input.group_name)
-        .bind(input.model_type.as_str())
-        .bind(&input.base_url)
-        .bind(input.use_full_url)
-        .bind(&input.api_key)
         .bind(&input.tooltip_data)
         .bind(&input.model_id)
         .bind(&input.reasoning_effort)
-        .bind(&input.openai_endpoint)
-        .bind(input.openai_extra_params_enabled)
-        .bind(serde_json::to_string(&input.openai_extra_params)?)
-        .bind(input.custom_headers_enabled)
-        .bind(serde_json::to_string(&input.custom_headers)?)
-        .bind(input.anthropic_extra_params_enabled)
-        .bind(serde_json::to_string(&input.anthropic_extra_params)?)
         .bind(input.context_window_tokens.map(to_i64).transpose()?)
-        .bind(input.max_completion_tokens.map(to_i64).transpose()?)
-        .bind(input.anthropic_max_tokens.map(to_i64).transpose()?)
+        .bind(input.max_output_tokens.map(to_i64).transpose()?)
         .bind(&input.anthropic_thinking_effort)
         .bind(input.thinking_budget_tokens.map(to_i64).transpose()?)
         .bind(now)
@@ -285,37 +434,54 @@ async fn insert_model_with_conflict(
     Ok(result.rows_affected() == 1)
 }
 
-fn model_from_row(row: sqlx::sqlite::SqliteRow) -> Result<ModelConfig> {
-    Ok(ModelConfig {
-        model_hash: row.try_get("model_hash")?,
+fn provider_from_row(row: sqlx::sqlite::SqliteRow) -> Result<ProviderConfig> {
+    Ok(ProviderConfig {
+        provider_id: row.try_get("provider_id")?,
         sort_order: row.try_get("sort_order")?,
-        display_name: row.try_get("display_name")?,
-        group_name: row.try_get("group_name")?,
+        name: row.try_get("name")?,
         model_type: ModelType::from_str(row.try_get("model_type")?)?,
         base_url: row.try_get("base_url")?,
         use_full_url: row.try_get("use_full_url")?,
         api_key: row.try_get("api_key")?,
-        tooltip_data: row.try_get("tooltip_data")?,
-        model_id: row.try_get("model_id")?,
-        reasoning_effort: row.try_get("reasoning_effort")?,
         openai_endpoint: row.try_get("openai_endpoint")?,
-        openai_extra_params_enabled: row.try_get("openai_extra_params_enabled")?,
-        openai_extra_params: serde_json::from_str(
-            row.try_get::<String, _>("openai_extra_params_json")?
-                .as_str(),
-        )?,
         custom_headers_enabled: row.try_get("custom_headers_enabled")?,
         custom_headers: serde_json::from_str(
             row.try_get::<String, _>("custom_headers_json")?.as_str(),
         )?,
-        anthropic_extra_params_enabled: row.try_get("anthropic_extra_params_enabled")?,
-        anthropic_extra_params: serde_json::from_str(
-            row.try_get::<String, _>("anthropic_extra_params_json")?
-                .as_str(),
+        extra_params_enabled: row.try_get("extra_params_enabled")?,
+        extra_params: serde_json::from_str(
+            row.try_get::<String, _>("extra_params_json")?.as_str(),
         )?,
+        created_at_ms: row.try_get("created_at_ms")?,
+        updated_at_ms: row.try_get("updated_at_ms")?,
+    })
+}
+
+fn model_from_row(row: sqlx::sqlite::SqliteRow) -> Result<ModelConfig> {
+    Ok(ModelConfig {
+        model_hash: row.try_get("model_hash")?,
+        provider_id: row.try_get("provider_id")?,
+        provider_name: row.try_get("provider_name")?,
+        sort_order: row.try_get("sort_order")?,
+        display_name: row.try_get("display_name")?,
+        model_type: ModelType::from_str(row.try_get("model_type")?)?,
+        base_url: row.try_get("base_url")?,
+        use_full_url: row.try_get("use_full_url")?,
+        api_key: row.try_get("api_key")?,
+        openai_endpoint: row.try_get("openai_endpoint")?,
+        custom_headers_enabled: row.try_get("custom_headers_enabled")?,
+        custom_headers: serde_json::from_str(
+            row.try_get::<String, _>("custom_headers_json")?.as_str(),
+        )?,
+        extra_params_enabled: row.try_get("extra_params_enabled")?,
+        extra_params: serde_json::from_str(
+            row.try_get::<String, _>("extra_params_json")?.as_str(),
+        )?,
+        tooltip_data: row.try_get("tooltip_data")?,
+        model_id: row.try_get("model_id")?,
+        reasoning_effort: row.try_get("reasoning_effort")?,
         context_window_tokens: optional_u64(&row, "context_window_tokens")?,
-        max_completion_tokens: optional_u64(&row, "max_completion_tokens")?,
-        anthropic_max_tokens: optional_u64(&row, "anthropic_max_tokens")?,
+        max_output_tokens: optional_u64(&row, "max_output_tokens")?,
         anthropic_thinking_effort: row.try_get("anthropic_thinking_effort")?,
         thinking_budget_tokens: optional_u64(&row, "thinking_budget_tokens")?,
         created_at_ms: row.try_get("created_at_ms")?,
@@ -339,37 +505,39 @@ fn to_i64(value: u64) -> Result<i64> {
 mod tests {
     use super::*;
 
-    fn model_input(group_name: Option<&str>) -> ModelConfigInput {
-        ModelConfigInput {
+    fn provider_input(name: &str) -> ProviderConfigInput {
+        ProviderConfigInput {
             sort_order: 0,
-            display_name: "Test Model".into(),
-            group_name: group_name.map(String::from),
+            name: name.into(),
             model_type: ModelType::OpenAi,
             base_url: "https://example.com/v1/chat/completions".into(),
             use_full_url: true,
             api_key: "test-key".into(),
-            tooltip_data: "Test Model".into(),
-            model_id: "test-model".into(),
-            reasoning_effort: None,
             openai_endpoint: crate::model::OPENAI_CHAT_ENDPOINT.into(),
-            openai_extra_params_enabled: false,
-            openai_extra_params: serde_json::json!({}),
             custom_headers_enabled: false,
             custom_headers: serde_json::json!({}),
-            anthropic_extra_params_enabled: false,
-            anthropic_extra_params: serde_json::json!({}),
+            extra_params_enabled: false,
+            extra_params: serde_json::json!({}),
+        }
+    }
+
+    fn model_input(provider_id: &str, display_name: &str) -> ModelConfigInput {
+        ModelConfigInput {
+            provider_id: provider_id.into(),
+            sort_order: 0,
+            display_name: display_name.into(),
+            tooltip_data: display_name.into(),
+            model_id: "test-model".into(),
+            reasoning_effort: None,
             context_window_tokens: None,
-            max_completion_tokens: None,
-            anthropic_max_tokens: None,
+            max_output_tokens: None,
             anthropic_thinking_effort: None,
             thinking_budget_tokens: None,
         }
     }
 
-    /// 分组名是纯展示字段:入库时去除首尾空白、空串归一为 NULL,
-    /// 更新分组名不得改变模型身份哈希。
     #[tokio::test]
-    async fn group_name_round_trips_without_changing_model_identity() {
+    async fn updating_provider_propagates_to_models_without_changing_model_identity() {
         let directory = tempfile::tempdir().unwrap();
         let store = Store::connect(&format!(
             "sqlite://{}",
@@ -378,24 +546,40 @@ mod tests {
         .await
         .unwrap();
 
+        let provider = store
+            .create_provider(&provider_input("  My Provider  "))
+            .await
+            .unwrap();
+        assert_eq!(provider.name, "My Provider");
+
         let created = store
-            .create_model(&model_input(Some("  My Group  ")))
+            .create_model(&model_input(&provider.provider_id, "Test Model"))
             .await
             .unwrap();
-        assert_eq!(created.group_name.as_deref(), Some("My Group"));
+        assert_eq!(created.provider_name, "My Provider");
 
-        let renamed = store
-            .update_model(&created.model_hash, &model_input(Some("Renamed")))
+        let updated_provider = store
+            .update_provider(&provider.provider_id, &provider_input("Renamed Provider"))
             .await
             .unwrap();
-        assert_eq!(renamed.model_hash, created.model_hash);
-        assert_eq!(renamed.group_name.as_deref(), Some("Renamed"));
+        assert_eq!(updated_provider.provider_id, provider.provider_id);
+        assert_eq!(updated_provider.name, "Renamed Provider");
 
-        let cleared = store
-            .update_model(&created.model_hash, &model_input(Some("   ")))
+        let loaded = store.model(&created.model_hash).await.unwrap().unwrap();
+        assert_eq!(loaded.model_hash, created.model_hash);
+        assert_eq!(loaded.provider_name, "Renamed Provider");
+
+        let mut edited = model_input(&provider.provider_id, "Test Model");
+        edited.max_output_tokens = Some(16_384);
+        let updated_model = store
+            .update_model(&created.model_hash, &edited)
             .await
             .unwrap();
-        assert_eq!(cleared.model_hash, created.model_hash);
-        assert_eq!(cleared.group_name, None);
+        assert_eq!(updated_model.model_hash, created.model_hash);
+        assert_eq!(updated_model.max_output_tokens, Some(16_384));
+
+        store.delete_provider(&provider.provider_id).await.unwrap();
+        assert!(store.providers().await.unwrap().is_empty());
+        assert!(store.models().await.unwrap().is_empty());
     }
 }

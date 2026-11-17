@@ -25,7 +25,7 @@ use url::{Host, Url};
 pub use service::{
     CallDetail, CallListResult, CallSummary, ControlService, DiscoveredModels,
     LegacyModelImportPreview, LegacyModelImportResult, ModelConnectivityResult,
-    ModelDiscoveryInput, ObservabilitySettings,
+    ObservabilitySettings,
 };
 
 pub fn web_router(service: ControlService, assets: impl AsRef<std::path::Path>) -> Router {
@@ -123,10 +123,21 @@ pub fn api_router(service: ControlService) -> Router {
             post(ads::dismiss),
         )
         .route(
+            "/__byok-api__/api/providers",
+            get(models::list_providers).post(models::create_provider),
+        )
+        .route(
+            "/__byok-api__/api/providers/{provider_id}",
+            put(models::update_provider).delete(models::remove_provider),
+        )
+        .route(
+            "/__byok-api__/api/providers/{provider_id}/discover",
+            post(models::discover_provider_models),
+        )
+        .route(
             "/__byok-api__/api/models",
             get(models::list).post(models::create),
         )
-        .route("/__byok-api__/api/models/discover", post(models::discover))
         .route(
             "/__byok-api__/api/models/import-v0049",
             get(models::preview_v0049).post(models::import_v0049),

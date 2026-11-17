@@ -12,7 +12,7 @@ use axum::{
 use cursor_server::{
     model::{
         CallOrigin, ModelConfigInput, ModelInvocation, ModelRequest, ModelSpec, ModelType,
-        PromptSpec, OPENAI_CHAT_ENDPOINT, OPENAI_RESPONSES_ENDPOINT,
+        PromptSpec, ProviderConfigInput, OPENAI_CHAT_ENDPOINT, OPENAI_RESPONSES_ENDPOINT,
     },
     network::NetworkClients,
     plugin::{PluginRegistry, PluginRuntime},
@@ -94,27 +94,31 @@ async fn recorded_reasoning_effort_matches_the_effective_request() {
             if model_type == ModelType::Anthropic && configured.is_none() {
                 continue;
             }
+            let provider_cfg = store
+                .create_provider(&ProviderConfigInput {
+                    sort_order: 0,
+                    name: "test-provider".into(),
+                    model_type,
+                    base_url: format!("http://{address}"),
+                    use_full_url: false,
+                    api_key: "test-key".into(),
+                    openai_endpoint: endpoint.into(),
+                    custom_headers_enabled: false,
+                    custom_headers: json!({}),
+                    extra_params_enabled: false,
+                    extra_params: json!({}),
+                })
+                .await
+                .unwrap();
             let input = ModelConfigInput {
+                provider_id: provider_cfg.provider_id,
                 sort_order: 0,
                 display_name: "Test Model".into(),
-                group_name: None,
-                model_type,
-                base_url: format!("http://{address}"),
-                use_full_url: false,
-                api_key: "test-key".into(),
                 tooltip_data: "Test Model".into(),
                 model_id: uuid::Uuid::new_v4().to_string(),
                 reasoning_effort: configured.map(str::to_owned),
-                openai_endpoint: endpoint.into(),
-                openai_extra_params_enabled: false,
-                openai_extra_params: json!({}),
-                custom_headers_enabled: false,
-                custom_headers: json!({}),
-                anthropic_extra_params_enabled: false,
-                anthropic_extra_params: json!({}),
                 context_window_tokens: None,
-                max_completion_tokens: None,
-                anthropic_max_tokens: None,
+                max_output_tokens: None,
                 anthropic_thinking_effort: configured.map(str::to_owned),
                 thinking_budget_tokens: None,
             };

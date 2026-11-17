@@ -17,7 +17,10 @@ use cursor_server::{
         protocol::{connect, proto::aiserver::v1 as ai},
         transport::TransportRegistry,
     },
-    model::{ContentPart, ModelConfigInput, ModelType, ProjectedContent, OPENAI_CHAT_ENDPOINT},
+    model::{
+        ContentPart, ModelConfigInput, ModelType, ProjectedContent, ProviderConfigInput,
+        OPENAI_CHAT_ENDPOINT,
+    },
     network::NetworkClients,
     provider::{FinishReason, ModelEvent},
     store::{CommitPromptLocale, CommitSettings, DEFAULT_COMMIT_PROMPT_ZH_CN},
@@ -39,31 +42,41 @@ async fn commit_router(
     cursor::router(registry, clients).unwrap()
 }
 
-fn model_input(model_id: &str) -> ModelConfigInput {
-    ModelConfigInput {
-        sort_order: 1,
-        display_name: "Qwen Flash".into(),
-        group_name: None,
-        model_type: ModelType::OpenAi,
-        base_url: "https://example.com/v1".into(),
-        use_full_url: false,
-        api_key: "test-key".into(),
-        tooltip_data: "模型介绍".into(),
-        model_id: model_id.into(),
-        reasoning_effort: None,
-        openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
-        openai_extra_params_enabled: false,
-        openai_extra_params: serde_json::json!({}),
-        custom_headers_enabled: false,
-        custom_headers: serde_json::json!({}),
-        anthropic_extra_params_enabled: false,
-        anthropic_extra_params: serde_json::json!({}),
-        context_window_tokens: None,
-        max_completion_tokens: None,
-        anthropic_max_tokens: None,
-        anthropic_thinking_effort: None,
-        thinking_budget_tokens: None,
-    }
+async fn create_model(
+    store: &cursor_server::store::Store,
+    model_id: &str,
+) -> cursor_server::model::ModelConfig {
+    let provider = store
+        .create_provider(&ProviderConfigInput {
+            sort_order: 1,
+            name: "example.com".into(),
+            model_type: ModelType::OpenAi,
+            base_url: "https://example.com/v1".into(),
+            use_full_url: false,
+            api_key: "test-key".into(),
+            openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
+            custom_headers_enabled: false,
+            custom_headers: serde_json::json!({}),
+            extra_params_enabled: false,
+            extra_params: serde_json::json!({}),
+        })
+        .await
+        .unwrap();
+    store
+        .create_model(&ModelConfigInput {
+            provider_id: provider.provider_id,
+            sort_order: 1,
+            display_name: "Qwen Flash".into(),
+            tooltip_data: "模型介绍".into(),
+            model_id: model_id.into(),
+            reasoning_effort: None,
+            context_window_tokens: None,
+            max_output_tokens: None,
+            anthropic_thinking_effort: None,
+            thinking_budget_tokens: None,
+        })
+        .await
+        .unwrap()
 }
 
 async fn post_commit_message(
@@ -93,10 +106,7 @@ fn diff_request(diff: &str) -> ai::WriteGitCommitMessageRequest {
 #[tokio::test]
 async fn commit_message_is_generated_through_configured_model() {
     let (_directory, store) = fixtures::temp_store().await;
-    let created = store
-        .create_model(&model_input("qwen/qwen3-flash"))
-        .await
-        .unwrap();
+    let created = create_model(&store, "qwen/qwen3-flash").await;
     store
         .set_commit_settings(CommitSettings {
             model_id: created.model_hash.clone(),
@@ -140,10 +150,7 @@ async fn commit_message_is_generated_through_configured_model() {
 #[tokio::test]
 async fn custom_prompt_and_model_from_commit_settings_are_used() {
     let (_directory, store) = fixtures::temp_store().await;
-    let created = store
-        .create_model(&model_input("qwen/qwen3-coder"))
-        .await
-        .unwrap();
+    let created = create_model(&store, "qwen/qwen3-coder").await;
     store
         .set_commit_settings(CommitSettings {
             model_id: created.model_hash,
@@ -174,10 +181,7 @@ async fn custom_prompt_and_model_from_commit_settings_are_used() {
 #[tokio::test]
 async fn empty_diffs_are_rejected_when_generating() {
     let (_directory, store) = fixtures::temp_store().await;
-    let created = store
-        .create_model(&model_input("qwen/qwen3-flash"))
-        .await
-        .unwrap();
+    let created = create_model(&store, "qwen/qwen3-flash").await;
     store
         .set_commit_settings(CommitSettings {
             model_id: created.model_hash,
@@ -200,10 +204,7 @@ async fn empty_diffs_are_rejected_when_generating() {
 #[tokio::test]
 async fn tool_call_events_are_rejected() {
     let (_directory, store) = fixtures::temp_store().await;
-    let created = store
-        .create_model(&model_input("qwen/qwen3-flash"))
-        .await
-        .unwrap();
+    let created = create_model(&store, "qwen/qwen3-flash").await;
     store
         .set_commit_settings(CommitSettings {
             model_id: created.model_hash,

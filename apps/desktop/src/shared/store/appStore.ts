@@ -19,6 +19,8 @@ import {
   type PluginRuntimeStatus,
   type PortSettings,
   type PricingSyncState,
+  type Provider,
+  type ProviderInput,
   type SaveSupplierPricingInput,
   type SpeedAggregate,
   type SupplierPricingView,
@@ -62,6 +64,7 @@ export type CallsFilterHandoff = {
 };
 
 export type AppSnapshot = {
+  providers: Provider[];
   models: Model[];
   calls: LlmCall[];
   callsTotal: number;
@@ -89,7 +92,7 @@ export type AppSnapshot = {
 const emptySpeed = (): SpeedAggregate => ({
   average_tokens_per_second: null,
   output_tokens: 0,
-  duration_ms: 0,
+  generation_ms: 0,
   samples: 0,
   first_output_median_ms: null,
 });
@@ -101,6 +104,7 @@ let pendingInterfaceWrites = 0;
 let interfaceWriteQueue: Promise<void> = Promise.resolve();
 
 let snapshot: AppSnapshot = {
+  providers: [],
   models: [],
   calls: [],
   callsTotal: 0,
@@ -284,7 +288,8 @@ export const appStore = {
     const interfaceRevisionBefore = interfaceRevision;
     const canApplyInterfaceSettings = pendingInterfaceWrites === 0;
     try {
-      const [models, callsResult, overview, settings, ports, interfaceSettings, pricingModels, pricingSync, cursorHarness, pluginRuntime, plugins] = await Promise.all([
+      const [providers, models, callsResult, overview, settings, ports, interfaceSettings, pricingModels, pricingSync, cursorHarness, pluginRuntime, plugins] = await Promise.all([
+        api.providers(),
         api.models(),
         api.calls({ limit: 20, offset: 0 }),
         api.overview(),
@@ -298,6 +303,7 @@ export const appStore = {
         api.plugins(),
       ]);
       const patch: Partial<AppSnapshot> = {
+        providers,
         models,
         calls: callsResult.items,
         callsTotal: callsResult.total,
@@ -324,6 +330,39 @@ export const appStore = {
     }
   },
 
+  async createProvider(provider: ProviderInput) {
+    update({ cursorBusy: true, error: null });
+    try {
+      const created = await api.createProvider(provider);
+      await appStore.refresh();
+      return created;
+    } catch (cause) {
+      update({ error: cause instanceof Error ? cause.message : String(cause) });
+      return null;
+    } finally { update({ cursorBusy: false }); }
+  },
+  async updateProvider(providerId: string, provider: ProviderInput) {
+    update({ cursorBusy: true, error: null });
+    try {
+      const updated = await api.updateProvider(providerId, provider);
+      await appStore.refresh();
+      return updated;
+    } catch (cause) {
+      update({ error: cause instanceof Error ? cause.message : String(cause) });
+      return null;
+    } finally { update({ cursorBusy: false }); }
+  },
+  async deleteProvider(providerId: string) {
+    update({ cursorBusy: true, error: null });
+    try {
+      await api.deleteProvider(providerId);
+      await appStore.refresh();
+      return true;
+    } catch (cause) {
+      update({ error: cause instanceof Error ? cause.message : String(cause) });
+      return false;
+    } finally { update({ cursorBusy: false }); }
+  },
   async deleteModel(modelHash: string) {
     await perform(async () => {
       await api.deleteModel(modelHash);

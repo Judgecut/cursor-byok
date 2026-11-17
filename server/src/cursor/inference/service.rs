@@ -127,7 +127,7 @@ impl InferenceService {
             let headers = RunHeaders::parse(headers)?;
             let default_effort = configured.as_ref().and_then(|model| {
                 if model.model_type == ModelType::Anthropic {
-                    model.anthropic_thinking_effort.as_deref()
+                    model.anthropic_thinking_effort.as_deref().or(Some("xhigh"))
                 } else {
                     model.reasoning_effort.as_deref()
                 }
@@ -179,7 +179,9 @@ impl InferenceService {
                     context_window_tokens: model.context_window_tokens,
                     model_id: model.model_id,
                     reasoning_effort: if model.model_type == ModelType::Anthropic {
-                        model.anthropic_thinking_effort
+                        model
+                            .anthropic_thinking_effort
+                            .or_else(|| Some("xhigh".into()))
                     } else {
                         model.reasoning_effort
                     },

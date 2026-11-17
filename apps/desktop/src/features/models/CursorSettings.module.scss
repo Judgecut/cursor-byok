@@ -39,6 +39,9 @@
   button {
     height: 25px;
     padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     color: var(--vscode-descriptionForeground);
     background: transparent;
     border: 0;
@@ -105,6 +108,12 @@
   align-items: center;
   gap: 8px;
 }
+.groupHeaderActions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .groupSettings {
   display: flex;
   align-items: center;
@@ -118,6 +127,7 @@
   cursor: pointer;
 
   &:hover { color: var(--vscode-foreground); }
+  &.groupSettingsDelete:hover { color: var(--vscode-errorForeground, #f48771); }
 }
 .groupChevron {
   display: flex;
@@ -152,6 +162,58 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+}
+.emptyGroupRow {
+  padding: 10px 2px;
+  border-top: 1px solid var(--vscode-sideBar-border);
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-xs;
+}
+.providerSubgroup {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+
+  .modelRow {
+    padding-left: 16px;
+  }
+  .emptyGroupRow {
+    padding: 2px 2px 10px 16px;
+    border-top: 0;
+  }
+}
+.providerSubheader {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 2px 6px;
+  border-top: 1px solid var(--vscode-sideBar-border);
+}
+.providerSubheaderTitle {
+  min-width: 0;
+  flex: 1 1 160px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--vscode-foreground);
+  font-size: type.$font-size-xs;
+  font-weight: 600;
+}
+.providerSubheaderName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.providerSubheaderMeta {
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-2xs;
+  font-weight: 400;
+  white-space: nowrap;
 }
 .modelRow {
   min-width: 0;
@@ -225,6 +287,7 @@
 }
 .modelTypeBadge {
   flex: 0 0 auto;
+  max-width: 150px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -233,6 +296,12 @@
   border: 1px solid var(--vscode-sideBar-border);
   border-radius: 999px;
   font-size: type.$font-size-2xs;
+}
+.modelTypeBadgeLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .modelCardTest {
   min-height: 31px;

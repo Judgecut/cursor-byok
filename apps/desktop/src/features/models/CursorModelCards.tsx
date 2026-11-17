@@ -1,24 +1,19 @@
 import type { IconifyIcon } from "@iconify/react/offline";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Sortable from "sortablejs";
-import type { Model, PluginModelDescriptor } from "../../shared/api";
+import type { Model, PluginModelDescriptor, Provider } from "../../shared/api";
 import { Card } from "../../shared/ui/Card";
 import { Icon } from "../../shared/ui/Icon";
-import { chevronDownIcon, chevronRightIcon, claudeIcon, dragIcon, editIcon, flatColorOrganizationIcon, openAiIcon } from "../../shared/ui/icons";
+import { addIcon, chevronDownIcon, chevronRightIcon, claudeIcon, dragIcon, editIcon, flatColorOrganizationIcon, openAiIcon, trashIcon } from "../../shared/ui/icons";
 import { TruncatedButton } from "../../shared/ui/TruncatedButton";
 import { CursorModelTestResult, type CursorModelTestState } from "./CursorModelTestResult";
+import { cursorModelGroups, typeGroupDescriptor, type CursorModelGroup, type CursorModelGrouping } from "./cursorModelGrouping";
 import styles from "./CursorSettings.module.scss";
 
-export type CursorModelGrouping = "flat" | "provider" | "type";
-
-export type CursorModelGroup = {
-  key: string;
-  label: string;
-  icon: IconifyIcon;
-  models: Model[];
-};
+export { cursorModelGroups, type CursorModelGroup, type CursorModelGrouping };
 
 type CursorModelCardsProps = {
+  providers: Provider[];
   models: Model[];
   pluginModels: PluginModelDescriptor[];
   grouping: CursorModelGrouping;
@@ -32,50 +27,83 @@ type CursorModelCardsProps = {
   onTestPluginModel: (model: PluginModelDescriptor) => void;
   onPluginSettings: (model: PluginModelDescriptor) => void;
   onReorder: (modelHashes: string[]) => void;
-  onGroupSettings: (group: CursorModelGroup) => void;
+  onAddModelForProvider: (provider: Provider) => void;
+  onEditProvider: (provider: Provider) => void;
+  onDeleteProvider: (provider: Provider) => void;
 };
 
-type ModelGridProps = Omit<CursorModelCardsProps, "grouping" | "pluginModels" | "onTestPluginModel" | "onPluginSettings"> & {
+type ModelGridProps = {
+  models: Model[];
   sortable: boolean;
+  disabled: boolean;
+  testingModelHashes: Set<string>;
+  testResults: Map<string, CursorModelTestState>;
+  onTest: (model: Model) => void;
+  onEdit: (model: Model) => void;
+  onDuplicate: (model: Model) => void;
+  onDelete: (model: Model) => void;
+  onReorder: (modelHashes: string[]) => void;
 };
-
-export function cursorModelGroups(models: Model[], grouping: Exclude<CursorModelGrouping, "flat">): CursorModelGroup[] {
-  const groups = new Map<string, CursorModelGroup>();
-  for (const model of models) {
-    const descriptor = grouping === "provider" ? providerGroup(model) : typeGroup(model);
-    const group = groups.get(descriptor.key);
-    if (group) {
-      group.models.push(model);
-    } else {
-      groups.set(descriptor.key, { ...descriptor, models: [model] });
-    }
-  }
-  return [...groups.values()];
-}
 
 export function CursorModelCards(props: CursorModelCardsProps) {
+  const modelsByProvider = new Map<string, Model[]>();
+  for (const model of props.models) {
+    const list = modelsByProvider.get(model.provider_id);
+    if (list) list.push(model);
+    else modelsByProvider.set(model.provider_id, [model]);
+  }
+  const hasEmptyProvider = props.providers.some((provider) => !modelsByProvider.has(provider.provider_id));
   const builtins = props.grouping === "flat"
-    ? <div style={{ paddingTop: "10px" }}><ModelGrid {...props} sortable /></div>
-    : <div className={styles.modelGroups}>
-      {cursorModelGroups(props.models, props.grouping).map((group) => <CollapsibleGroup
-        key={group.key}
-        label={group.label}
-        icon={group.icon}
-        defaultOpen={false}
-        onSettings={props.grouping === "provider" ? () => props.onGroupSettings(group) : undefined}
-      >
-        {group.models.map((model) => <ModelListRow
-          key={model.model_hash}
-          model={model}
+    ? <>
+      {props.models.length > 0 && <div style={{ paddingTop: "10px" }}>
+        <ModelGrid
+          models={props.models}
+          sortable
           disabled={props.disabled}
-          testing={props.testingModelHashes.has(model.model_hash)}
-          result={props.testResults.get(model.model_hash)}
-          onTest={() => props.onTest(model)}
-          onEdit={() => props.onEdit(model)}
-          onDuplicate={() => props.onDuplicate(model)}
-          onDelete={() => props.onDelete(model)}
-        />)}
-      </CollapsibleGroup>)}
+          testingModelHashes={props.testingModelHashes}
+          testResults={props.testResults}
+          onTest={props.onTest}
+          onEdit={props.onEdit}
+          onDuplicate={props.onDuplicate}
+          onDelete={props.onDelete}
+          onReorder={props.onReorder}
+        />
+      </div>}
+      {props.providers.length > 0 && <CollapsibleGroup
+        key={hasEmptyProvider ? "flat:providers:empty" : "flat:providers"}
+        label={t("供应商")}
+        icon={flatColorOrganizationIcon}
+        defaultOpen={hasEmptyProvider || props.models.length === 0}
+      >
+        {props.providers.map((provider) => {
+          const providerModels = modelsByProvider.get(provider.provider_id) ?? [];
+          return <div className={styles.modelRow} key={provider.provider_id}>
+            <div className={styles.providerSubheaderTitle}>
+              <Icon icon={provider.type === "anthropic" ? claudeIcon : openAiIcon} size="1em" />
+              <span className={styles.providerSubheaderName}>{provider.name}</span>
+              <span className={styles.providerSubheaderMeta}>
+                {providerModels.length === 0
+                  ? t("该供应商下暂无模型，点击「添加模型」即可配置。")
+                  : t("{count} 个模型", { count: providerModels.length })}
+              </span>
+            </div>
+            <ProviderActionButtons
+              provider={provider}
+              disabled={props.disabled}
+              onAddModel={props.onAddModelForProvider}
+              onEdit={props.onEditProvider}
+              onDelete={props.onDeleteProvider}
+            />
+          </div>;
+        })}
+      </CollapsibleGroup>}
+    </>
+    : <div className={styles.modelGroups}>
+      {cursorModelGroups(props.models, props.grouping, props.providers).map((group) => (
+        props.grouping === "type"
+          ? renderTypeGroupCard(group, props)
+          : renderGroupCard(group, true, props)
+      ))}
     </div>;
   return <div className={styles.modelGroups}>
     {builtins}
@@ -98,6 +126,99 @@ export function CursorModelCards(props: CursorModelCardsProps) {
   </div>;
 }
 
+function ProviderActionButtons({ provider, disabled, onAddModel, onEdit, onDelete }: {
+  provider: Provider;
+  disabled: boolean;
+  onAddModel: (provider: Provider) => void;
+  onEdit: (provider: Provider) => void;
+  onDelete: (provider: Provider) => void;
+}) {
+  return <div className={styles.groupHeaderActions}>
+    <button type="button" className={styles.groupSettings} disabled={disabled} onClick={() => onAddModel(provider)}>
+      <Icon icon={addIcon} size="1em" />
+      {t("添加模型")}
+    </button>
+    <button type="button" className={styles.groupSettings} disabled={disabled} onClick={() => onEdit(provider)}>
+      <Icon icon={editIcon} size="1em" />
+      {t("编辑")}
+    </button>
+    <button type="button" className={`${styles.groupSettings} ${styles.groupSettingsDelete}`} disabled={disabled} onClick={() => onDelete(provider)}>
+      <Icon icon={trashIcon} size="1em" />
+      {t("删除")}
+    </button>
+  </div>;
+}
+
+function renderGroupCard(group: CursorModelGroup, defaultOpen: boolean, props: CursorModelCardsProps) {
+  const provider = group.provider;
+  return <CollapsibleGroup
+    key={group.key}
+    label={group.label}
+    icon={group.protocol === "anthropic" ? claudeIcon : openAiIcon}
+    defaultOpen={defaultOpen}
+    actions={provider ? <ProviderActionButtons
+      provider={provider}
+      disabled={props.disabled}
+      onAddModel={props.onAddModelForProvider}
+      onEdit={props.onEditProvider}
+      onDelete={props.onDeleteProvider}
+    /> : undefined}
+  >
+    {group.models.length === 0
+      ? <div className={styles.emptyGroupRow}>{t("该供应商下暂无模型，点击「添加模型」即可配置。")}</div>
+      : renderModelRows(group.models, props)}
+  </CollapsibleGroup>;
+}
+
+function renderTypeGroupCard(group: CursorModelGroup, props: CursorModelCardsProps) {
+  const providersInType = props.providers.filter((provider) => typeGroupDescriptor(provider).key === group.key);
+  const matchedProviderIds = new Set(providersInType.map((provider) => provider.provider_id));
+  const orphanModels = group.models.filter((model) => !matchedProviderIds.has(model.provider_id));
+  return <CollapsibleGroup
+    key={group.key}
+    label={group.label}
+    icon={group.protocol === "anthropic" ? claudeIcon : openAiIcon}
+    defaultOpen
+  >
+    {providersInType.map((provider) => {
+      const providerModels = group.models.filter((model) => model.provider_id === provider.provider_id);
+      return <div className={styles.providerSubgroup} key={provider.provider_id}>
+        <div className={styles.providerSubheader}>
+          <div className={styles.providerSubheaderTitle}>
+            <Icon icon={provider.type === "anthropic" ? claudeIcon : openAiIcon} size="1em" />
+            <span className={styles.providerSubheaderName}>{provider.name}</span>
+          </div>
+          <ProviderActionButtons
+            provider={provider}
+            disabled={props.disabled}
+            onAddModel={props.onAddModelForProvider}
+            onEdit={props.onEditProvider}
+            onDelete={props.onDeleteProvider}
+          />
+        </div>
+        {providerModels.length === 0
+          ? <div className={styles.emptyGroupRow}>{t("该供应商下暂无模型，点击「添加模型」即可配置。")}</div>
+          : renderModelRows(providerModels, props)}
+      </div>;
+    })}
+    {renderModelRows(orphanModels, props)}
+  </CollapsibleGroup>;
+}
+
+function renderModelRows(models: Model[], props: CursorModelCardsProps) {
+  return models.map((model) => <ModelListRow
+    key={model.model_hash}
+    model={model}
+    disabled={props.disabled}
+    testing={props.testingModelHashes.has(model.model_hash)}
+    result={props.testResults.get(model.model_hash)}
+    onTest={() => props.onTest(model)}
+    onEdit={() => props.onEdit(model)}
+    onDuplicate={() => props.onDuplicate(model)}
+    onDelete={() => props.onDelete(model)}
+  />);
+}
+
 function pluginGroups(models: PluginModelDescriptor[]) {
   const groups: { pluginId: string; pluginName: string; icon: string; models: PluginModelDescriptor[] }[] = [];
   for (const model of models) {
@@ -111,12 +232,12 @@ function pluginGroups(models: PluginModelDescriptor[]) {
   return groups;
 }
 
-function CollapsibleGroup({ label, icon, iconSrc, defaultOpen = true, onSettings, children }: {
+function CollapsibleGroup({ label, icon, iconSrc, defaultOpen = true, actions, children }: {
   label: string;
   icon?: IconifyIcon;
   iconSrc?: string;
   defaultOpen?: boolean;
-  onSettings?: () => void;
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -132,10 +253,7 @@ function CollapsibleGroup({ label, icon, iconSrc, defaultOpen = true, onSettings
         {iconSrc && <Icon src={iconSrc} size="1.1em" />}
         <span className={styles.groupLabel}>{label}</span>
       </button>
-      {onSettings && <button type="button" className={styles.groupSettings} onClick={onSettings}>
-        <Icon icon={editIcon} size="1em" />
-        {t("分组设置")}
-      </button>}
+      {actions}
       <button
         type="button"
         className={styles.groupChevron}
@@ -272,9 +390,9 @@ function ModelGrid({
               <span className={styles.modelCardNameText}>{model.display_name}</span>
               <span className={styles.modelCardModelId}>{model.model_id}</span>
             </div>
-            <span className={styles.modelTypeBadge}>
+            <span className={styles.modelTypeBadge} title={model.provider_name}>
               <Icon icon={model.type === "anthropic" ? claudeIcon : openAiIcon} />
-              {model.type === "anthropic" ? "Anthropic" : "OpenAI"}
+              <span className={styles.modelTypeBadgeLabel}>{model.provider_name}</span>
             </span>
           </div>
           <div className={styles.modelCardTest}>
@@ -290,29 +408,4 @@ function ModelGrid({
       </Card>;
     })}
   </div>;
-}
-
-function providerGroup(model: Model) {
-  const key = providerDomain(model.base_url);
-  const label = model.group_name?.trim() || key;
-  return { key, label, icon: flatColorOrganizationIcon };
-}
-
-function providerDomain(baseUrl: string) {
-  const value = baseUrl.trim();
-  try {
-    return new URL(value).hostname.toLowerCase() || value;
-  } catch {
-    try {
-      return new URL(`https://${value}`).hostname.toLowerCase() || value;
-    } catch {
-      return value;
-    }
-  }
-}
-
-function typeGroup(model: Model) {
-  if (model.type === "anthropic") return { key: "anthropic", label: "Anthropic", icon: claudeIcon };
-  if (model.openai_endpoint === "/v1/chat/completions") return { key: "openai-chat", label: "OpenAI Chat", icon: openAiIcon };
-  return { key: "openai-responses", label: "OpenAI Responses", icon: openAiIcon };
 }

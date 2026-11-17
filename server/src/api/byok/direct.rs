@@ -147,15 +147,15 @@ impl NativeForwarder {
         recorder
             .request(Value::Object(logged_headers), &body)
             .await?;
-        let response = match client
+        let request = client
             .post(&request_url)
             .headers(upstream_headers)
-            .json(&body)
-            .send()
-            .await
-        {
+            .json(&body);
+        recorder.mark_request_sent().await;
+        let response = match request.send().await {
             Ok(response) => response,
             Err(error) => {
+                recorder.mark_stream_ended().await;
                 let error = Error::Http(error);
                 recorder.failed(&error).await?;
                 return Err(error);
@@ -170,11 +170,13 @@ impl NativeForwarder {
             let bytes = match response.bytes().await {
                 Ok(bytes) => bytes,
                 Err(error) => {
+                    recorder.mark_stream_ended().await;
                     let error = Error::Http(error);
                     recorder.failed(&error).await?;
                     return Err(error);
                 }
             };
+            recorder.mark_stream_ended().await;
             recorder.response_chunk(&bytes).await?;
             if status.is_success() {
                 if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
@@ -221,11 +223,13 @@ impl NativeForwarder {
                     Ok(Some(Ok(chunk))) => chunk,
                     Ok(None) => break,
                     Ok(Some(Err(error))) => {
+                        recorder.mark_stream_ended().await;
                         let error = Error::Http(error);
                         recorder.failed(&error).await?;
                         Err::<Bytes, Error>(error)?
                     }
                     Err(_) => {
+                        recorder.mark_stream_ended().await;
                         let error = Error::Provider("native upstream stream idle timeout".into());
                         recorder.failed(&error).await?;
                         Err::<Bytes, Error>(error)?
@@ -235,6 +239,7 @@ impl NativeForwarder {
                 let _ = sender.send(chunk.clone()).await;
                 yield chunk;
             }
+            recorder.mark_stream_ended().await;
             drop(sender);
             if let Ok(summary) = observer.await {
                 if let Some(usage) = summary.usage { recorder.usage(usage).await?; }

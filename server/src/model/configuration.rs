@@ -83,40 +83,74 @@ impl FromStr for ModelType {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ModelConfigInput {
+pub struct ProviderConfigInput {
     #[serde(default)]
     pub sort_order: i64,
-    pub display_name: String,
-    /// 供应商分组的自定义显示名;同一 base_url 主机下的模型共享。
-    #[serde(default)]
-    pub group_name: Option<String>,
+    pub name: String,
     #[serde(rename = "type")]
     pub model_type: ModelType,
     pub base_url: String,
     #[serde(default)]
     pub use_full_url: bool,
     pub api_key: String,
-    pub tooltip_data: String,
-    pub model_id: String,
-    #[serde(default)]
-    pub reasoning_effort: Option<String>,
     #[serde(default)]
     pub openai_endpoint: String,
-    #[serde(default)]
-    pub openai_extra_params_enabled: bool,
-    #[serde(default = "empty_object")]
-    pub openai_extra_params: serde_json::Value,
     #[serde(default)]
     pub custom_headers_enabled: bool,
     #[serde(default = "empty_object")]
     pub custom_headers: serde_json::Value,
     #[serde(default)]
-    pub anthropic_extra_params_enabled: bool,
+    pub extra_params_enabled: bool,
     #[serde(default = "empty_object")]
-    pub anthropic_extra_params: serde_json::Value,
+    pub extra_params: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ProviderConfig {
+    pub provider_id: String,
+    pub sort_order: i64,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub model_type: ModelType,
+    pub base_url: String,
+    pub use_full_url: bool,
+    pub api_key: String,
+    pub openai_endpoint: String,
+    pub custom_headers_enabled: bool,
+    pub custom_headers: serde_json::Value,
+    pub extra_params_enabled: bool,
+    pub extra_params: serde_json::Value,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+}
+
+impl ProviderConfig {
+    pub fn provider_type(&self) -> ProviderType {
+        provider_type_for(self.model_type, &self.openai_endpoint)
+    }
+
+    pub fn request_url(&self) -> Result<String> {
+        resolve_request_url(
+            self.model_type,
+            &self.base_url,
+            &self.openai_endpoint,
+            self.use_full_url,
+        )
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ModelConfigInput {
+    pub provider_id: String,
+    #[serde(default)]
+    pub sort_order: i64,
+    pub display_name: String,
+    pub tooltip_data: String,
+    pub model_id: String,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
     pub context_window_tokens: Option<u64>,
-    pub max_completion_tokens: Option<u64>,
-    pub anthropic_max_tokens: Option<u64>,
+    pub max_output_tokens: Option<u64>,
     #[serde(default)]
     pub anthropic_thinking_effort: Option<String>,
     pub thinking_budget_tokens: Option<u64>,
@@ -125,27 +159,25 @@ pub struct ModelConfigInput {
 #[derive(Clone, Debug, Serialize)]
 pub struct ModelConfig {
     pub model_hash: String,
+    pub provider_id: String,
+    pub provider_name: String,
     pub sort_order: i64,
     pub display_name: String,
-    pub group_name: Option<String>,
     #[serde(rename = "type")]
     pub model_type: ModelType,
     pub base_url: String,
     pub use_full_url: bool,
     pub api_key: String,
+    pub openai_endpoint: String,
+    pub custom_headers_enabled: bool,
+    pub custom_headers: serde_json::Value,
+    pub extra_params_enabled: bool,
+    pub extra_params: serde_json::Value,
     pub tooltip_data: String,
     pub model_id: String,
     pub reasoning_effort: Option<String>,
-    pub openai_endpoint: String,
-    pub openai_extra_params_enabled: bool,
-    pub openai_extra_params: serde_json::Value,
-    pub custom_headers_enabled: bool,
-    pub custom_headers: serde_json::Value,
-    pub anthropic_extra_params_enabled: bool,
-    pub anthropic_extra_params: serde_json::Value,
     pub context_window_tokens: Option<u64>,
-    pub max_completion_tokens: Option<u64>,
-    pub anthropic_max_tokens: Option<u64>,
+    pub max_output_tokens: Option<u64>,
     pub anthropic_thinking_effort: Option<String>,
     pub thinking_budget_tokens: Option<u64>,
     pub created_at_ms: i64,
@@ -154,13 +186,7 @@ pub struct ModelConfig {
 
 impl ModelConfig {
     pub fn provider_type(&self) -> ProviderType {
-        match self.model_type {
-            ModelType::Anthropic => ProviderType::Anthropic,
-            ModelType::OpenAi if self.openai_endpoint == OPENAI_RESPONSES_ENDPOINT => {
-                ProviderType::OpenAiResponses
-            }
-            ModelType::OpenAi => ProviderType::OpenAiChat,
-        }
+        provider_type_for(self.model_type, &self.openai_endpoint)
     }
 
     pub fn request_url(&self) -> Result<String> {
@@ -173,19 +199,14 @@ impl ModelConfig {
     }
 
     pub fn max_output_tokens(&self) -> Option<u64> {
-        match self.model_type {
-            ModelType::OpenAi => self.max_completion_tokens,
-            ModelType::Anthropic => self.anthropic_max_tokens.or(self.max_completion_tokens),
-        }
+        self.max_output_tokens
     }
 
     pub fn extra_params(&self) -> &serde_json::Value {
-        match self.model_type {
-            ModelType::OpenAi if self.openai_extra_params_enabled => &self.openai_extra_params,
-            ModelType::Anthropic if self.anthropic_extra_params_enabled => {
-                &self.anthropic_extra_params
-            }
-            _ => empty_object_ref(),
+        if self.extra_params_enabled {
+            &self.extra_params
+        } else {
+            empty_object_ref()
         }
     }
 
@@ -199,79 +220,53 @@ impl ModelConfig {
         if model.reasoning.effort.is_none() && model.reasoning.enabled_override != Some(false) {
             model.reasoning.effort = match self.model_type {
                 ModelType::OpenAi => self.reasoning_effort.clone(),
-                ModelType::Anthropic => self.anthropic_thinking_effort.clone(),
+                ModelType::Anthropic => self
+                    .anthropic_thinking_effort
+                    .clone()
+                    .or_else(|| Some("xhigh".into())),
             };
         }
         model.reasoning.enabled |= model.reasoning.effort.is_some();
     }
 }
 
-pub fn normalize_model_input(input: &ModelConfigInput) -> Result<ModelConfigInput> {
-    let display_name = required(&input.display_name, "model display name")?;
-    let group_name = input
-        .group_name
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(String::from);
+fn provider_type_for(model_type: ModelType, openai_endpoint: &str) -> ProviderType {
+    match model_type {
+        ModelType::Anthropic => ProviderType::Anthropic,
+        ModelType::OpenAi if openai_endpoint == OPENAI_RESPONSES_ENDPOINT => {
+            ProviderType::OpenAiResponses
+        }
+        ModelType::OpenAi => ProviderType::OpenAiChat,
+    }
+}
+
+pub fn generate_provider_id() -> String {
+    uuid::Uuid::new_v4().simple().to_string()[..16].to_owned()
+}
+
+pub fn normalize_provider_input(input: &ProviderConfigInput) -> Result<ProviderConfigInput> {
+    let name = required(&input.name, "provider name")?;
     let base_url = normalize_request_url(&input.base_url)?;
-    let api_key = required(&input.api_key, "model API key")?;
-    let tooltip_data = required(&input.tooltip_data, "model tooltip")?;
-    let model_id = required(&input.model_id, "model id")?;
-    let reasoning_effort = normalize_effort(input.reasoning_effort.as_deref(), true)?;
-    let anthropic_thinking_effort = match input.model_type {
-        ModelType::Anthropic => Some(
-            normalize_effort(
-                input.anthropic_thinking_effort.as_deref().or(Some("xhigh")),
-                false,
-            )?
-            .expect("Anthropic effort has a default"),
-        ),
-        ModelType::OpenAi => None,
-    };
+    let api_key = required(&input.api_key, "provider API key")?;
     let openai_endpoint = match input.model_type {
         ModelType::OpenAi => normalize_openai_endpoint(&input.openai_endpoint)?,
         ModelType::Anthropic => String::new(),
     };
-    validate_object(&input.openai_extra_params, "OpenAI extra params")?;
-    validate_object(&input.anthropic_extra_params, "Anthropic extra params")?;
     validate_headers(&input.custom_headers)?;
+    validate_object(&input.extra_params, "provider extra params")?;
 
-    let normalized = ModelConfigInput {
+    let normalized = ProviderConfigInput {
         sort_order: input.sort_order.max(0),
-        display_name,
-        group_name,
+        name,
         model_type: input.model_type,
         base_url,
         use_full_url: input.use_full_url,
         api_key,
-        tooltip_data,
-        model_id,
-        reasoning_effort: (input.model_type == ModelType::OpenAi)
-            .then_some(reasoning_effort)
-            .flatten(),
         openai_endpoint,
-        openai_extra_params_enabled: input.model_type == ModelType::OpenAi
-            && input.openai_extra_params_enabled,
-        openai_extra_params: if input.model_type == ModelType::OpenAi {
-            input.openai_extra_params.clone()
-        } else {
-            empty_object()
-        },
         custom_headers_enabled: input.custom_headers_enabled,
         custom_headers: input.custom_headers.clone(),
-        anthropic_extra_params_enabled: input.model_type == ModelType::Anthropic
-            && input.anthropic_extra_params_enabled,
-        anthropic_extra_params: if input.model_type == ModelType::Anthropic {
-            input.anthropic_extra_params.clone()
-        } else {
-            empty_object()
-        },
-        context_window_tokens: positive(input.context_window_tokens, "context window")?,
-        max_completion_tokens: positive(input.max_completion_tokens, "max completion tokens")?,
-        anthropic_max_tokens: positive(input.anthropic_max_tokens, "Anthropic max tokens")?,
-        anthropic_thinking_effort,
-        thinking_budget_tokens: positive(input.thinking_budget_tokens, "thinking budget")?,
+        extra_params_enabled: input.extra_params_enabled,
+        extra_params: input.extra_params.clone(),
     };
     resolve_request_url(
         normalized.model_type,
@@ -282,24 +277,52 @@ pub fn normalize_model_input(input: &ModelConfigInput) -> Result<ModelConfigInpu
     Ok(normalized)
 }
 
+pub fn normalize_model_input(
+    input: &ModelConfigInput,
+    model_type: ModelType,
+) -> Result<ModelConfigInput> {
+    let provider_id = required(&input.provider_id, "provider id")?;
+    let display_name = required(&input.display_name, "model display name")?;
+    let tooltip_data = required(&input.tooltip_data, "model tooltip")?;
+    let model_id = required(&input.model_id, "model id")?;
+    let reasoning_effort = match model_type {
+        ModelType::OpenAi => normalize_effort(input.reasoning_effort.as_deref(), true)?,
+        ModelType::Anthropic => None,
+    };
+    let anthropic_thinking_effort = match model_type {
+        ModelType::Anthropic => Some(
+            normalize_effort(
+                input.anthropic_thinking_effort.as_deref().or(Some("xhigh")),
+                false,
+            )?
+            .expect("Anthropic effort has a default"),
+        ),
+        ModelType::OpenAi => None,
+    };
+    let thinking_budget_tokens = positive(input.thinking_budget_tokens, "thinking budget")?;
+
+    Ok(ModelConfigInput {
+        provider_id,
+        sort_order: input.sort_order.max(0),
+        display_name,
+        tooltip_data,
+        model_id,
+        reasoning_effort,
+        context_window_tokens: positive(input.context_window_tokens, "context window")?,
+        max_output_tokens: positive(input.max_output_tokens, "max output tokens")?,
+        anthropic_thinking_effort,
+        thinking_budget_tokens: match model_type {
+            ModelType::Anthropic => thinking_budget_tokens,
+            ModelType::OpenAi => None,
+        },
+    })
+}
+
 pub fn model_hash(input: &ModelConfigInput) -> Result<String> {
-    let normalized = normalize_model_input(input)?;
-    let request_url = resolve_request_url(
-        normalized.model_type,
-        &normalized.base_url,
-        &normalized.openai_endpoint,
-        normalized.use_full_url,
-    )?;
-    let mut parts = vec![
-        request_url,
-        normalized.model_id,
-        normalized.api_key,
-        normalized.display_name,
-    ];
-    if normalized.model_type == ModelType::OpenAi {
-        parts.push(normalized.openai_endpoint);
-    }
-    let digest = Sha256::digest(parts.join("\n").as_bytes());
+    let provider_id = required(&input.provider_id, "provider id")?;
+    let model_id = required(&input.model_id, "model id")?;
+    let display_name = required(&input.display_name, "model display name")?;
+    let digest = Sha256::digest([provider_id, model_id, display_name].join("\n").as_bytes());
     Ok(hex::encode(&digest[..8]))
 }
 

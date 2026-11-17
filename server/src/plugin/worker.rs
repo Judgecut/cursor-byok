@@ -534,6 +534,9 @@ impl HostContext {
     ) -> Result<serde_json::Value> {
         let (request, cancellation, recorder) = self.request(request_id, &params).await?;
         let request = request.timeout(Duration::from_secs(60));
+        if let Some(recorder) = &recorder {
+            recorder.mark_request_sent().await;
+        }
         let response = tokio::select! {
             _ = cancellation.cancelled() => return Err(Error::Cancelled),
             response = request.send() => response?,
@@ -575,6 +578,9 @@ impl HostContext {
         params: serde_json::Value,
     ) -> Result<serde_json::Value> {
         let (request, cancellation, recorder) = self.request(request_id, &params).await?;
+        if let Some(recorder) = &recorder {
+            recorder.mark_request_sent().await;
+        }
         let response = tokio::select! {
             _ = cancellation.cancelled() => return Err(Error::Cancelled),
             response = request.send() => response?,

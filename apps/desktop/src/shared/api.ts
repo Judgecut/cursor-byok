@@ -5,28 +5,57 @@ import type { DisplayCurrency } from "./utils/costFormat";
 
 export type ModelType = "openai" | "anthropic";
 
-export interface Model {
-  model_hash: string;
+export interface Provider {
+  provider_id: string;
   sort_order: number;
-  display_name: string;
-  group_name: string | null;
+  name: string;
   type: ModelType;
   base_url: string;
   use_full_url: boolean;
   api_key: string;
+  openai_endpoint: string;
+  custom_headers_enabled: boolean;
+  custom_headers: Record<string, string>;
+  extra_params_enabled: boolean;
+  extra_params: Record<string, unknown>;
+  created_at_ms: number;
+  updated_at_ms: number;
+}
+
+export interface ProviderInput {
+  sort_order: number;
+  name: string;
+  type: ModelType;
+  base_url: string;
+  use_full_url: boolean;
+  api_key: string;
+  openai_endpoint: string;
+  custom_headers_enabled: boolean;
+  custom_headers: Record<string, string>;
+  extra_params_enabled: boolean;
+  extra_params: Record<string, unknown>;
+}
+
+export interface Model {
+  model_hash: string;
+  provider_id: string;
+  provider_name: string;
+  sort_order: number;
+  display_name: string;
+  type: ModelType;
+  base_url: string;
+  use_full_url: boolean;
+  api_key: string;
+  openai_endpoint: string;
+  custom_headers_enabled: boolean;
+  custom_headers: Record<string, string>;
+  extra_params_enabled: boolean;
+  extra_params: Record<string, unknown>;
   tooltip_data: string;
   model_id: string;
   reasoning_effort: string | null;
-  openai_endpoint: string;
-  openai_extra_params_enabled: boolean;
-  openai_extra_params: Record<string, unknown>;
-  custom_headers_enabled: boolean;
-  custom_headers: Record<string, string>;
-  anthropic_extra_params_enabled: boolean;
-  anthropic_extra_params: Record<string, unknown>;
   context_window_tokens: number | null;
-  max_completion_tokens: number | null;
-  anthropic_max_tokens: number | null;
+  max_output_tokens: number | null;
   anthropic_thinking_effort: string | null;
   thinking_budget_tokens: number | null;
   created_at_ms: number;
@@ -34,36 +63,16 @@ export interface Model {
 }
 
 export interface ModelInput {
+  provider_id: string;
   sort_order: number;
   display_name: string;
-  group_name: string | null;
-  type: ModelType;
-  base_url: string;
-  use_full_url: boolean;
-  api_key: string;
   tooltip_data: string;
   model_id: string;
   reasoning_effort: string | null;
-  openai_endpoint: string;
-  openai_extra_params_enabled: boolean;
-  openai_extra_params: Record<string, unknown>;
-  custom_headers_enabled: boolean;
-  custom_headers: Record<string, string>;
-  anthropic_extra_params_enabled: boolean;
-  anthropic_extra_params: Record<string, unknown>;
   context_window_tokens: number | null;
-  max_completion_tokens: number | null;
-  anthropic_max_tokens: number | null;
+  max_output_tokens: number | null;
   anthropic_thinking_effort: string | null;
   thinking_budget_tokens: number | null;
-}
-
-export interface ModelDiscoveryInput {
-  type: ModelType;
-  base_url: string;
-  api_key: string;
-  custom_headers_enabled: boolean;
-  custom_headers: Record<string, string>;
 }
 
 export interface LegacyModelImportPreviewItem {
@@ -118,18 +127,18 @@ export interface CallPerformance {
   overall_tokens_per_second: number | null;
   overall_reason: SpeedUnavailableReason | null;
   speed_status: SpeedStatus;
-  /** Output tokens divided by the generation window after the first output. */
+  /** Visible output tokens divided by the generation window after the first output. */
   tokens_per_second: number | null;
   reason: SpeedUnavailableReason | null;
   first_output_ms: number | null;
   generation_ms: number | null;
 }
 
-/** Pooled end-to-end rate with the totals behind it. */
+/** Pooled generation rate with the totals behind it. */
 export interface SpeedAggregate {
   average_tokens_per_second: number | null;
   output_tokens: number;
-  duration_ms: number;
+  generation_ms: number;
   samples: number;
   first_output_median_ms: number | null;
 }
@@ -759,10 +768,14 @@ export const api = {
     });
   },
   dismissAd: (id: string, reason: string) => request<void>(`/promotions/${encodeURIComponent(id)}/dismissals`, { method: "POST", body: JSON.stringify({ reason }) }),
+  providers: () => request<Provider[]>("/providers"),
+  createProvider: (provider: ProviderInput) => request<Provider>("/providers", { method: "POST", body: JSON.stringify(provider) }),
+  updateProvider: (providerId: string, provider: ProviderInput) => request<Provider>(`/providers/${encodeURIComponent(providerId)}`, { method: "PUT", body: JSON.stringify(provider) }),
+  deleteProvider: (providerId: string) => request<void>(`/providers/${encodeURIComponent(providerId)}`, { method: "DELETE" }),
+  discoverProviderModels: (providerId: string) => request<{ models: string[] }>(`/providers/${encodeURIComponent(providerId)}/discover`, { method: "POST" }),
   models: () => request<Model[]>("/models"),
   createModels: (models: ModelInput[]) => request<Model[]>("/models", { method: "POST", body: JSON.stringify({ models }) }),
   reorderModels: (modelHashes: string[]) => request<Model[]>("/models/order", { method: "PUT", body: JSON.stringify({ model_hashes: modelHashes }) }),
-  discoverModels: (input: ModelDiscoveryInput) => request<{ models: string[] }>("/models/discover", { method: "POST", body: JSON.stringify(input) }),
   previewV0049Models: () => request<LegacyModelImportPreview>("/models/import-v0049"),
   importV0049Models: () => request<LegacyModelImportResult>("/models/import-v0049", { method: "POST" }),
   updateModel: (hash: string, model: ModelInput) => request<Model>(`/models/${hash}`, { method: "PUT", body: JSON.stringify(model) }),

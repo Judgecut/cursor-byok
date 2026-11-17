@@ -13,8 +13,8 @@ use crate::{
         transport::TransportRegistry,
     },
     model::{
-        ModelConfigInput, ModelInvocation, ModelRequest, ModelType, ProjectedContent, Usage,
-        OPENAI_CHAT_ENDPOINT,
+        ModelConfigInput, ModelInvocation, ModelRequest, ModelType, ProjectedContent,
+        ProviderConfigInput, Usage, OPENAI_CHAT_ENDPOINT,
     },
     network::NetworkClients,
     provider::{FinishReason, ModelEvent, Provider, ProviderStream},
@@ -35,7 +35,11 @@ mod inheritance;
 #[tokio::test]
 async fn client_loop_receives_ready_text_tool_call_and_completion() {
     let (_directory, store) = temp_store().await;
-    let model = store.create_model(&model_input()).await.unwrap();
+    let provider_cfg = store.create_provider(&provider_input()).await.unwrap();
+    let model = store
+        .create_model(&model_input(&provider_cfg.provider_id))
+        .await
+        .unwrap();
     let provider = FakeProvider::default();
     provider.push(vec![
         ModelEvent::Start {
@@ -212,7 +216,8 @@ async fn client_loop_receives_ready_text_tool_call_and_completion() {
 #[tokio::test]
 async fn client_loop_inherits_model_selection_and_returns_context_usage() {
     let (_directory, store) = temp_store().await;
-    let mut input = model_input();
+    let provider_cfg = store.create_provider(&provider_input()).await.unwrap();
+    let mut input = model_input(&provider_cfg.provider_id);
     input.context_window_tokens = Some(258_000);
     let model = store.create_model(&input).await.unwrap();
     let provider = FakeProvider::default();
@@ -416,7 +421,11 @@ async fn client_loop_inherits_model_selection_and_returns_context_usage() {
 #[tokio::test]
 async fn run_inference_accepts_binary_append_and_arbitrary_non_uuid_conversation_ids() {
     let (_directory, store) = temp_store().await;
-    let model = store.create_model(&model_input()).await.unwrap();
+    let provider_cfg = store.create_provider(&provider_input()).await.unwrap();
+    let model = store
+        .create_model(&model_input(&provider_cfg.provider_id))
+        .await
+        .unwrap();
     for conversation_id in ["conv-1", "conversation-non-uuid", "PA"] {
         let provider = FakeProvider::default();
         provider.push(vec![
@@ -562,7 +571,11 @@ async fn run_inference_accepts_binary_append_and_arbitrary_non_uuid_conversation
 #[tokio::test]
 async fn confusing_minimal_agent_run_requests_are_not_misrouted_to_inference() {
     let (_directory, store) = temp_store().await;
-    let model = store.create_model(&model_input()).await.unwrap();
+    let provider_cfg = store.create_provider(&provider_input()).await.unwrap();
+    let model = store
+        .create_model(&model_input(&provider_cfg.provider_id))
+        .await
+        .unwrap();
 
     let agent_with_action = minimal_agent_run(&model.model_hash, true);
     let agent_state_only = minimal_agent_run(&model.model_hash, false);
@@ -637,7 +650,11 @@ async fn confusing_minimal_agent_run_requests_are_not_misrouted_to_inference() {
 #[tokio::test]
 async fn existing_routes_honor_followup_frames_and_reject_empty_payload() {
     let (_directory, store) = temp_store().await;
-    let model = store.create_model(&model_input()).await.unwrap();
+    let provider_cfg = store.create_provider(&provider_input()).await.unwrap();
+    let model = store
+        .create_model(&model_input(&provider_cfg.provider_id))
+        .await
+        .unwrap();
 
     // 1. Existing RunInference route rejects empty payload explicitly and rejects non-inference bytes
     //    without falling back to AgentService; follow-ups work across mixed binary & hex frames.
@@ -1353,28 +1370,32 @@ impl Provider for FakeProvider {
     }
 }
 
-fn model_input() -> ModelConfigInput {
-    ModelConfigInput {
+fn provider_input() -> ProviderConfigInput {
+    ProviderConfigInput {
         sort_order: 1,
-        display_name: "Test model".into(),
-        group_name: None,
+        name: "example.com".into(),
         model_type: ModelType::OpenAi,
         base_url: "https://example.com/v1".into(),
         use_full_url: false,
         api_key: "test-key".into(),
+        openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
+        custom_headers_enabled: false,
+        custom_headers: serde_json::json!({}),
+        extra_params_enabled: false,
+        extra_params: serde_json::json!({}),
+    }
+}
+
+fn model_input(provider_id: &str) -> ModelConfigInput {
+    ModelConfigInput {
+        provider_id: provider_id.into(),
+        sort_order: 1,
+        display_name: "Test model".into(),
         tooltip_data: "Test model".into(),
         model_id: "test-model".into(),
         reasoning_effort: None,
-        openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
-        openai_extra_params_enabled: false,
-        openai_extra_params: serde_json::json!({}),
-        custom_headers_enabled: false,
-        custom_headers: serde_json::json!({}),
-        anthropic_extra_params_enabled: false,
-        anthropic_extra_params: serde_json::json!({}),
         context_window_tokens: None,
-        max_completion_tokens: None,
-        anthropic_max_tokens: None,
+        max_output_tokens: None,
         anthropic_thinking_effort: None,
         thinking_budget_tokens: None,
     }

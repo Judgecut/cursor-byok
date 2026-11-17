@@ -21,8 +21,8 @@ use cursor_server::{
     },
     cursor::{TransportCommand, TransportRegistry},
     model::{
-        MessageContent, ModelConfigInput, ModelType, ProjectedContent, ToolCall,
-        OPENAI_CHAT_ENDPOINT,
+        MessageContent, ModelConfigInput, ModelType, ProjectedContent, ProviderConfigInput,
+        ToolCall, OPENAI_CHAT_ENDPOINT,
     },
     provider::{FinishReason, ModelEvent},
     run::consume_model_cycle,
@@ -828,28 +828,32 @@ async fn unknown_exec_id_is_ignored() {
 #[tokio::test]
 async fn one_run_can_auto_compact_again_after_more_tool_output() {
     let (_directory, store) = fixtures::temp_store().await;
-    let model = store
-        .create_model(&ModelConfigInput {
+    let provider_cfg = store
+        .create_provider(&ProviderConfigInput {
             sort_order: 0,
-            display_name: "Repeated compaction".into(),
-            group_name: None,
+            name: "example.com".into(),
             model_type: ModelType::OpenAi,
             base_url: "https://example.com/v1/chat/completions".into(),
             use_full_url: true,
             api_key: "test-key".into(),
+            openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
+            custom_headers_enabled: false,
+            custom_headers: json!({}),
+            extra_params_enabled: false,
+            extra_params: json!({}),
+        })
+        .await
+        .unwrap();
+    let model = store
+        .create_model(&ModelConfigInput {
+            provider_id: provider_cfg.provider_id,
+            sort_order: 0,
+            display_name: "Repeated compaction".into(),
             tooltip_data: "Repeated compaction".into(),
             model_id: "repeated-compaction-model".into(),
             reasoning_effort: None,
-            openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
-            openai_extra_params_enabled: false,
-            openai_extra_params: json!({}),
-            custom_headers_enabled: false,
-            custom_headers: json!({}),
-            anthropic_extra_params_enabled: false,
-            anthropic_extra_params: json!({}),
             context_window_tokens: Some(25_000),
-            max_completion_tokens: None,
-            anthropic_max_tokens: None,
+            max_output_tokens: None,
             anthropic_thinking_effort: None,
             thinking_budget_tokens: None,
         })

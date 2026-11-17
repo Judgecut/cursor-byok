@@ -159,6 +159,9 @@ impl Provider for ProviderRouter {
                                 "slow gap detected between provider events"
                             );
                         }
+                        if matches!(event, super::ModelEvent::Done(_)) {
+                            recorder.mark_stream_ended().await;
+                        }
                         recorder.event(&event).await?;
                         last_event_time = now;
                         yield event;
@@ -172,6 +175,7 @@ impl Provider for ProviderRouter {
                             event_count,
                             "provider stream error"
                         );
+                        recorder.mark_stream_ended().await;
                         recorder.failed(&error).await?;
                         Err(error)?;
                     }
@@ -241,6 +245,7 @@ async fn finish_stream(recorder: &CallRecorder, cancellation: &CancellationToken
     if recorder.is_finished() {
         return Ok(());
     }
+    recorder.mark_stream_ended().await;
     if cancellation.is_cancelled() {
         recorder.cancelled().await
     } else {

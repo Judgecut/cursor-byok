@@ -44,32 +44,17 @@ export function speedUnavailableText(reason: SpeedUnavailableReason | null): str
     case "missing_duration":
       return t("缺少调用总耗时");
     case "short_output":
-      return t("输出少于 100 Token，样本不足");
+      return t("无有效可见输出，无法计算速度");
     case "short_generation":
-      return t("生成时间少于 100ms，样本不足");
+      return t("生成时间少于 200ms，样本不足");
     default:
       return t("无可用速度样本");
   }
 }
 
-/** Explains one call's end-to-end rate and how it differs from the generation rate. */
-export function overallSpeedTooltip(performance: CallPerformance): string {
+/** Explains one call's generation rate first and keeps the end-to-end rate as secondary info. */
+export function generationSpeedTooltip(performance: CallPerformance): string {
   const lines: string[] = [];
-  if (performance.overall_tokens_per_second == null) {
-    lines.push(t("整体速度：不可用（{reason}）", {
-      reason: speedUnavailableText(performance.overall_reason),
-    }));
-  } else {
-    lines.push(
-      t("整体速度：{speed} tok/s", {
-        speed: formatSpeed(performance.overall_tokens_per_second),
-      }),
-    );
-  }
-  lines.push(t("计算方式：输出 Token ÷ 总耗时（含首 Token 等待）。"));
-  lines.push(
-    t("首 Token：{value}", { value: formatFirstOutput(performance.first_output_ms) }),
-  );
   if (performance.tokens_per_second == null) {
     lines.push(t("生成速度：不可用（{reason}）", {
       reason: speedUnavailableText(performance.reason),
@@ -82,32 +67,46 @@ export function overallSpeedTooltip(performance: CallPerformance): string {
     );
   }
   lines.push(
+    t("首 Token：{value}", { value: formatFirstOutput(performance.first_output_ms) }),
+  );
+  lines.push(
     t("生成时间：{value}", { value: formatGeneration(performance.generation_ms) }),
   );
+  if (performance.overall_tokens_per_second == null) {
+    lines.push(t("整体端到端速度：不可用（{reason}）", {
+      reason: speedUnavailableText(performance.overall_reason),
+    }));
+  } else {
+    lines.push(
+      t("整体端到端速度：{speed} tok/s（含首 Token 等待）", {
+        speed: formatSpeed(performance.overall_tokens_per_second),
+      }),
+    );
+  }
   if (performance.speed_status === "estimated") {
     lines.push(t("Token 或计时口径为估算值"));
   }
   return lines.join("\n");
 }
 
-/** Explains an aggregated end-to-end rate and the totals behind it. */
+/** Explains an aggregated generation rate and the totals behind it. */
 export function aggregateTooltip(speed: SpeedAggregate): string {
   const lines: string[] = [];
   if (speed.average_tokens_per_second == null) {
     lines.push(t("无可用的速度样本"));
   } else {
     lines.push(
-      t("整体速度：{speed} tok/s", {
+      t("生成速度：{speed} tok/s（不含首 Token 等待）", {
         speed: formatSpeed(speed.average_tokens_per_second),
       }),
     );
   }
-  lines.push(t("按总输出 ÷ 总耗时（含首 Token 等待）汇总，不平均每次调用速度"));
+  lines.push(t("按总生成输出 ÷ 总生成时间（不含首 Token 等待）汇总，不平均每次调用速度"));
   lines.push(
     t("样本：{samples} 次调用 · {tokens} Token · {time}", {
       samples: speed.samples,
       tokens: speed.output_tokens,
-      time: formatGeneration(speed.duration_ms),
+      time: formatGeneration(speed.generation_ms),
     }),
   );
   lines.push(

@@ -16,8 +16,8 @@ use cursor_server::{
     api::byok,
     control,
     model::{
-        ModelConfigInput, ModelType, ProjectedContent, Usage, OPENAI_CHAT_ENDPOINT,
-        OPENAI_RESPONSES_ENDPOINT,
+        ModelConfigInput, ModelType, ProjectedContent, ProviderConfigInput, Usage,
+        OPENAI_CHAT_ENDPOINT, OPENAI_RESPONSES_ENDPOINT,
     },
     network::NetworkClients,
     plugin::{PluginRegistry, PluginRuntime},
@@ -27,28 +27,32 @@ use cursor_server::{
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
-fn model_input() -> ModelConfigInput {
-    ModelConfigInput {
+fn provider_input(name: &str, base_url: &str) -> ProviderConfigInput {
+    ProviderConfigInput {
         sort_order: 0,
-        display_name: "Example".into(),
-        group_name: Some("work".into()),
+        name: name.into(),
         model_type: ModelType::OpenAi,
-        base_url: "https://example.com/v1".into(),
+        base_url: base_url.into(),
         use_full_url: false,
         api_key: "upstream".into(),
+        openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
+        custom_headers_enabled: false,
+        custom_headers: json!({}),
+        extra_params_enabled: false,
+        extra_params: json!({}),
+    }
+}
+
+fn model_input(provider_id: &str) -> ModelConfigInput {
+    ModelConfigInput {
+        provider_id: provider_id.into(),
+        sort_order: 0,
+        display_name: "Example".into(),
         tooltip_data: "test".into(),
         model_id: "qwen/model".into(),
         reasoning_effort: None,
-        openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
-        openai_extra_params_enabled: false,
-        openai_extra_params: json!({}),
-        custom_headers_enabled: false,
-        custom_headers: json!({}),
-        anthropic_extra_params_enabled: false,
-        anthropic_extra_params: json!({}),
         context_window_tokens: None,
-        max_completion_tokens: None,
-        anthropic_max_tokens: None,
+        max_output_tokens: None,
         anthropic_thinking_effort: None,
         thinking_budget_tokens: None,
     }
@@ -61,7 +65,14 @@ async fn setup() -> (
     tempfile::TempDir,
 ) {
     let (directory, store) = fixtures::temp_store().await;
-    store.create_model(&model_input()).await.unwrap();
+    let default_provider = store
+        .create_provider(&provider_input("work", "https://example.com/v1"))
+        .await
+        .unwrap();
+    store
+        .create_model(&model_input(&default_provider.provider_id))
+        .await
+        .unwrap();
     let runtime = PluginRuntime::managed().unwrap();
     let plugins = PluginRegistry::managed(store.clone(), runtime.clone(), "0.1.0".into()).unwrap();
     let provider = fake_provider::FakeProvider::default();
@@ -194,12 +205,15 @@ async fn disabled_and_unauthorized_requests_cannot_list_models() {
 async fn duplicate_public_model_ids_use_the_first_configured_model() {
     let (router, provider, store, _directory) = setup().await;
     let first = store.models().await.unwrap().remove(0);
-    let mut duplicate = model_input();
+    let backup_provider = store
+        .create_provider(&provider_input("work", "https://backup.example.com/v1"))
+        .await
+        .unwrap();
+    let mut duplicate = model_input(&backup_provider.provider_id);
     duplicate.sort_order = 1;
     duplicate.display_name = "Backup".into();
-    duplicate.base_url = "https://backup.example.com/v1".into();
     store.create_model(&duplicate).await.unwrap();
-    let mut distinct = model_input();
+    let mut distinct = model_input(&first.provider_id);
     distinct.sort_order = 2;
     distinct.model_id = "qwen/other".into();
     store.create_model(&distinct).await.unwrap();
@@ -599,7 +613,14 @@ async fn all_protocols_preserve_cached_usage_in_streaming_and_complete_responses
 #[tokio::test]
 async fn all_entry_and_upstream_protocol_pairs_preserve_cache_usage() {
     let (_directory, store) = fixtures::temp_store().await;
-    store.create_model(&model_input()).await.unwrap();
+    let default_provider = store
+        .create_provider(&provider_input("work", "https://example.com/v1"))
+        .await
+        .unwrap();
+    store
+        .create_model(&model_input(&default_provider.provider_id))
+        .await
+        .unwrap();
     store
         .set_external_api_settings(ExternalApiSettings {
             enabled: true,
@@ -625,15 +646,16 @@ async fn all_entry_and_upstream_protocol_pairs_preserve_cache_usage() {
         ),
         (3, "bridge-messages", ModelType::Anthropic, ""),
     ] {
-        let mut model = model_input();
+        let mut provider_cfg = provider_input(group, &format!("http://127.0.0.1:{port}/byok/v1"));
+        provider_cfg.sort_order = order;
+        provider_cfg.model_type = model_type;
+        provider_cfg.openai_endpoint = endpoint.into();
+        provider_cfg.api_key = "secret".into();
+        let created_provider = store.create_provider(&provider_cfg).await.unwrap();
+        let mut model = model_input(&created_provider.provider_id);
         model.sort_order = order;
         model.display_name = format!("Bridge {group}");
-        model.group_name = Some(group.into());
-        model.model_type = model_type;
-        model.openai_endpoint = endpoint.into();
-        model.base_url = format!("http://127.0.0.1:{port}/byok/v1");
         model.model_id = "work/qwen/model".into();
-        model.api_key = "secret".into();
         store.create_model(&model).await.unwrap();
     }
     let provider = ProviderRouter::new(
@@ -823,12 +845,13 @@ async fn matching_http_protocols_forward_native_requests_and_responses() {
             json!({"max_tokens":100,"messages":[{"role":"user","content":[{"type":"document","source":{"type":"url","url":"https://example.com"}}]}],"native_extension":{"keep":3}}),
         ),
     ] {
-        let mut model = model_input();
+        let mut provider_cfg = provider_input(group, &format!("http://127.0.0.1:{port}/byok/v1"));
+        provider_cfg.sort_order = order;
+        provider_cfg.model_type = model_type;
+        provider_cfg.openai_endpoint = endpoint.into();
+        let created_provider = store.create_provider(&provider_cfg).await.unwrap();
+        let mut model = model_input(&created_provider.provider_id);
         model.sort_order = order;
-        model.group_name = Some(group.into());
-        model.model_type = model_type;
-        model.openai_endpoint = endpoint.into();
-        model.base_url = format!("http://127.0.0.1:{port}/byok/v1");
         model.model_id = "native-model".into();
         store.create_model(&model).await.unwrap();
         for stream in [false, true] {

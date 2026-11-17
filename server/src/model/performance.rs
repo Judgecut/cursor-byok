@@ -3,13 +3,9 @@
 
 use serde::Serialize;
 
-/// A generation-speed sample needs at least this many output tokens. Shorter
-/// calls cannot separate generation from start-up and rounding noise.
-pub const MIN_SPEED_OUTPUT_TOKENS: i64 = 100;
 /// A generation-speed sample needs at least this much generation time, which
-/// also keeps a zero-length or clock-less measurement from producing an
-/// unbounded rate.
-pub const MIN_SPEED_GENERATION_MS: i64 = 100;
+/// also keeps a zero-length or sub-200ms measurement from producing noisy rates.
+pub const MIN_SPEED_GENERATION_MS: i64 = 200;
 
 const MILLIS_PER_SECOND: f64 = 1000.0;
 const CALL_STATUS_COMPLETED: &str = "completed";
@@ -43,7 +39,7 @@ pub enum SpeedUnavailableReason {
     /// The call has no positive wall-clock duration, so end-to-end throughput
     /// cannot be divided out.
     MissingDuration,
-    /// Fewer output tokens than the sample minimum.
+    /// No effective visible output tokens to measure generation speed.
     ShortOutput,
     /// Shorter generation time than the sample minimum.
     ShortGeneration,
@@ -51,10 +47,9 @@ pub enum SpeedUnavailableReason {
 
 /// The performance result attached to one call record or model test result.
 ///
-/// `overall_tokens_per_second` divides output by the whole call duration and is
-/// what a user actually experiences. `tokens_per_second` divides the same output
-/// by the generation window only, so it is reported next to the timing fields
-/// instead of as the primary rate.
+/// `overall_tokens_per_second` divides output by the whole call duration,
+/// while `tokens_per_second` divides effective visible output by the
+/// generation window only (excluding first-output wait).
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct CallPerformance {
     pub overall_tokens_per_second: Option<f64>,
@@ -72,6 +67,7 @@ pub struct SpeedSample<'a> {
     pub status: &'a str,
     pub streaming: Option<bool>,
     pub output_tokens: Option<i64>,
+    pub reasoning_tokens: Option<i64>,
     pub first_output_ms: Option<i64>,
     pub generation_ms: Option<i64>,
     /// Whole call duration, which is the end-to-end denominator.
@@ -124,17 +120,29 @@ pub fn evaluate(sample: SpeedSample<'_>) -> CallPerformance {
         performance.reason = Some(SpeedUnavailableReason::ShortGeneration);
         return performance;
     }
-    if output_tokens < MIN_SPEED_OUTPUT_TOKENS {
+
+    let (effective_tokens, speed_status) = if sample.hidden_reasoning {
+        let reasoning_tokens = sample.reasoning_tokens.unwrap_or(0).max(0);
+        (
+            (output_tokens - reasoning_tokens).max(0),
+            SpeedStatus::Estimated,
+        )
+    } else {
+        let status = if sample.tokens_estimated {
+            SpeedStatus::Estimated
+        } else {
+            SpeedStatus::Measured
+        };
+        (output_tokens, status)
+    };
+
+    if effective_tokens <= 0 {
         performance.reason = Some(SpeedUnavailableReason::ShortOutput);
         return performance;
     }
 
-    performance.tokens_per_second = Some(rate(output_tokens, generation_ms));
-    performance.speed_status = if sample.tokens_estimated || sample.hidden_reasoning {
-        SpeedStatus::Estimated
-    } else {
-        SpeedStatus::Measured
-    };
+    performance.tokens_per_second = Some(rate(effective_tokens, generation_ms));
+    performance.speed_status = speed_status;
     performance
 }
 
@@ -154,33 +162,33 @@ fn overall_unavailable(sample: &SpeedSample<'_>) -> Option<SpeedUnavailableReaso
     }
 }
 
-/// Accumulates total output and total call time so long and short calls
+/// Accumulates effective output and generation time so long and short calls
 /// contribute in proportion to their real output rather than equally.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SpeedTotals {
     pub output_tokens: i64,
-    pub duration_ms: i64,
+    pub generation_ms: i64,
     pub samples: i64,
 }
 
 impl SpeedTotals {
     /// Adds one call that already passed the aggregate eligibility rules.
-    pub fn add(&mut self, output_tokens: i64, duration_ms: i64) {
+    pub fn add(&mut self, output_tokens: i64, generation_ms: i64) {
         self.output_tokens = self.output_tokens.saturating_add(output_tokens);
-        self.duration_ms = self.duration_ms.saturating_add(duration_ms);
+        self.generation_ms = self.generation_ms.saturating_add(generation_ms);
         self.samples += 1;
     }
 
     /// Folds another group's totals in, used to roll supplier samples up to a model.
     pub fn merge(&mut self, other: Self) {
         self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
-        self.duration_ms = self.duration_ms.saturating_add(other.duration_ms);
+        self.generation_ms = self.generation_ms.saturating_add(other.generation_ms);
         self.samples += other.samples;
     }
 
-    /// Divides accumulated output by accumulated call time.
+    /// Divides accumulated output by accumulated generation time.
     pub fn average(&self) -> Option<f64> {
-        (self.duration_ms > 0).then(|| rate(self.output_tokens, self.duration_ms))
+        (self.generation_ms > 0).then(|| rate(self.output_tokens, self.generation_ms))
     }
 }
 
@@ -222,6 +230,7 @@ mod tests {
             status: CALL_STATUS_COMPLETED,
             streaming: Some(true),
             output_tokens,
+            reasoning_tokens: None,
             first_output_ms,
             generation_ms,
             duration_ms: Some(
@@ -259,28 +268,30 @@ mod tests {
     }
 
     #[test]
-    fn sample_minimums_accept_the_boundary_and_reject_shorter_values() {
-        let boundary = evaluate(sample(
-            Some(MIN_SPEED_OUTPUT_TOKENS),
-            Some(0),
-            Some(MIN_SPEED_GENERATION_MS),
-        ));
+    fn sample_minimums_accept_short_outputs_with_enough_generation_time_and_reject_zero() {
+        let boundary = evaluate(sample(Some(1), Some(0), Some(MIN_SPEED_GENERATION_MS)));
         assert_eq!(boundary.speed_status, SpeedStatus::Measured);
-        assert_eq!(boundary.tokens_per_second, Some(1_000.0));
+        assert_eq!(boundary.tokens_per_second, Some(5.0));
 
-        let short_output = evaluate(sample(
-            Some(MIN_SPEED_OUTPUT_TOKENS - 1),
-            Some(0),
-            Some(MIN_SPEED_GENERATION_MS),
-        ));
+        // Short tool-call output (30-99 tokens) is measured as long as generation_ms >= 200.
+        let short_tool_call = evaluate(sample(Some(40), Some(300), Some(500)));
+        assert_eq!(short_tool_call.speed_status, SpeedStatus::Measured);
+        assert_eq!(short_tool_call.reason, None);
+        assert_eq!(short_tool_call.tokens_per_second, Some(80.0));
+        assert_eq!(short_tool_call.overall_tokens_per_second, Some(50.0));
+
+        let zero_output = evaluate(sample(Some(0), Some(100), Some(MIN_SPEED_GENERATION_MS)));
         assert_eq!(
-            short_output.reason,
+            zero_output.reason,
             Some(SpeedUnavailableReason::ShortOutput)
         );
-        assert_eq!(short_output.tokens_per_second, None);
+        assert_eq!(zero_output.tokens_per_second, None);
+        assert_eq!(zero_output.speed_status, SpeedStatus::Unavailable);
+        assert_eq!(zero_output.overall_tokens_per_second, Some(0.0));
+        assert_eq!(zero_output.overall_reason, None);
 
         let short_generation = evaluate(sample(
-            Some(MIN_SPEED_OUTPUT_TOKENS),
+            Some(100),
             Some(0),
             Some(MIN_SPEED_GENERATION_MS - 1),
         ));
@@ -292,15 +303,47 @@ mod tests {
     }
 
     #[test]
-    fn short_calls_keep_an_end_to_end_rate_while_their_generation_sample_is_rejected() {
-        let short_output = evaluate(sample(Some(50), Some(300), Some(5_000)));
+    fn hidden_reasoning_deducts_reasoning_tokens_and_rejects_zero_visible_output() {
+        let hidden = evaluate(SpeedSample {
+            hidden_reasoning: true,
+            reasoning_tokens: Some(200),
+            ..sample(Some(500), Some(2_000), Some(5_000))
+        });
+        assert_eq!(hidden.speed_status, SpeedStatus::Estimated);
+        assert_eq!(hidden.reason, None);
+        assert_eq!(hidden.tokens_per_second, Some(60.0));
+
+        let only_hidden_reasoning = evaluate(SpeedSample {
+            hidden_reasoning: true,
+            reasoning_tokens: Some(200),
+            ..sample(Some(200), Some(2_000), Some(5_000))
+        });
+        assert_eq!(only_hidden_reasoning.speed_status, SpeedStatus::Unavailable);
         assert_eq!(
-            short_output.reason,
+            only_hidden_reasoning.reason,
             Some(SpeedUnavailableReason::ShortOutput)
         );
-        assert_eq!(short_output.tokens_per_second, None);
-        assert!((short_output.overall_tokens_per_second.unwrap() - 9.434).abs() < 0.001);
-        assert_eq!(short_output.overall_reason, None);
+        assert_eq!(only_hidden_reasoning.tokens_per_second, None);
+
+        let clamped_hidden_reasoning = evaluate(SpeedSample {
+            hidden_reasoning: true,
+            reasoning_tokens: Some(250),
+            ..sample(Some(200), Some(2_000), Some(5_000))
+        });
+        assert_eq!(
+            clamped_hidden_reasoning.reason,
+            Some(SpeedUnavailableReason::ShortOutput)
+        );
+        assert_eq!(clamped_hidden_reasoning.tokens_per_second, None);
+
+        // When thinking was observed in the stream, reasoning tokens belong to generation_ms.
+        let observed = evaluate(SpeedSample {
+            hidden_reasoning: false,
+            reasoning_tokens: Some(200),
+            ..sample(Some(500), Some(2_000), Some(5_000))
+        });
+        assert_eq!(observed.speed_status, SpeedStatus::Measured);
+        assert_eq!(observed.tokens_per_second, Some(100.0));
     }
 
     #[test]

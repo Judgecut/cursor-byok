@@ -22,6 +22,7 @@ import type {
   PricingRates,
   PricingSource,
   PricingSyncState,
+  Provider,
   ProxySettings,
   SaveSupplierPricingInput,
   SpeedAggregate,
@@ -37,6 +38,7 @@ const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 const MAX_RANGE_BUCKETS = 60;
+const MIN_SPEED_GENERATION_MS = 200;
 
 const models: Model[] = [
   createModel({ hash: "mock-claude-sonnet", order: 1, name: "Claude Sonnet 4", type: "anthropic", url: "https://api.anthropic.com", modelId: "claude-sonnet-4-20250514" }),
@@ -56,6 +58,26 @@ const models: Model[] = [
   createModel({ hash: "mock-mistral-large", order: 15, name: "Mistral Large", type: "openai", url: "https://api.mistral.ai", modelId: "mistral-large-latest", endpoint: "/v1/chat/completions" }),
   createModel({ hash: "mock-mistral-small", order: 16, name: "Mistral Small", type: "openai", url: "https://api.mistral.ai", modelId: "mistral-small-latest", endpoint: "/v1/chat/completions" }),
 ];
+
+const providers: Provider[] = [...new Map(models.map((model, index) => [
+  model.provider_id,
+  {
+    provider_id: model.provider_id,
+    sort_order: index + 1,
+    name: model.provider_name,
+    type: model.type,
+    base_url: model.base_url,
+    use_full_url: model.use_full_url,
+    api_key: model.api_key,
+    openai_endpoint: model.openai_endpoint,
+    custom_headers_enabled: model.custom_headers_enabled,
+    custom_headers: model.custom_headers,
+    extra_params_enabled: model.extra_params_enabled,
+    extra_params: model.extra_params,
+    created_at_ms: model.created_at_ms,
+    updated_at_ms: model.updated_at_ms,
+  },
+])).values()];
 
 const DEMO_CATALOG: CatalogModel[] = [
   catalogEntry("anthropic", "Anthropic", "https://api.anthropic.com", "claude-sonnet-4-20250514", "Claude Sonnet 4", { input_per_million: "3", output_per_million: "15", cache_read_per_million: "0.3", cache_write_per_million: "3.75" }),
@@ -141,6 +163,9 @@ const calls: LlmCall[] = Array.from({ length: 84 }, (_, index) => {
     : null;
   const firstOutputMs = 380 + (index % 8) * 145;
   const generationMs = failed ? null : 4_800 + (index % 7) * 980;
+  const observedThinking = index % 2 === 0;
+  const reasoningTokens = index % 2 === 0 ? 420 + (index % 5) * 45 : null;
+  const streaming = true;
 
   return {
     call_kind: "provider_llm",
@@ -169,17 +194,26 @@ const calls: LlmCall[] = Array.from({ length: 84 }, (_, index) => {
     ttfo_ms: firstOutputMs,
     duration_ms: failed ? 812 : firstOutputMs + (generationMs ?? 0),
     generation_ms: generationMs,
-    streaming: true,
+    streaming,
     call_origin: "run" as const,
-    observed_thinking: index % 2 === 0,
-    performance: mockPerformance(outputTokens, firstOutputMs, generationMs, failed),
+    observed_thinking: observedThinking,
+    performance: evaluatePerformance({
+      status: failed ? "failed" : "completed",
+      streaming,
+      outputTokens,
+      reasoningTokens,
+      observedThinking,
+      firstOutputMs,
+      generationMs,
+      durationMs: failed ? 812 : firstOutputMs + (generationMs ?? 0),
+    }),
     input_tokens: model.type === "anthropic" ? billedInput : billedInput + cacheReadTokens + cacheWriteTokens,
     billed_input_tokens: billedInput,
     output_tokens: outputTokens,
     total_tokens: failed ? billedInput : billedInput + outputTokens + cacheReadTokens + cacheWriteTokens,
     cache_read_tokens: cacheReadTokens,
     cache_write_tokens: cacheWriteTokens,
-    reasoning_tokens: index % 2 === 0 ? 420 + (index % 5) * 45 : null,
+    reasoning_tokens: reasoningTokens,
     pricing_source: pricingSource,
     pricing_provider_id: catalog?.provider_id ?? null,
     pricing_model_id: catalog?.model_id ?? null,
@@ -281,10 +315,19 @@ export function installDemoApi(initialInterface?: Partial<Pick<InterfaceSettings
       });
     }
     if (path === "/plugins" && method === "GET") return json([]);
+    if (path === "/providers" && method === "GET") return json(providers);
+    if (path === "/providers" && method === "POST") return json(providers[0]);
+    if (/^\/providers\/[^/]+\/discover$/.test(path) && method === "POST") {
+      const providerId = path.split("/")[2];
+      const discovered = models.filter((model) => model.provider_id === providerId).map((model) => model.model_id);
+      return json({ models: discovered.length > 0 ? discovered : models.map((model) => model.model_id) });
+    }
+    if (/^\/providers\/[^/]+$/.test(path)) {
+      return method === "DELETE" ? empty() : json(providers[0]);
+    }
     if (path === "/models" && method === "GET") return json(models);
     if (path === "/models" && method === "POST") return json(models);
     if (path === "/models/order") return json(models);
-    if (path === "/models/discover") return json({ models: models.map((model) => model.model_id) });
     if (path === "/models/import-v0049" && method === "GET") {
       return json({ source: "demo", total: 0, new_models: 0, existing_models: 0, models: [] });
     }
@@ -455,6 +498,19 @@ function buildSupplierPricingViews(): SupplierPricingView[] {
   });
 }
 
+function providerNameForUrl(url: string): string {
+  const host = endpointLabel(url);
+  if (host.includes("anthropic")) return "Anthropic";
+  if (host.includes("openai")) return "OpenAI";
+  if (host.includes("deepseek")) return "DeepSeek";
+  if (host.includes("googleapis")) return "Google";
+  if (host.includes("dashscope")) return "Qwen";
+  if (host.includes("moonshot")) return "Moonshot";
+  if (host.includes("bigmodel")) return "Zhipu";
+  if (host.includes("mistral")) return "Mistral";
+  return host;
+}
+
 function createModel({ hash, order, name, type, url, modelId, endpoint = "/v1/responses" }: {
   hash: string;
   order: number;
@@ -464,28 +520,28 @@ function createModel({ hash, order, name, type, url, modelId, endpoint = "/v1/re
   modelId: string;
   endpoint?: string;
 }): Model {
+  const openaiEndpoint = type === "openai" ? endpoint : "";
+  const providerName = providerNameForUrl(url);
   return {
     model_hash: hash,
+    provider_id: `mock-${type}-${endpointLabel(url)}`,
+    provider_name: providerName,
     sort_order: order,
     display_name: name,
-    group_name: null,
     type,
     base_url: url,
     use_full_url: false,
     api_key: "demo-key",
+    openai_endpoint: openaiEndpoint,
+    custom_headers_enabled: false,
+    custom_headers: {},
+    extra_params_enabled: false,
+    extra_params: {},
     tooltip_data: `${name} Mock 通道`,
     model_id: modelId,
     reasoning_effort: type === "openai" ? "high" : null,
-    openai_endpoint: type === "openai" ? endpoint : "",
-    openai_extra_params_enabled: false,
-    openai_extra_params: {},
-    custom_headers_enabled: false,
-    custom_headers: {},
-    anthropic_extra_params_enabled: false,
-    anthropic_extra_params: {},
     context_window_tokens: 200_000,
-    max_completion_tokens: type === "openai" ? 32_000 : null,
-    anthropic_max_tokens: type === "anthropic" ? 32_000 : null,
+    max_output_tokens: 32_000,
     anthropic_thinking_effort: type === "anthropic" ? "high" : null,
     thinking_budget_tokens: null,
     created_at_ms: DEMO_NOW - order * DAY_MS,
@@ -824,20 +880,37 @@ function mulRate(tokens: number, rate: string | null | undefined): number {
   return Math.round((tokens / 1_000_000) * Number(rate) * 1_000_000_000);
 }
 
-/** Pools total output and total call time, exactly like the server aggregate. */
+function effectiveVisibleOutputTokens(
+  outputTokens: number,
+  reasoningTokens: number | null,
+  observedThinking: boolean,
+): { tokens: number; hiddenReasoning: boolean } {
+  const hiddenReasoning = (reasoningTokens ?? 0) > 0 && !observedThinking;
+  const tokens = hiddenReasoning
+    ? Math.max(0, outputTokens - Math.max(0, reasoningTokens ?? 0))
+    : Math.max(0, outputTokens);
+  return { tokens, hiddenReasoning };
+}
+
+/** Pools visible output and generation time across eligible streamed runs, matching the server aggregate. */
 function mockAggregate(callList: LlmCall[]): SpeedAggregate {
   let outputTokens = 0;
-  let durationMs = 0;
+  let generationMs = 0;
   let samples = 0;
   const waits: number[] = [];
   for (const call of callList) {
+    if (call.status !== "completed" || call.call_origin !== "run" || call.streaming !== true) continue;
     const first = call.performance.first_output_ms;
-    if (call.status === "completed" && call.streaming && first != null) waits.push(first);
-    const overall = call.performance.overall_tokens_per_second;
-    if (call.status !== "completed" || overall == null) continue;
-    if (call.output_tokens == null || (call.duration_ms ?? 0) <= 0) continue;
-    outputTokens += call.output_tokens ?? 0;
-    durationMs += call.duration_ms ?? 0;
+    if (first != null) waits.push(first);
+    if (call.output_tokens == null || call.generation_ms == null || call.generation_ms < MIN_SPEED_GENERATION_MS) continue;
+    const { tokens } = effectiveVisibleOutputTokens(
+      call.output_tokens,
+      call.reasoning_tokens,
+      call.observed_thinking,
+    );
+    if (tokens <= 0) continue;
+    outputTokens += tokens;
+    generationMs += call.generation_ms;
     samples += 1;
   }
   waits.sort((left, right) => left - right);
@@ -848,60 +921,88 @@ function mockAggregate(callList: LlmCall[]): SpeedAggregate {
       ? waits[middle]
       : Math.trunc((waits[middle - 1] + waits[middle]) / 2);
   return {
-    average_tokens_per_second: durationMs > 0 ? outputTokens / (durationMs / 1000) : null,
+    average_tokens_per_second: generationMs > 0 ? outputTokens / (generationMs / 1000) : null,
     output_tokens: outputTokens,
-    duration_ms: durationMs,
+    generation_ms: generationMs,
     samples,
     first_output_median_ms: firstOutputMedian,
   };
 }
 
 /** Mirrors the server's speed rules closely enough for the demo dashboard. */
-function mockPerformance(
-  outputTokens: number,
-  firstOutputMs: number,
-  generationMs: number | null,
-  failed: boolean,
-): CallPerformance {
-  const durationMs = firstOutputMs + (generationMs ?? 0);
-  const overall = outputTokens > 0 && durationMs > 0
-    ? outputTokens / (durationMs / 1000)
+function evaluatePerformance(sample: {
+  status: string;
+  streaming: boolean | null;
+  outputTokens: number | null;
+  reasoningTokens: number | null;
+  observedThinking: boolean;
+  firstOutputMs: number | null;
+  generationMs: number | null;
+  durationMs: number | null;
+}): CallPerformance {
+  const completed = sample.status === "completed";
+  const overall = completed && sample.outputTokens != null && (sample.durationMs ?? 0) > 0
+    ? Math.max(0, sample.outputTokens) / (sample.durationMs! / 1000)
     : null;
-  const overallReason = failed
+  const overallReason = !completed
     ? "not_completed"
-    : overall == null
-      ? "missing_duration"
-      : null;
-  if (failed) {
-    return {
-      overall_tokens_per_second: null,
-      overall_reason: overallReason,
-      speed_status: "unavailable",
-      tokens_per_second: null,
-      reason: "not_completed",
-      first_output_ms: firstOutputMs,
-      generation_ms: generationMs,
-    };
-  }
-  if (generationMs == null || outputTokens < 100 || generationMs < 100) {
+    : sample.outputTokens == null
+      ? "missing_output_tokens"
+      : (sample.durationMs ?? 0) <= 0
+        ? "missing_duration"
+        : null;
+
+  const unavailableReason = !completed
+    ? "not_completed"
+    : sample.streaming !== true
+      ? "not_streaming"
+      : sample.outputTokens == null
+        ? "missing_output_tokens"
+        : sample.firstOutputMs == null
+          ? "missing_first_output"
+          : sample.generationMs == null
+            ? "missing_generation"
+            : sample.generationMs < MIN_SPEED_GENERATION_MS
+              ? "short_generation"
+              : null;
+
+  if (unavailableReason) {
     return {
       overall_tokens_per_second: overall,
       overall_reason: overallReason,
       speed_status: "unavailable",
       tokens_per_second: null,
-      reason: generationMs == null ? "missing_generation" : generationMs < 100 ? "short_generation" : "short_output",
-      first_output_ms: firstOutputMs,
-      generation_ms: generationMs,
+      reason: unavailableReason,
+      first_output_ms: sample.firstOutputMs,
+      generation_ms: sample.generationMs,
     };
   }
+
+  const { tokens, hiddenReasoning } = effectiveVisibleOutputTokens(
+    sample.outputTokens!,
+    sample.reasoningTokens,
+    sample.observedThinking,
+  );
+  if (tokens <= 0) {
+    return {
+      overall_tokens_per_second: overall,
+      overall_reason: overallReason,
+      speed_status: "unavailable",
+      tokens_per_second: null,
+      reason: "short_output",
+      first_output_ms: sample.firstOutputMs,
+      generation_ms: sample.generationMs,
+    };
+  }
+
   return {
     overall_tokens_per_second: overall,
     overall_reason: overallReason,
-    speed_status: "measured",
-    tokens_per_second: outputTokens / (generationMs / 1000),
+    speed_status: hiddenReasoning ? "estimated" : "measured",
+    tokens_per_second: tokens / (sample.generationMs! / 1000),
     reason: null,
-    first_output_ms: firstOutputMs,
-    generation_ms: generationMs,
+    first_output_ms: sample.firstOutputMs,
+    generation_ms: sample.generationMs,
   };
 }
 

@@ -21,7 +21,7 @@ use cursor_server::{
         proto::{agent::v1 as pb, aiserver::v1 as ai},
     },
     cursor::transport::TransportRegistry,
-    model::{ModelConfigInput, ModelType, OPENAI_CHAT_ENDPOINT},
+    model::{ModelConfigInput, ModelType, ProviderConfigInput, OPENAI_CHAT_ENDPOINT},
     network::NetworkClients,
     provider::{FinishReason, ModelEvent},
 };
@@ -145,28 +145,32 @@ async fn bidi_append_gzip_body_is_decompressed_before_protobuf_decode() {
 #[tokio::test]
 async fn bidi_append_binary_drives_agent_run_sse() {
     let (_directory, store) = fixtures::temp_store().await;
-    let model = store
-        .create_model(&ModelConfigInput {
+    let provider_cfg = store
+        .create_provider(&ProviderConfigInput {
             sort_order: 1,
-            display_name: "Test model".into(),
-            group_name: None,
+            name: "example.com".into(),
             model_type: ModelType::OpenAi,
             base_url: "https://example.com/v1".into(),
             use_full_url: false,
             api_key: "test-key".into(),
+            openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
+            custom_headers_enabled: false,
+            custom_headers: serde_json::json!({}),
+            extra_params_enabled: false,
+            extra_params: serde_json::json!({}),
+        })
+        .await
+        .unwrap();
+    let model = store
+        .create_model(&ModelConfigInput {
+            provider_id: provider_cfg.provider_id,
+            sort_order: 1,
+            display_name: "Test model".into(),
             tooltip_data: "Test model".into(),
             model_id: "test-model".into(),
             reasoning_effort: None,
-            openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
-            openai_extra_params_enabled: false,
-            openai_extra_params: serde_json::json!({}),
-            custom_headers_enabled: false,
-            custom_headers: serde_json::json!({}),
-            anthropic_extra_params_enabled: false,
-            anthropic_extra_params: serde_json::json!({}),
             context_window_tokens: None,
-            max_completion_tokens: None,
-            anthropic_max_tokens: None,
+            max_output_tokens: None,
             anthropic_thinking_effort: None,
             thinking_budget_tokens: None,
         })

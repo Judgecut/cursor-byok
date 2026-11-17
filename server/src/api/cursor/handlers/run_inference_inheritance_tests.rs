@@ -156,7 +156,8 @@ impl ClientRun {
 #[tokio::test]
 async fn native_parent_headers_inherit_after_parent_completion_and_original_id_aliasing() {
     let (_directory, store) = temp_store().await;
-    let mut input = model_input();
+    let provider_cfg = store.create_provider(&provider_input()).await.unwrap();
+    let mut input = model_input(&provider_cfg.provider_id);
     input.reasoning_effort = Some("medium".into());
     let model = store.create_model(&input).await.unwrap();
     let provider = FakeProvider::default();
@@ -199,7 +200,11 @@ async fn native_parent_headers_inherit_after_parent_completion_and_original_id_a
 #[tokio::test]
 async fn latest_session_selection_changes_new_children_without_changing_existing_runs() {
     let (_directory, store) = temp_store().await;
-    let model = store.create_model(&model_input()).await.unwrap();
+    let provider_cfg = store.create_provider(&provider_input()).await.unwrap();
+    let model = store
+        .create_model(&model_input(&provider_cfg.provider_id))
+        .await
+        .unwrap();
     let provider = FakeProvider::default();
     let (_router_directory, router) = router(store, provider.clone());
     let parent = ClientRun::start(
@@ -281,7 +286,8 @@ async fn latest_session_selection_changes_new_children_without_changing_existing
 #[tokio::test]
 async fn child_overrides_nested_inheritance_and_model_boundaries_are_preserved() {
     let (_directory, store) = temp_store().await;
-    let mut input = model_input();
+    let provider_cfg = store.create_provider(&provider_input()).await.unwrap();
+    let mut input = model_input(&provider_cfg.provider_id);
     input.reasoning_effort = Some("medium".into());
     let model = store.create_model(&input).await.unwrap();
     input.model_id = "other-model".into();
@@ -399,7 +405,8 @@ async fn child_overrides_nested_inheritance_and_model_boundaries_are_preserved()
 #[tokio::test]
 async fn variant_slug_round_trip_preserves_routing_and_selection_parameters() {
     let (_directory, store) = temp_store().await;
-    let mut input = model_input();
+    let provider_cfg = store.create_provider(&provider_input()).await.unwrap();
+    let mut input = model_input(&provider_cfg.provider_id);
     input.context_window_tokens = Some(258_000);
     input.reasoning_effort = Some("medium".into());
     let model = store.create_model(&input).await.unwrap();
@@ -586,7 +593,11 @@ async fn variant_slug_round_trip_preserves_routing_and_selection_parameters() {
 #[tokio::test]
 async fn agent_run_and_unknown_variant_slugs_route_correctly() {
     let (_directory, store) = temp_store().await;
-    let model = store.create_model(&model_input()).await.unwrap();
+    let provider_cfg = store.create_provider(&provider_input()).await.unwrap();
+    let model = store
+        .create_model(&model_input(&provider_cfg.provider_id))
+        .await
+        .unwrap();
     let provider = FakeProvider::default();
     provider.push(vec![ModelEvent::Done(FinishReason::Stop)]);
 

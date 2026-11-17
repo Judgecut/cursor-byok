@@ -337,11 +337,12 @@ impl Store {
         suppliers_json: Option<&str>,
     ) -> Result<SpeedAggregate> {
         let eligible = speed_eligible_sql();
+        let effective_output = effective_output_tokens_sql();
         let supplier_id_expr = supplier_id_sql();
         let row = sqlx::query(&format!(
             "SELECT
-                COALESCE(SUM(output_tokens), 0) AS output_tokens,
-                COALESCE(SUM(duration_ms), 0) AS duration_ms,
+                COALESCE(SUM({effective_output}), 0) AS output_tokens,
+                COALESCE(SUM(generation_ms), 0) AS generation_ms,
                 COUNT(*) AS samples
              FROM llm_calls
              WHERE {eligible}
@@ -363,7 +364,7 @@ impl Store {
 
         let totals = SpeedTotals {
             output_tokens: non_negative(row.try_get("output_tokens")?),
-            duration_ms: non_negative(row.try_get("duration_ms")?),
+            generation_ms: non_negative(row.try_get("generation_ms")?),
             samples: non_negative(row.try_get("samples")?),
         };
 
@@ -408,11 +409,12 @@ impl Store {
         group_expr: &str,
     ) -> Result<HashMap<String, SpeedTotals>> {
         let eligible = speed_eligible_sql();
+        let effective_output = effective_output_tokens_sql();
         let supplier_id_expr = supplier_id_sql();
         let rows = sqlx::query(&format!(
             "SELECT {group_expr} AS group_key,
-                COALESCE(SUM(output_tokens), 0) AS output_tokens,
-                COALESCE(SUM(duration_ms), 0) AS duration_ms,
+                COALESCE(SUM({effective_output}), 0) AS output_tokens,
+                COALESCE(SUM(generation_ms), 0) AS generation_ms,
                 COUNT(*) AS samples
              FROM llm_calls
              WHERE {eligible}
@@ -440,7 +442,7 @@ impl Store {
                     key,
                     SpeedTotals {
                         output_tokens: non_negative(row.try_get("output_tokens")?),
-                        duration_ms: non_negative(row.try_get("duration_ms")?),
+                        generation_ms: non_negative(row.try_get("generation_ms")?),
                         samples: non_negative(row.try_get("samples")?),
                     },
                 ))
@@ -526,16 +528,8 @@ impl Store {
                     &model.base_url,
                     &model.model_id,
                 );
-                let configured_group = model
-                    .group_name
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(str::to_owned);
-                let group = configured_group
-                    .clone()
-                    .or_else(|| endpoint_host(&identity.endpoint_key))
-                    .unwrap_or_else(|| identity.endpoint_key.clone());
+                let configured_group = Some(model.provider_name.clone());
+                let group = model.provider_name.clone();
                 groups_by_supplier_key
                     .entry(identity.supplier_key)
                     .or_insert(group);
@@ -1112,13 +1106,25 @@ fn token_usage_buckets(
     )
 }
 
-/// A call contributes to the pooled end-to-end rate when it succeeded, belongs
-/// to a business run, reported an output count, and has a positive wall-clock
-/// duration. Streaming is not required because waiting is part of the denominator.
-fn speed_eligible_sql() -> &'static str {
-    "status = 'completed' AND call_origin = 'run' \
-     AND output_tokens IS NOT NULL \
-     AND COALESCE(duration_ms, 0) > 0"
+fn effective_output_tokens_sql() -> &'static str {
+    "CASE WHEN COALESCE(reasoning_tokens, 0) > 0 AND observed_thinking = 0 \
+     THEN MAX(0, output_tokens - reasoning_tokens) \
+     ELSE output_tokens END"
+}
+
+/// A call contributes to the pooled generation rate when it succeeded, belongs
+/// to a business run, streamed its response, generated for at least 200 ms, and
+/// produced positive effective visible output.
+fn speed_eligible_sql() -> String {
+    let effective_output = effective_output_tokens_sql();
+    format!(
+        "status = 'completed' AND call_origin = 'run' \
+         AND COALESCE(streaming, 0) = 1 \
+         AND output_tokens IS NOT NULL \
+         AND COALESCE(generation_ms, 0) >= {min_generation_ms} \
+         AND {effective_output} > 0",
+        min_generation_ms = crate::model::MIN_SPEED_GENERATION_MS,
+    )
 }
 
 fn first_output_eligible_sql() -> &'static str {
@@ -1162,6 +1168,8 @@ mod tests {
         output_tokens: u64,
         input_tokens: u64,
         reasoning_tokens: u64,
+        observed_thinking: bool,
+        streaming: bool,
         first_output_ms: i64,
         generation_ms: i64,
     }
@@ -1189,12 +1197,16 @@ mod tests {
                 tool_count: 0,
                 detailed: false,
                 origin: sample.origin,
-                streaming: true,
+                streaming: sample.streaming,
             })
             .await
             .unwrap();
         store
-            .record_llm_output(sample.call_id, Some(sample.first_output_ms), false)
+            .record_llm_output(
+                sample.call_id,
+                Some(sample.first_output_ms),
+                sample.observed_thinking,
+            )
             .await
             .unwrap();
         store
@@ -1225,10 +1237,11 @@ mod tests {
             .unwrap();
     }
 
-    /// Model tests must not pollute business speed samples, every completed run
-    /// call contributes its output and whole duration, overall/supplier/model
-    /// aggregates must match SQL pooling and medians, and the activity calendar
-    /// stays fixed at 365 days regardless of start_ms/end_ms.
+    /// Model tests must not pollute business speed samples, eligible streamed run
+    /// calls pool effective visible output over generation time (deducting hidden
+    /// reasoning tokens and excluding non-streamed / sub-200ms / zero-visible
+    /// calls), overall/supplier/model aggregates match SQL pooling and medians,
+    /// and the activity calendar stays fixed at 365 days regardless of start_ms/end_ms.
     #[tokio::test]
     async fn speed_aggregates_pool_eligible_samples_across_overall_supplier_and_model() {
         let directory = tempfile::tempdir().unwrap();
@@ -1250,13 +1263,14 @@ mod tests {
                 output_tokens: 1_000,
                 input_tokens: 10,
                 reasoning_tokens: 0,
+                observed_thinking: false,
+                streaming: true,
                 first_output_ms: 2_000,
                 generation_ms: 10_000,
             },
         )
         .await;
-        // Too few tokens for a generation sample, but its whole call still joins
-        // the end-to-end pool and its wait still joins the median.
+        // Short output (< 100 tokens) still joins the generation pool when generation_ms >= 200.
         record(
             &store,
             Sample {
@@ -1268,13 +1282,14 @@ mod tests {
                 output_tokens: 50,
                 input_tokens: 10,
                 reasoning_tokens: 0,
+                observed_thinking: false,
+                streaming: true,
                 first_output_ms: 300,
                 generation_ms: 5_000,
             },
         )
         .await;
-        // Hidden reasoning no longer changes the end-to-end rate: its wait is in
-        // the duration denominator.
+        // Hidden reasoning deducts reasoning_tokens (500 - 200 = 300 effective tokens).
         record(
             &store,
             Sample {
@@ -1286,8 +1301,65 @@ mod tests {
                 output_tokens: 500,
                 input_tokens: 10,
                 reasoning_tokens: 200,
+                observed_thinking: false,
+                streaming: true,
                 first_output_ms: 1_000,
                 generation_ms: 5_000,
+            },
+        )
+        .await;
+        // Non-streaming, sub-200ms generation, and zero-visible-output calls are excluded from speed.
+        record(
+            &store,
+            Sample {
+                call_id: "non-streaming",
+                origin: CallOrigin::Run,
+                endpoint_url: "https://example.com/v1",
+                model_id: "glm-4.6",
+                display_name: "GLM 4.6",
+                output_tokens: 900,
+                input_tokens: 10,
+                reasoning_tokens: 0,
+                observed_thinking: false,
+                streaming: false,
+                first_output_ms: 1_000,
+                generation_ms: 3_000,
+            },
+        )
+        .await;
+        record(
+            &store,
+            Sample {
+                call_id: "too-brief",
+                origin: CallOrigin::Run,
+                endpoint_url: "https://example.com/v1",
+                model_id: "glm-4.6",
+                display_name: "GLM 4.6",
+                output_tokens: 120,
+                input_tokens: 10,
+                reasoning_tokens: 0,
+                observed_thinking: false,
+                streaming: true,
+                first_output_ms: 2_000,
+                generation_ms: 199,
+            },
+        )
+        .await;
+        record(
+            &store,
+            Sample {
+                call_id: "reasoning-only",
+                origin: CallOrigin::Run,
+                endpoint_url: "https://example.com/v1",
+                model_id: "glm-4.6",
+                display_name: "GLM 4.6",
+                output_tokens: 200,
+                input_tokens: 10,
+                reasoning_tokens: 200,
+                observed_thinking: false,
+                streaming: true,
+                first_output_ms: 500,
+                generation_ms: 2_000,
             },
         )
         .await;
@@ -1302,6 +1374,8 @@ mod tests {
                 output_tokens: 4_000,
                 input_tokens: 10,
                 reasoning_tokens: 0,
+                observed_thinking: false,
+                streaming: true,
                 first_output_ms: 50,
                 generation_ms: 1_000,
             },
@@ -1311,17 +1385,18 @@ mod tests {
         let overview = store.overview(None, None, None, None, None).await.unwrap();
         assert_eq!(overview.activity_series.len(), 365);
 
-        // Pooled over the three business calls: 1,550 tokens over 23.3 s.
+        // Pooled over the three eligible streamed calls: 1,350 effective tokens over 20.0 s.
         assert_eq!(overview.metrics.speed.samples, 3);
-        assert_eq!(overview.metrics.speed.output_tokens, 1_550);
-        assert_eq!(overview.metrics.speed.duration_ms, 23_300);
-        assert!((overview.metrics.speed.average_tokens_per_second.unwrap() - 66.524).abs() < 0.001);
+        assert_eq!(overview.metrics.speed.output_tokens, 1_350);
+        assert_eq!(overview.metrics.speed.generation_ms, 20_000);
+        assert!((overview.metrics.speed.average_tokens_per_second.unwrap() - 67.5).abs() < 0.001);
         assert_eq!(overview.metrics.speed.first_output_median_ms, Some(1_000));
         // The JSON contract the desktop reads; a rename here must update the client type.
         let speed_json = serde_json::to_value(overview.metrics.speed).unwrap();
         assert_eq!(speed_json["samples"], 3);
-        assert_eq!(speed_json["output_tokens"], 1_550);
-        assert_eq!(speed_json["duration_ms"], 23_300);
+        assert_eq!(speed_json["output_tokens"], 1_350);
+        assert_eq!(speed_json["generation_ms"], 20_000);
+        assert!(speed_json.get("duration_ms").is_none());
 
         let model = overview
             .models
@@ -1329,9 +1404,9 @@ mod tests {
             .find(|item| item.model_id == "glm-4.6")
             .expect("model summary");
         assert_eq!(model.speed.samples, 3);
-        assert_eq!(model.speed.output_tokens, 1_550);
-        assert_eq!(model.speed.duration_ms, 23_300);
-        assert!((model.speed.average_tokens_per_second.unwrap() - 66.524).abs() < 0.001);
+        assert_eq!(model.speed.output_tokens, 1_350);
+        assert_eq!(model.speed.generation_ms, 20_000);
+        assert!((model.speed.average_tokens_per_second.unwrap() - 67.5).abs() < 0.001);
         assert_eq!(model.speed.first_output_median_ms, Some(1_000));
 
         let supplier = overview
@@ -1340,6 +1415,8 @@ mod tests {
             .find(|item| item.endpoint_key == "https://example.com/v1/chat/completions")
             .expect("supplier breakdown");
         assert_eq!(supplier.speed.samples, 3);
+        assert_eq!(supplier.speed.output_tokens, 1_350);
+        assert_eq!(supplier.speed.generation_ms, 20_000);
         assert_eq!(supplier.speed.first_output_median_ms, Some(1_000));
         assert_eq!(supplier.model_count, 1);
 
@@ -1385,6 +1462,8 @@ mod tests {
                 output_tokens: 200,
                 input_tokens: 100,
                 reasoning_tokens: 0,
+                observed_thinking: false,
+                streaming: true,
                 first_output_ms: 400,
                 generation_ms: 2_000,
             },
@@ -1401,6 +1480,8 @@ mod tests {
                 output_tokens: 2_000,
                 input_tokens: 3_000,
                 reasoning_tokens: 0,
+                observed_thinking: false,
+                streaming: true,
                 first_output_ms: 800,
                 generation_ms: 10_000,
             },
@@ -1416,7 +1497,9 @@ mod tests {
                 display_name: "OpenAI",
                 output_tokens: 1_000,
                 input_tokens: 500,
-                reasoning_tokens: 0,
+                reasoning_tokens: 400,
+                observed_thinking: true,
+                streaming: true,
                 first_output_ms: 500,
                 generation_ms: 5_000,
             },
@@ -1429,6 +1512,10 @@ mod tests {
         assert_eq!(all.models[0].model_id, "model-large");
         assert_eq!(all.models[0].token_usage, 6_500);
         assert_eq!(all.models[0].supplier_count, 2);
+        // Observed thinking keeps all 1,000 output tokens in c3: (2,000 + 1,000) / 15s = 200 tok/s.
+        assert_eq!(all.models[0].speed.output_tokens, 3_000);
+        assert_eq!(all.models[0].speed.generation_ms, 15_000);
+        assert_eq!(all.models[0].speed.average_tokens_per_second, Some(200.0));
         assert_eq!(all.models[1].model_id, "model-small");
         assert_eq!(all.models[1].token_usage, 300);
         assert_eq!(all.models[1].supplier_count, 1);

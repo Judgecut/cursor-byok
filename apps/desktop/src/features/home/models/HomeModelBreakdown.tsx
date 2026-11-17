@@ -76,9 +76,9 @@ export function HomeModelBreakdown({
                 type="button"
                 className={styles.sortHeader}
                 onClick={() => toggleSort("speed")}
-                title={t("按整体速度排序，无样本的行排在最后")}
+                title={t("按生成速度排序，无样本的行排在最后")}
               >
-                {t("整体速度（tok/s）")}
+                {t("生成速度（tok/s）")}
                 <span className={styles.sortMarker}>{sortIndicator(sort, "speed")}</span>
               </button>
             </th>

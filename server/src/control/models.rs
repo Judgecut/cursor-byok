@@ -1,4 +1,4 @@
-//! Implements model configuration endpoints.
+//! Implements provider and model configuration endpoints.
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -7,13 +7,13 @@ use axum::{
 use serde::Deserialize;
 
 use crate::{
-    model::{ModelConfig, ModelConfigInput},
+    model::{ModelConfig, ModelConfigInput, ProviderConfig, ProviderConfigInput},
     Result,
 };
 
 use super::{
     ControlService, DiscoveredModels, LegacyModelImportPreview, LegacyModelImportResult,
-    ModelConnectivityResult, ModelDiscoveryInput,
+    ModelConnectivityResult,
 };
 
 #[derive(Deserialize)]
@@ -24,6 +24,45 @@ pub struct SaveModels {
 #[derive(Deserialize)]
 pub struct ModelOrder {
     pub model_hashes: Vec<String>,
+}
+
+pub async fn list_providers(
+    State(service): State<ControlService>,
+) -> Result<Json<Vec<ProviderConfig>>> {
+    Ok(Json(service.providers().await?))
+}
+
+pub async fn create_provider(
+    State(service): State<ControlService>,
+    Json(input): Json<ProviderConfigInput>,
+) -> Result<(StatusCode, Json<ProviderConfig>)> {
+    Ok((
+        StatusCode::CREATED,
+        Json(service.create_provider(&input).await?),
+    ))
+}
+
+pub async fn update_provider(
+    State(service): State<ControlService>,
+    Path(provider_id): Path<String>,
+    Json(input): Json<ProviderConfigInput>,
+) -> Result<Json<ProviderConfig>> {
+    Ok(Json(service.update_provider(&provider_id, &input).await?))
+}
+
+pub async fn remove_provider(
+    State(service): State<ControlService>,
+    Path(provider_id): Path<String>,
+) -> Result<StatusCode> {
+    service.delete_provider(&provider_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn discover_provider_models(
+    State(service): State<ControlService>,
+    Path(provider_id): Path<String>,
+) -> Result<Json<DiscoveredModels>> {
+    Ok(Json(service.discover_provider_models(&provider_id).await?))
 }
 
 pub async fn list(State(service): State<ControlService>) -> Result<Json<Vec<ModelConfig>>> {
@@ -76,13 +115,6 @@ pub async fn cancel(
 ) -> Result<StatusCode> {
     service.cancel_model_test(&test_id);
     Ok(StatusCode::NO_CONTENT)
-}
-
-pub async fn discover(
-    State(service): State<ControlService>,
-    Json(input): Json<ModelDiscoveryInput>,
-) -> Result<Json<DiscoveredModels>> {
-    Ok(Json(service.discover_models(&input).await?))
 }
 
 pub async fn import_v0049(

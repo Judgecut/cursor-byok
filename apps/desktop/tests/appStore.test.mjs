@@ -38,6 +38,7 @@ async function setup()
         return value;
       });
     },
+    providers: async () => [],
     models: async () => [],
     calls: async () => ({ items: [], total: 0 }),
     overview: async () => ({}),

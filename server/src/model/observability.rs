@@ -387,13 +387,14 @@ mod overview {
         }
     }
 
-    /// Pooled end-to-end rate: total output divided by total call time, so one
-    /// long call contributes in proportion to its real output and wait.
+    /// Pooled generation rate: total effective output divided by total
+    /// generation time, so one long call contributes in proportion to its real
+    /// output and generation window.
     #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
     pub struct SpeedAggregate {
         pub average_tokens_per_second: Option<f64>,
         pub output_tokens: i64,
-        pub duration_ms: i64,
+        pub generation_ms: i64,
         pub samples: i64,
         /// Median first-output wait across successful streamed calls.
         pub first_output_median_ms: Option<i64>,
@@ -404,7 +405,7 @@ mod overview {
             Self {
                 average_tokens_per_second: totals.average(),
                 output_tokens: totals.output_tokens,
-                duration_ms: totals.duration_ms,
+                generation_ms: totals.generation_ms,
                 samples: totals.samples,
                 first_output_median_ms,
             }

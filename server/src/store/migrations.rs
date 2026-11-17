@@ -377,7 +377,9 @@ fn sidecar_path(database_path: &Path, suffix: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use sqlx::sqlite::SqlitePoolOptions;
+    use std::str::FromStr;
+
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
     use super::*;
 
@@ -474,7 +476,7 @@ mod tests {
             .unwrap();
 
             assert_eq!(checksum_after, checksum_before);
-            assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+            assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
             assert_eq!(checkpoint_table_exists, 1);
             assert_eq!(argument_error_column_exists, 1);
             assert_eq!(pricing_catalog_exists, 1);
@@ -620,5 +622,258 @@ mod tests {
             Err(Error::MigrationTimeout { stage, .. })
                 if stage == "0006 rename revisions to checkpoints"
         ));
+    }
+
+    #[tokio::test]
+    async fn migration_0012_splits_providers_and_preserves_models() {
+        let options = SqliteConnectOptions::from_str("sqlite::memory:")
+            .unwrap()
+            .foreign_keys(true);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+        let historical = migrator_with_line_endings(MigrationLineEndings::Lf);
+        let first_eleven = Migrator {
+            migrations: Cow::Owned(historical.iter().take(11).cloned().collect()),
+            ..Migrator::DEFAULT
+        };
+        first_eleven.run(&pool).await.unwrap();
+
+        sqlx::query(
+            "INSERT INTO model_configs(
+                model_hash, sort_order, display_name, group_name, model_type, base_url,
+                use_full_url, api_key, tooltip_data, model_id, reasoning_effort,
+                openai_endpoint, openai_extra_params_enabled, openai_extra_params_json,
+                custom_headers_enabled, custom_headers_json,
+                anthropic_extra_params_enabled, anthropic_extra_params_json,
+                context_window_tokens, max_completion_tokens, anthropic_max_tokens,
+                anthropic_thinking_effort, thinking_budget_tokens, created_at_ms, updated_at_ms
+             ) VALUES
+             (
+                'hash-oai-1', 1, 'GPT-5', 'My OpenAI', 'openai', 'https://api.openai.com/v1',
+                0, 'sk-oai', 'OpenAI flagship', 'gpt-5', 'high',
+                '/v1/responses', 1, '{\"seed\":42}',
+                0, '{}', 0, '{}',
+                400000, 16384, NULL, NULL, NULL, 100, 150
+             ),
+             (
+                'hash-oai-2', 2, 'GPT-5 Mini', NULL, 'openai', 'https://api.openai.com/v1',
+                0, 'sk-oai', 'OpenAI mini', 'gpt-5-mini', 'medium',
+                '/v1/responses', 1, '{\"seed\":42}',
+                0, '{}', 0, '{}',
+                200000, 8192, NULL, NULL, NULL, 120, 200
+             ),
+             (
+                'hash-ant-1', 3, 'Claude 4', NULL, 'anthropic', 'https://api.anthropic.com:8443/v1',
+                0, 'sk-ant', 'Anthropic model', 'claude-4', NULL,
+                '', 0, '{}',
+                1, '{\"x-test\":\"1\"}', 1, '{\"top_k\":5}',
+                200000, NULL, 32768, 'high', 4096, 130, 180
+             )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO llm_calls(
+                call_id, run_id, conversation_id, provider_call_index, model_hash,
+                provider_type, provider_url, request_type, request_url, model_id, display_name,
+                status, created_at_ms, message_count, tool_count, detailed
+             ) VALUES
+             (
+                'call-oai-1', 'run-1', 'conv-1', 1, 'hash-oai-1',
+                'openai-responses', 'https://api.openai.com/v1', 'responses',
+                'https://api.openai.com/v1/responses', 'gpt-5', 'GPT-5',
+                'completed', 200, 1, 0, 1
+             ),
+             (
+                'call-ant-1', 'run-2', 'conv-2', 1, 'hash-ant-1',
+                'anthropic', 'https://api.anthropic.com:8443/v1', 'messages',
+                'https://api.anthropic.com:8443/v1/messages', 'claude-4', 'Claude 4',
+                'completed', 210, 1, 0, 0
+             )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO llm_call_requests(call_id, headers_json, body_json, byte_count)
+             VALUES ('call-oai-1', '{}', '{}', 2)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO llm_call_response_chunks(call_id, seq, received_offset_ms, data, byte_count)
+             VALUES ('call-oai-1', 1, 10, X'6162', 2)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        run(&pool, Path::new("upgrade-v11-to-v12.db"))
+            .await
+            .unwrap();
+
+        let fk_violations: Vec<(String, i64, String, i64)> =
+            sqlx::query_as("PRAGMA foreign_key_check")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert!(fk_violations.is_empty());
+
+        let providers: Vec<(String, String, String, i64, String)> = sqlx::query_as(
+            "SELECT provider_id, name, model_type, extra_params_enabled, extra_params_json
+             FROM provider_configs ORDER BY sort_order, provider_id",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            providers,
+            vec![
+                (
+                    "hash-oai-1".into(),
+                    "My OpenAI".into(),
+                    "openai".into(),
+                    1,
+                    "{\"seed\":42}".into(),
+                ),
+                (
+                    "hash-ant-1".into(),
+                    "api.anthropic.com".into(),
+                    "anthropic".into(),
+                    1,
+                    "{\"top_k\":5}".into(),
+                ),
+            ]
+        );
+
+        let models: Vec<(String, String, Option<i64>, Option<String>)> = sqlx::query_as(
+            "SELECT model_hash, provider_id, max_output_tokens, anthropic_thinking_effort
+             FROM model_configs ORDER BY sort_order",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            models,
+            vec![
+                ("hash-oai-1".into(), "hash-oai-1".into(), Some(16384), None),
+                ("hash-oai-2".into(), "hash-oai-1".into(), Some(8192), None),
+                (
+                    "hash-ant-1".into(),
+                    "hash-ant-1".into(),
+                    Some(32768),
+                    Some("high".into())
+                ),
+            ]
+        );
+
+        let call_hashes: Vec<(String, Option<String>)> =
+            sqlx::query_as("SELECT call_id, model_hash FROM llm_calls ORDER BY created_at_ms")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            call_hashes,
+            vec![
+                ("call-oai-1".into(), Some("hash-oai-1".into())),
+                ("call-ant-1".into(), Some("hash-ant-1".into())),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn migration_0004_with_referenced_calls_upgrades_through_0012() {
+        let options = SqliteConnectOptions::from_str("sqlite::memory:")
+            .unwrap()
+            .foreign_keys(true);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+        let historical = migrator_with_line_endings(MigrationLineEndings::Lf);
+        let first_four = Migrator {
+            migrations: Cow::Owned(historical.iter().take(4).cloned().collect()),
+            ..Migrator::DEFAULT
+        };
+        first_four.run(&pool).await.unwrap();
+
+        sqlx::query(
+            "INSERT INTO model_configs(
+                model_hash, sort_order, display_name, model_type, base_url,
+                use_full_url, api_key, tooltip_data, model_id, reasoning_effort,
+                openai_endpoint, openai_extra_params_enabled, openai_extra_params_json,
+                custom_headers_enabled, custom_headers_json,
+                anthropic_extra_params_enabled, anthropic_extra_params_json,
+                context_window_tokens, max_completion_tokens, anthropic_max_tokens,
+                anthropic_thinking_effort, thinking_budget_tokens, created_at_ms, updated_at_ms
+             ) VALUES (
+                'hash-v4-1', 1, 'GPT-4.1', 'openai', 'https://api.openai.com/v1',
+                0, 'sk-oai', 'OpenAI v4', 'gpt-4.1', 'medium',
+                '/v1/responses', 0, '{}', 0, '{}', 0, '{}',
+                200000, 16384, NULL, NULL, NULL, 100, 150
+             )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO llm_calls(
+                call_id, run_id, conversation_id, provider_call_index, model_hash,
+                provider_type, provider_url, request_type, request_url, model_id, display_name,
+                status, created_at_ms, message_count, tool_count, detailed
+             ) VALUES (
+                'call-v4-1', 'run-v4', 'conv-v4', 1, 'hash-v4-1',
+                'openai-responses', 'https://api.openai.com/v1', 'responses',
+                'https://api.openai.com/v1/responses', 'gpt-4.1', 'GPT-4.1',
+                'completed', 200, 1, 0, 1
+             )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO llm_call_requests(call_id, headers_json, body_json, byte_count)
+             VALUES ('call-v4-1', '{}', '{}', 2)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO llm_call_response_chunks(call_id, seq, received_offset_ms, data, byte_count)
+             VALUES ('call-v4-1', 1, 10, X'6162', 2)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        run(&pool, Path::new("upgrade-v4-to-v12.db")).await.unwrap();
+
+        let fk_violations: Vec<(String, i64, String, i64)> =
+            sqlx::query_as("PRAGMA foreign_key_check")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert!(fk_violations.is_empty());
+
+        let preserved: (String, Option<String>) =
+            sqlx::query_as("SELECT call_id, model_hash FROM llm_calls WHERE call_id = 'call-v4-1'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(preserved, ("call-v4-1".into(), Some("hash-v4-1".into())));
+
+        let model_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM model_configs WHERE model_hash = 'hash-v4-1'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(model_count, 1);
     }
 }

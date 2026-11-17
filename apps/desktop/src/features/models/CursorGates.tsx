@@ -24,19 +24,19 @@ export function CursorCaGate({ busy, waitingForRefresh, onInitialize, onRefresh,
 }
 
 export function CursorModelProvider({ children }: { children: ReactNode }) {
-  const { models, plugins } = useAppStore();
+  const { providers, models, plugins } = useAppStore();
   const hasConfiguredPlugin = plugins.some((plugin) => plugin.providers.some((provider) => provider.configured));
-  return <ModelsReady.Provider value={models.length > 0 || hasConfiguredPlugin}>{children}</ModelsReady.Provider>;
+  return <ModelsReady.Provider value={providers.length > 0 || models.length > 0 || hasConfiguredPlugin}>{children}</ModelsReady.Provider>;
 }
 
-export function CursorModelGate({ busy, previewingImport, onAdd, onImport, children }: { busy: boolean; previewingImport: boolean; onAdd: () => void; onImport: () => void; children: ReactNode }) {
+export function CursorModelGate({ busy, previewingImport, onAddProvider, onImport, children }: { busy: boolean; previewingImport: boolean; onAddProvider: () => void; onImport: () => void; children: ReactNode }) {
   const ready = useContext(ModelsReady);
   if (ready) return children;
   return <div className={styles.gate}>
-    <strong>{t("还没有可供 Cursor 使用的模型")}</strong>
-    <span>{t("Cursor 接管已生效；添加模型配置后即可使用 BYOK 模型。")}</span>
+    <strong>{t("还没有可供 Cursor 使用的供应商或模型")}</strong>
+    <span>{t("Cursor 接管已生效；先添加供应商，再在其下配置 BYOK 模型即可使用。")}</span>
     <div className={styles.gateActions}>
-      <button className={controls.primary} disabled={busy} onClick={onAdd}>{t("添加模型")}</button>
+      <button className={controls.primary} disabled={busy} onClick={onAddProvider}>{t("添加供应商")}</button>
       <button className={controls.secondary} disabled={busy} onClick={onImport}>{previewingImport ? t("读取中…") : t("导入旧版配置")}</button>
     </div>
   </div>;

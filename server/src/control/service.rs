@@ -23,8 +23,8 @@ use crate::{
         evaluate as evaluate_performance, CallOrigin, ContentPart, CursorRunTraceArtifact,
         CursorRunTraceSummary, LlmCallRequest, LlmCallResponseChunk, LlmCallSummary, ModelConfig,
         ModelConfigInput, ModelInvocation, ModelRequest, ModelSpec, ModelType, Overview,
-        ProjectedContent, ProjectedMessage, PromptSpec, ProviderType, Role, SpeedSample,
-        SpeedStatus, SpeedUnavailableReason,
+        ProjectedContent, ProjectedMessage, PromptSpec, ProviderConfig, ProviderConfigInput,
+        ProviderType, Role, SpeedSample, SpeedStatus, SpeedUnavailableReason,
     },
     plugin::{PluginDescriptor, PluginRegistry, PluginRuntime, PluginRuntimeStatus},
     pricing::{PricingService, PricingSyncState},
@@ -82,25 +82,9 @@ pub struct LegacyModelImportPreviewItem {
     pub existing: bool,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct ModelDiscoveryInput {
-    #[serde(rename = "type")]
-    pub model_type: ModelType,
-    pub base_url: String,
-    pub api_key: String,
-    #[serde(default)]
-    pub custom_headers_enabled: bool,
-    #[serde(default = "empty_json_object")]
-    pub custom_headers: serde_json::Value,
-}
-
-fn empty_json_object() -> serde_json::Value {
-    serde_json::json!({})
-}
-
 fn empty_json_object_ref() -> &'static serde_json::Value {
     static EMPTY: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
-    EMPTY.get_or_init(empty_json_object)
+    EMPTY.get_or_init(|| serde_json::json!({}))
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -372,6 +356,26 @@ impl ControlService {
         Ok(())
     }
 
+    pub async fn providers(&self) -> Result<Vec<ProviderConfig>> {
+        self.store.providers().await
+    }
+
+    pub async fn create_provider(&self, input: &ProviderConfigInput) -> Result<ProviderConfig> {
+        self.store.create_provider(input).await
+    }
+
+    pub async fn update_provider(
+        &self,
+        provider_id: &str,
+        input: &ProviderConfigInput,
+    ) -> Result<ProviderConfig> {
+        self.store.update_provider(provider_id, input).await
+    }
+
+    pub async fn delete_provider(&self, provider_id: &str) -> Result<()> {
+        self.store.delete_provider(provider_id).await
+    }
+
     pub async fn models(&self) -> Result<Vec<ModelConfig>> {
         self.store.models().await
     }
@@ -567,6 +571,7 @@ impl ControlService {
                 status: record.status.as_str(),
                 streaming: record.streaming,
                 output_tokens: Some(estimate_output_tokens(&output) as i64),
+                reasoning_tokens: record.reasoning_tokens,
                 first_output_ms: record.ttfo_ms,
                 generation_ms: record.generation_ms,
                 duration_ms: record.duration_ms,
@@ -590,19 +595,20 @@ impl ControlService {
         })
     }
 
-    pub async fn discover_models(&self, input: &ModelDiscoveryInput) -> Result<DiscoveredModels> {
+    pub async fn discover_provider_models(&self, provider_id: &str) -> Result<DiscoveredModels> {
+        let provider = self
+            .store
+            .provider(provider_id)
+            .await?
+            .ok_or_else(|| Error::RunNotFound(format!("provider {provider_id}")))?;
         let client = self.clients.default_client().await?;
-        let base_url = crate::model::normalize_request_url(&input.base_url)?;
         discover_models_from_endpoint(
             &client,
-            match input.model_type {
-                ModelType::OpenAi => ProviderType::OpenAiResponses,
-                ModelType::Anthropic => ProviderType::Anthropic,
-            },
-            &base_url,
-            &input.api_key,
-            if input.custom_headers_enabled {
-                &input.custom_headers
+            provider.provider_type(),
+            &provider.base_url,
+            &provider.api_key,
+            if provider.custom_headers_enabled {
+                &provider.custom_headers
             } else {
                 empty_json_object_ref()
             },
@@ -637,7 +643,7 @@ impl ControlService {
                     model_hash: model.model_hash,
                     display_name: model.input.display_name,
                     model_id: model.input.model_id,
-                    model_type: model.input.model_type,
+                    model_type: model.model_type,
                     existing: model.existing,
                 })
                 .collect(),
@@ -943,6 +949,7 @@ fn official_call(trace: CursorRunTraceSummary) -> CallSummary {
         status: &status,
         streaming: Some(true),
         output_tokens: None,
+        reasoning_tokens: None,
         first_output_ms: None,
         generation_ms: None,
         duration_ms: None,
@@ -1304,4 +1311,40 @@ fn apply_discovery_headers(
         request = request.header(name, value);
     }
     Ok(request)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn official_call_reports_missing_output_tokens_for_both_speeds() {
+        let summary = official_call(CursorRunTraceSummary {
+            request_id: "req-1".into(),
+            conversation_id: Some("conv-1".into()),
+            route: "cursor_official".into(),
+            model_id: Some("claude-4.5-sonnet".into()),
+            status: "completed".into(),
+            request_bytes: 120,
+            response_bytes: 480,
+            response_event_count: 10,
+            http_status: Some(200),
+            received_at_ms: 1_000,
+            first_response_at_ms: Some(1_250),
+            finished_at_ms: Some(2_500),
+            error_message: None,
+        });
+        assert_eq!(
+            summary.call.performance.speed_status,
+            SpeedStatus::Unavailable
+        );
+        assert_eq!(
+            summary.call.performance.reason,
+            Some(SpeedUnavailableReason::MissingOutputTokens)
+        );
+        assert_eq!(
+            summary.call.performance.overall_reason,
+            Some(SpeedUnavailableReason::MissingOutputTokens)
+        );
+    }
 }
