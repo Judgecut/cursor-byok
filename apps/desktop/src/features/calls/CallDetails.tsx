@@ -5,6 +5,7 @@ import { Tabs, type TabItem } from "../../shared/ui/Tabs";
 import {
   formatConversionNote,
   formatDisplayCostExact,
+  formatHitRatePercent,
   formatRatePerMillion,
   formatUsdExact,
 } from "../../shared/utils/costFormat";
@@ -110,11 +111,25 @@ function generationFormula(performance: CallPerformance, call: LlmCall) {
   });
 }
 
+function hasReportedUsage(call: LlmCall) {
+  return call.call_kind !== "cursor_official" && call.input_tokens != null;
+}
+
+function formatCacheDetailField(tokens: number | null, call: LlmCall): string | number {
+  if (!hasReportedUsage(call)) return "-";
+  if (tokens == null) return t("未上报");
+  if (tokens === 0) return t("0（明确为零）");
+  return tokens;
+}
+
 function CostBreakdownSection({ call }: { call: LlmCall }) {
   const { currency, cnyRate } = useAppStore();
   const conversionNote = formatConversionNote(currency, cnyRate);
   const status = costStatusBadge(call);
+  const reportedUsage = hasReportedUsage(call);
   const priced = call.call_kind !== "cursor_official" && call.cost_status === "priced";
+  const assumedCache = priced && call.cost_basis === "assumed_cache";
+  const hitRateText = formatHitRatePercent(call.assumed_cache_hit_rate_bps);
   const catalogRef = call.pricing_provider_id && call.pricing_model_id
     ? `${call.pricing_provider_id} / ${call.pricing_model_id}`
     : null;
@@ -122,32 +137,76 @@ function CostBreakdownSection({ call }: { call: LlmCall }) {
     {
       key: "input",
       label: t("非缓存输入"),
-      tokens: call.billed_input_tokens,
+      tokenText: call.billed_input_tokens != null
+        ? assumedCache
+          ? `${formatInteger(call.billed_input_tokens)} (${t("估算")})`
+          : formatInteger(call.billed_input_tokens)
+        : "-",
+      tokenTitle: assumedCache && call.input_tokens != null && call.estimated_cache_read_tokens != null
+        ? t("原始总输入 {total}，按 {rate}% 命中率扣除估算缓存读取 {cached}", {
+            total: formatInteger(call.input_tokens),
+            rate: hitRateText,
+            cached: formatInteger(call.estimated_cache_read_tokens),
+          })
+        : undefined,
       rate: call.unit_input_per_million,
       cost: call.input_cost,
     },
     {
       key: "output",
       label: t("模型输出"),
-      tokens: call.output_tokens,
+      tokenText: call.output_tokens != null ? formatInteger(call.output_tokens) : "-",
+      tokenTitle: undefined,
       rate: call.unit_output_per_million,
       cost: call.output_cost,
     },
     {
       key: "cache_read",
       label: t("缓存读取"),
-      tokens: call.cache_read_tokens,
+      tokenText: assumedCache && call.estimated_cache_read_tokens != null
+        ? `~${formatInteger(call.estimated_cache_read_tokens)} (${t("估算")})`
+        : reportedUsage && call.cache_read_tokens == null
+          ? t("未上报")
+          : call.cache_read_tokens != null
+            ? formatInteger(call.cache_read_tokens)
+            : "-",
+      tokenTitle: assumedCache && call.estimated_cache_read_tokens != null
+        ? t("上游未上报缓存读取；计费按 {rate}% 缓存命中率估算", { rate: hitRateText })
+        : reportedUsage && call.cache_read_tokens == null
+          ? t("上游未上报缓存读取字段")
+          : reportedUsage && call.cache_read_tokens === 0
+            ? t("上游明确上报为 0")
+            : undefined,
       rate: call.unit_cache_read_per_million,
       cost: call.cache_read_cost,
     },
     {
       key: "cache_write",
       label: t("缓存写入"),
-      tokens: call.cache_write_tokens,
+      tokenText: reportedUsage && call.cache_write_tokens == null
+        ? t("未上报")
+        : call.cache_write_tokens != null
+          ? formatInteger(call.cache_write_tokens)
+          : "-",
+      tokenTitle: reportedUsage && call.cache_write_tokens == null
+        ? t("上游未上报缓存写入字段")
+        : reportedUsage && call.cache_write_tokens === 0
+          ? t("上游明确上报为 0")
+          : undefined,
       rate: call.unit_cache_write_per_million,
       cost: call.cache_write_cost,
     },
   ];
+
+  const basisNote = assumedCache
+    ? t("估算说明：上游未上报缓存明细，已按默认 {rate}% 缓存命中率拆分为非缓存输入 {uncached} Token 与缓存读取约 {cached} Token。", {
+        rate: hitRateText,
+        uncached: formatInteger(call.billed_input_tokens ?? 0),
+        cached: formatInteger(call.estimated_cache_read_tokens ?? 0),
+      })
+    : priced && reportedUsage && call.cache_read_tokens == null && call.cache_write_tokens == null
+      ? t("估算说明：上游未上报缓存明细，本次未应用默认缓存命中率估算，仅按已上报字段计费。")
+      : null;
 
   const note = call.call_kind === "cursor_official"
     ? t("Cursor 官方通道不计入本地 BYOK 定价估算。")
@@ -169,6 +228,12 @@ function CostBreakdownSection({ call }: { call: LlmCall }) {
             {pricingSourceLabel(call)}
           </span>}
           {catalogRef && <span className={styles.badge}>{catalogRef}</span>}
+          {priced && call.cost_basis === "assumed_cache" && (
+            <span className={styles.badge}>{t("按 {rate}% 缓存估算", { rate: hitRateText })}</span>
+          )}
+          {priced && call.cost_basis === "reported" && (
+            <span className={styles.badge}>{t("按实报用量")}</span>
+          )}
           {priced && call.status === "running" && <span className={styles.badge}>{t("暂计费用")}</span>}
           {priced && call.cost_backfilled && <span className={styles.badge}>{t("历史估算")}</span>}
         </div>
@@ -191,8 +256,8 @@ function CostBreakdownSection({ call }: { call: LlmCall }) {
           >
             {priced && item.cost != null ? formatDisplayCostExact(item.cost, currency, cnyRate) : "—"}
           </strong>
-          <small>
-            {item.tokens != null ? formatInteger(item.tokens) : "-"} × {formatRatePerMillion(item.rate)}
+          <small title={item.tokenTitle}>
+            {item.tokenText} × {formatRatePerMillion(item.rate)}
           </small>
         </div>)}
       </div>
@@ -204,6 +269,7 @@ function CostBreakdownSection({ call }: { call: LlmCall }) {
           })}
         </div>
       )}
+      {basisNote && <div className={styles.costNote}>{basisNote}</div>}
       {note && <div className={styles.costNote}>{note}</div>}
     </div>
   </section>;
@@ -247,9 +313,20 @@ export function CallDetails({ detail }: { detail: CallDetail }) {
     [t("计费输入 Token"), show(call.billed_input_tokens)],
     ["Output Token", show(call.output_tokens)],
     ["Total Token", show(call.total_tokens)],
-    ["Cache Read Token", show(call.cache_read_tokens)],
-    ["Cache Write Token", show(call.cache_write_tokens)],
+    ["Cache Read Token", formatCacheDetailField(call.cache_read_tokens, call)],
+    ["Cache Write Token", formatCacheDetailField(call.cache_write_tokens, call)],
     ["Reasoning Token", show(call.reasoning_tokens)],
+    [
+      t("计费口径"),
+      call.cost_basis === "assumed_cache"
+        ? t("按 {rate}% 缓存命中率估算（约 {tokens} Token）", {
+            rate: formatHitRatePercent(call.assumed_cache_hit_rate_bps),
+            tokens: formatInteger(call.estimated_cache_read_tokens ?? 0),
+          })
+        : call.cost_basis === "reported"
+          ? t("按实报用量")
+          : "-",
+    ],
     [t("价格快照时间"), call.pricing_snapshot_at_ms ? new Date(call.pricing_snapshot_at_ms).toLocaleString() : "-"],
     [t("计费时间"), call.cost_calculated_at_ms ? new Date(call.cost_calculated_at_ms).toLocaleString() : "-"],
     [t("消息数"), call.message_count],

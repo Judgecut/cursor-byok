@@ -213,8 +213,17 @@ export function CallsPage() {
   const hasMatchingCallsPage = hasMatchingCallsFilter
     && callsResult.page === page
     && callsResult.pageSize === pageSize;
-  const calls = hasMatchingCallsPage && !error ? callsResult.items : [];
-  const total = hasMatchingCallsFilter && !error ? callsResult.total : 0;
+  const keepPreviousCalls = callsResult !== null && !hasMatchingCallsPage && !error;
+  const calls = hasMatchingCallsPage && !error
+    ? callsResult.items
+    : keepPreviousCalls
+      ? callsResult.items
+      : [];
+  const total = hasMatchingCallsFilter && !error
+    ? callsResult.total
+    : keepPreviousCalls
+      ? callsResult.total
+      : 0;
   const callsTableLoading = !error && (loading || !hasMatchingCallsPage);
 
   const emptyText = error

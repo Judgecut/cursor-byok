@@ -10,6 +10,28 @@ pub struct DecimalPerMillion {
     pub scale: u32,
 }
 
+impl Ord for DecimalPerMillion {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let self_unit = 10_u128.pow(self.scale);
+        let other_unit = 10_u128.pow(other.scale);
+        let self_int = self.mantissa / self_unit;
+        let other_int = other.mantissa / other_unit;
+        if self_int != other_int {
+            return self_int.cmp(&other_int);
+        }
+        let target_scale = self.scale.max(other.scale);
+        let self_frac = (self.mantissa % self_unit) * 10_u128.pow(target_scale - self.scale);
+        let other_frac = (other.mantissa % other_unit) * 10_u128.pow(target_scale - other.scale);
+        self_frac.cmp(&other_frac)
+    }
+}
+
+impl PartialOrd for DecimalPerMillion {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl DecimalPerMillion {
     pub fn zero() -> Self {
         Self {
@@ -291,5 +313,23 @@ mod tests {
         assert_eq!(divide_nano_round_half_up(3, 2), Some(2));
         assert_eq!(divide_nano_round_half_up(5, 2), Some(3));
         assert_eq!(divide_nano_round_half_up(0, 4), Some(0));
+    }
+
+    #[test]
+    fn compares_decimals_across_scales_without_overflow() {
+        assert!(
+            DecimalPerMillion::parse("0.075").unwrap() < DecimalPerMillion::parse("1.5").unwrap()
+        );
+        assert_eq!(
+            DecimalPerMillion::parse("1.50").unwrap(),
+            DecimalPerMillion::parse("1.5").unwrap()
+        );
+        assert!(
+            DecimalPerMillion::parse("0").unwrap() < DecimalPerMillion::parse("0.0001").unwrap()
+        );
+        assert!(
+            DecimalPerMillion::parse("100000000000000000000000.1").unwrap()
+                < DecimalPerMillion::parse("100000000000000000000000.2").unwrap()
+        );
     }
 }

@@ -655,9 +655,13 @@ mod tests {
             cache_read_tokens: Some(500),
             ..Default::default()
         };
-        let cost =
-            crate::pricing::calculate_cost(ProviderType::OpenAiChat, &usage, &resolved.snapshot)
-                .unwrap();
+        let cost = crate::pricing::calculate_cost(
+            ProviderType::OpenAiChat,
+            crate::model::CallOrigin::Run,
+            &usage,
+            &resolved.snapshot,
+        )
+        .unwrap();
         assert_eq!(cost.status, crate::pricing::CostStatus::Priced);
         assert_eq!(cost.total_cost_nano, Some(0));
 

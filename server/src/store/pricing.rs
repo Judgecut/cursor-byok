@@ -9,12 +9,12 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqliteConnection};
 
 use crate::{
-    model::{ProviderType, Usage},
+    model::{CallOrigin, ProviderType, Usage},
     plugin::PluginModelDescriptor,
     pricing::{
         canonical_supplier_identity, canonicalize_custom_price, parse_models_dev_catalog,
         resolve_supplier_pricing, BindingMode, CalculatedCost, CatalogMatchKind, CatalogModel,
-        CostStatus, ModelPricingConfig, PricingRates, PricingSnapshot, PricingSource,
+        CostBasis, CostStatus, ModelPricingConfig, PricingRates, PricingSnapshot, PricingSource,
         PricingSyncState, SourceKind, SupplierIdentity, DEFAULT_SYNC_INTERVAL_HOURS,
     },
     Error, Result,
@@ -33,6 +33,10 @@ pub enum BackfillCallUpdate {
         snapshot: PricingSnapshot,
         calculated: CalculatedCost,
     },
+    BasisRecalculated {
+        call_id: String,
+        calculated: CalculatedCost,
+    },
     StillUnpriced {
         call_id: String,
         snapshot: PricingSnapshot,
@@ -47,6 +51,9 @@ pub struct BackfillCandidate {
     pub rowid: i64,
     pub call_id: String,
     pub request_type: ProviderType,
+    pub call_origin: CallOrigin,
+    pub existing_cost_status: Option<String>,
+    pub frozen_snapshot: Option<PricingSnapshot>,
     pub identity: SupplierIdentity,
     pub usage: Usage,
 }
@@ -180,11 +187,13 @@ impl Store {
         after_rowid: i64,
         limit: usize,
     ) -> Result<Vec<BackfillCandidate>> {
+        let now = now_ms();
         let rows = sqlx::query(
             "SELECT
                 rowid,
                 call_id,
                 request_type,
+                call_origin,
                 request_url,
                 provider_url,
                 model_id,
@@ -192,11 +201,24 @@ impl Store {
                 output_tokens,
                 cache_read_tokens,
                 cache_write_tokens,
-                reasoning_tokens
+                reasoning_tokens,
+                cost_status,
+                pricing_source,
+                pricing_provider_id,
+                pricing_model_id,
+                pricing_snapshot_at_ms,
+                unit_input_per_million,
+                unit_output_per_million,
+                unit_cache_read_per_million,
+                unit_cache_write_per_million
              FROM llm_calls
              WHERE rowid > ?
                AND status != 'running'
-               AND (cost_status IS NULL OR cost_status = 'unpriced')
+               AND (
+                 cost_status IS NULL
+                 OR cost_status = 'unpriced'
+                 OR (cost_status = 'priced' AND cost_basis IS NULL)
+               )
              ORDER BY rowid ASC
              LIMIT ?",
         )
@@ -208,9 +230,11 @@ impl Store {
         rows.into_iter()
             .map(|row| {
                 let request_type_raw: String = row.try_get("request_type")?;
+                let call_origin_raw: String = row.try_get("call_origin")?;
                 let request_url: String = row.try_get("request_url")?;
                 let provider_url: String = row.try_get("provider_url")?;
                 let model_id: String = row.try_get("model_id")?;
+                let existing_cost_status: Option<String> = row.try_get("cost_status")?;
                 let request_type =
                     ProviderType::from_str(&request_type_raw).unwrap_or(ProviderType::OpenAiChat);
                 let identity = canonical_supplier_identity(
@@ -219,10 +243,18 @@ impl Store {
                     &provider_url,
                     &model_id,
                 );
+                let frozen_snapshot = if existing_cost_status.as_deref() == Some("priced") {
+                    Some(snapshot_from_call_row(&row, now)?)
+                } else {
+                    None
+                };
                 Ok(BackfillCandidate {
                     rowid: row.try_get("rowid")?,
                     call_id: row.try_get("call_id")?,
                     request_type,
+                    call_origin: CallOrigin::parse(&call_origin_raw),
+                    existing_cost_status,
+                    frozen_snapshot,
                     identity,
                     usage: Usage {
                         input_tokens: to_opt_u64(row.try_get("input_tokens")?),
@@ -271,6 +303,9 @@ impl Store {
                             unit_cache_read_per_million = ?,
                             unit_cache_write_per_million = ?,
                             cost_status = ?,
+                            cost_basis = ?,
+                            assumed_cache_hit_rate_bps = ?,
+                            estimated_cache_read_tokens = ?,
                             input_cost_nano = ?,
                             output_cost_nano = ?,
                             cache_read_cost_nano = ?,
@@ -291,6 +326,50 @@ impl Store {
                     .bind(&snapshot.rates.cache_read_per_million)
                     .bind(&snapshot.rates.cache_write_per_million)
                     .bind(CostStatus::Priced.as_str())
+                    .bind(calculated.cost_basis.map(CostBasis::as_str))
+                    .bind(calculated.assumed_cache_hit_rate_bps)
+                    .bind(
+                        calculated
+                            .estimated_cache_read_tokens
+                            .map(|value| value.min(i64::MAX as u64) as i64),
+                    )
+                    .bind(calculated.input_cost_nano)
+                    .bind(calculated.output_cost_nano)
+                    .bind(calculated.cache_read_cost_nano)
+                    .bind(calculated.cache_write_cost_nano)
+                    .bind(calculated.total_cost_nano)
+                    .bind(now)
+                    .bind(call_id)
+                    .execute(&mut *transaction)
+                    .await?;
+                }
+                BackfillCallUpdate::BasisRecalculated {
+                    call_id,
+                    calculated,
+                } => {
+                    sqlx::query(
+                        "UPDATE llm_calls SET
+                            cost_basis = ?,
+                            assumed_cache_hit_rate_bps = ?,
+                            estimated_cache_read_tokens = ?,
+                            input_cost_nano = ?,
+                            output_cost_nano = ?,
+                            cache_read_cost_nano = ?,
+                            cache_write_cost_nano = ?,
+                            total_cost_nano = ?,
+                            cost_calculated_at_ms = ?
+                         WHERE call_id = ?
+                           AND status != 'running'
+                           AND cost_status = 'priced'
+                           AND cost_basis IS NULL",
+                    )
+                    .bind(calculated.cost_basis.map(CostBasis::as_str))
+                    .bind(calculated.assumed_cache_hit_rate_bps)
+                    .bind(
+                        calculated
+                            .estimated_cache_read_tokens
+                            .map(|value| value.min(i64::MAX as u64) as i64),
+                    )
                     .bind(calculated.input_cost_nano)
                     .bind(calculated.output_cost_nano)
                     .bind(calculated.cache_read_cost_nano)
@@ -313,6 +392,9 @@ impl Store {
                             unit_cache_read_per_million = ?,
                             unit_cache_write_per_million = ?,
                             cost_status = ?,
+                            cost_basis = NULL,
+                            assumed_cache_hit_rate_bps = NULL,
+                            estimated_cache_read_tokens = NULL,
                             input_cost_nano = NULL,
                             output_cost_nano = NULL,
                             cache_read_cost_nano = NULL,
@@ -322,7 +404,11 @@ impl Store {
                             cost_backfilled = 0
                          WHERE call_id = ?
                            AND status != 'running'
-                           AND (cost_status IS NULL OR cost_status = 'unpriced')",
+                           AND (
+                             cost_status IS NULL
+                             OR cost_status = 'unpriced'
+                             OR (cost_status = 'priced' AND cost_basis IS NULL)
+                           )",
                     )
                     .bind(snapshot.source.as_str())
                     .bind(&snapshot.provider_id)
@@ -342,6 +428,9 @@ impl Store {
                     sqlx::query(
                         "UPDATE llm_calls SET
                             cost_status = ?,
+                            cost_basis = NULL,
+                            assumed_cache_hit_rate_bps = NULL,
+                            estimated_cache_read_tokens = NULL,
                             input_cost_nano = NULL,
                             output_cost_nano = NULL,
                             cache_read_cost_nano = NULL,
@@ -351,7 +440,11 @@ impl Store {
                             cost_backfilled = 0
                          WHERE call_id = ?
                            AND status != 'running'
-                           AND (cost_status IS NULL OR cost_status = 'unpriced')",
+                           AND (
+                             cost_status IS NULL
+                             OR cost_status = 'unpriced'
+                             OR (cost_status = 'priced' AND cost_basis IS NULL)
+                           )",
                     )
                     .bind(CostStatus::IncompleteUsage.as_str())
                     .bind(now)
@@ -1206,6 +1299,27 @@ fn catalog_model_from_row(row: sqlx::sqlite::SqliteRow) -> Result<CatalogModel> 
             cache_write_per_million: row.try_get("cache_write_per_million")?,
         },
         synced_at_ms: row.try_get("synced_at_ms")?,
+    })
+}
+
+pub(crate) fn snapshot_from_call_row(
+    row: &sqlx::sqlite::SqliteRow,
+    fallback_now: i64,
+) -> Result<PricingSnapshot> {
+    let source_raw: Option<String> = row.try_get("pricing_source")?;
+    Ok(PricingSnapshot {
+        source: PricingSource::parse(source_raw.as_deref().unwrap_or("unpriced")),
+        provider_id: row.try_get("pricing_provider_id")?,
+        model_id: row.try_get("pricing_model_id")?,
+        snapshot_at_ms: row
+            .try_get::<Option<i64>, _>("pricing_snapshot_at_ms")?
+            .unwrap_or(fallback_now),
+        rates: PricingRates {
+            input_per_million: row.try_get("unit_input_per_million")?,
+            output_per_million: row.try_get("unit_output_per_million")?,
+            cache_read_per_million: row.try_get("unit_cache_read_per_million")?,
+            cache_write_per_million: row.try_get("unit_cache_write_per_million")?,
+        },
     })
 }
 

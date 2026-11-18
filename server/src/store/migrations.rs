@@ -912,4 +912,125 @@ mod tests {
                 .unwrap();
         assert_eq!(model_count, 1);
     }
+
+    #[tokio::test]
+    async fn migration_0014_backfills_omitted_cache_priced_calls_using_frozen_rates() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("upgrade-v13-to-v14.db");
+        let db_url = format!("sqlite://{}", db_path.display());
+        let connect_options = SqliteConnectOptions::from_str(&db_url)
+            .unwrap()
+            .create_if_missing(true)
+            .foreign_keys(true);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(connect_options)
+            .await
+            .unwrap();
+        let historical = migrator_with_line_endings(MigrationLineEndings::Lf);
+        let previous = Migrator {
+            migrations: Cow::Owned(historical.iter().take(13).cloned().collect()),
+            ..Migrator::DEFAULT
+        };
+        previous.run(&pool).await.unwrap();
+
+        sqlx::query(
+            "INSERT INTO llm_calls(
+                call_id, run_id, conversation_id, provider_call_index, model_hash,
+                provider_type, provider_url, request_type, request_url, model_id, display_name,
+                status, created_at_ms, finished_at_ms, duration_ms, call_origin,
+                input_tokens, output_tokens, total_tokens,
+                cache_read_tokens, cache_write_tokens,
+                pricing_source, pricing_snapshot_at_ms,
+                unit_input_per_million, unit_output_per_million,
+                unit_cache_read_per_million, unit_cache_write_per_million,
+                cost_status, input_cost_nano, output_cost_nano, cache_read_cost_nano, cache_write_cost_nano, total_cost_nano,
+                cost_calculated_at_ms, cost_backfilled,
+                message_count, tool_count, detailed
+            ) VALUES (
+                'v13-reported', 'r1', 'c1', 0, 'mh-1',
+                'openai-chat', 'https://gateway.example/v1', 'openai-chat', 'https://gateway.example/v1/chat/completions', 'gpt-5', 'GPT-5',
+                'completed', 1000, 1100, 100, 'run',
+                1000000, 100000, 1100000,
+                200000, 0,
+                'custom', 1000,
+                '1.5', '7.5', '0.075', '0.375',
+                'priced', 1200000000, 750000000, 15000000, 0, 1965000000,
+                1100, 0,
+                1, 0, 0
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO llm_calls(
+                call_id, run_id, conversation_id, provider_call_index, model_hash,
+                provider_type, provider_url, request_type, request_url, model_id, display_name,
+                status, created_at_ms, finished_at_ms, duration_ms, call_origin,
+                input_tokens, output_tokens, total_tokens,
+                cache_read_tokens, cache_write_tokens,
+                pricing_source, pricing_snapshot_at_ms,
+                unit_input_per_million, unit_output_per_million,
+                unit_cache_read_per_million, unit_cache_write_per_million,
+                cost_status, input_cost_nano, output_cost_nano, cache_read_cost_nano, cache_write_cost_nano, total_cost_nano,
+                cost_calculated_at_ms, cost_backfilled,
+                message_count, tool_count, detailed
+            ) VALUES (
+                'v13-omitted', 'r2', 'c2', 0, 'mh-2',
+                'anthropic', 'https://gateway.example/v1', 'anthropic', 'https://gateway.example/v1/messages', 'gemini-2.5-pro', 'Gemini-2.5-Pro',
+                'completed', 2000, 2100, 100, 'run',
+                1000000, 100000, 1100000,
+                NULL, NULL,
+                'custom', 1000,
+                '1.5', '7.5', '0.075', '0.375',
+                'priced', 1500000000, 750000000, 0, 0, 2250000000,
+                2100, 0,
+                1, 0, 0
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+
+        let store = crate::store::Store::connect(&db_url).await.unwrap();
+        let reported = store.llm_call("v13-reported").await.unwrap().unwrap();
+        assert_eq!(reported.cost_basis.as_deref(), Some("reported"));
+        assert_eq!(reported.assumed_cache_hit_rate_bps, None);
+        assert_eq!(reported.estimated_cache_read_tokens, None);
+        assert_eq!(reported.total_cost.as_deref(), Some("1.965"));
+
+        let before_backfill = store.llm_call("v13-omitted").await.unwrap().unwrap();
+        assert_eq!(before_backfill.cost_basis, None);
+
+        let token = tokio_util::sync::CancellationToken::new();
+        let updated = crate::pricing::backfill::run_backfill_once(&store, &token)
+            .await
+            .unwrap();
+        assert_eq!(updated, 1);
+
+        let after_backfill = store.llm_call("v13-omitted").await.unwrap().unwrap();
+        assert_eq!(after_backfill.cost_basis.as_deref(), Some("assumed_cache"));
+        assert_eq!(after_backfill.assumed_cache_hit_rate_bps, Some(9_000));
+        assert_eq!(after_backfill.estimated_cache_read_tokens, Some(900_000));
+        assert_eq!(after_backfill.cache_read_tokens, None);
+        assert_eq!(after_backfill.cache_write_tokens, None);
+        assert_eq!(after_backfill.billed_input_tokens, Some(100_000));
+        assert_eq!(
+            after_backfill.unit_input_per_million.as_deref(),
+            Some("1.5")
+        );
+        assert_eq!(after_backfill.input_cost.as_deref(), Some("0.15"));
+        assert_eq!(after_backfill.cache_read_cost.as_deref(), Some("0.0675"));
+        assert_eq!(after_backfill.output_cost.as_deref(), Some("0.75"));
+        assert_eq!(after_backfill.total_cost.as_deref(), Some("0.9675"));
+        assert!(!after_backfill.cost_backfilled);
+
+        let second_pass = crate::pricing::backfill::run_backfill_once(&store, &token)
+            .await
+            .unwrap();
+        assert_eq!(second_pass, 0);
+    }
 }

@@ -210,6 +210,9 @@ mod llm_call {
         pub unit_cache_read_per_million: Option<String>,
         pub unit_cache_write_per_million: Option<String>,
         pub cost_status: Option<String>,
+        pub cost_basis: Option<String>,
+        pub assumed_cache_hit_rate_bps: Option<i64>,
+        pub estimated_cache_read_tokens: Option<i64>,
         pub input_cost: Option<String>,
         pub output_cost: Option<String>,
         pub cache_read_cost: Option<String>,
@@ -292,6 +295,7 @@ mod overview {
         pub token_usage: i64,
         pub prompt_tokens: i64,
         pub input_tokens: i64,
+        pub reported_cache_input_tokens: i64,
         pub cache_read_tokens: i64,
         pub cache_write_tokens: i64,
         pub output_tokens: i64,
@@ -304,6 +308,10 @@ mod overview {
         pub priced_calls: i64,
         pub unpriced_calls: i64,
         pub incomplete_usage_calls: i64,
+        pub unreported_cache_calls: i64,
+        pub assumed_cache_calls: i64,
+        pub assumed_cache_cost: String,
+        pub estimated_cache_read_tokens: i64,
         pub speed: SpeedAggregate,
     }
 
@@ -316,6 +324,7 @@ mod overview {
                 token_usage: 0,
                 prompt_tokens: 0,
                 input_tokens: 0,
+                reported_cache_input_tokens: 0,
                 cache_read_tokens: 0,
                 cache_write_tokens: 0,
                 output_tokens: 0,
@@ -328,6 +337,10 @@ mod overview {
                 priced_calls: 0,
                 unpriced_calls: 0,
                 incomplete_usage_calls: 0,
+                unreported_cache_calls: 0,
+                assumed_cache_calls: 0,
+                assumed_cache_cost: "0".into(),
+                estimated_cache_read_tokens: 0,
                 speed: SpeedAggregate::default(),
             }
         }
@@ -357,6 +370,10 @@ mod overview {
         pub priced_calls: i64,
         pub unpriced_calls: i64,
         pub incomplete_usage_calls: i64,
+        pub unreported_cache_calls: i64,
+        pub assumed_cache_calls: i64,
+        pub assumed_cache_cost: String,
+        pub estimated_cache_read_tokens: i64,
     }
 
     impl Default for TokenUsageBucket {
@@ -375,6 +392,10 @@ mod overview {
                 priced_calls: 0,
                 unpriced_calls: 0,
                 incomplete_usage_calls: 0,
+                unreported_cache_calls: 0,
+                assumed_cache_calls: 0,
+                assumed_cache_cost: "0".into(),
+                estimated_cache_read_tokens: 0,
             }
         }
     }
@@ -460,6 +481,10 @@ mod overview {
         pub priced_calls: i64,
         pub unpriced_calls: i64,
         pub incomplete_usage_calls: i64,
+        pub unreported_cache_calls: i64,
+        pub assumed_cache_calls: i64,
+        pub assumed_cache_cost: String,
+        pub estimated_cache_read_tokens: i64,
         pub speed: SpeedAggregate,
     }
 
@@ -486,6 +511,10 @@ mod overview {
         pub priced_calls: i64,
         pub unpriced_calls: i64,
         pub incomplete_usage_calls: i64,
+        pub unreported_cache_calls: i64,
+        pub assumed_cache_calls: i64,
+        pub assumed_cache_cost: String,
+        pub estimated_cache_read_tokens: i64,
         pub speed: SpeedAggregate,
     }
 

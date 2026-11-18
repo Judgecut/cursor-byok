@@ -2,11 +2,12 @@ import type { PricingSource, SpeedAggregate } from "../../../shared/api";
 import {
   compareUsdStrings,
   formatConversionNote,
+  formatDisplayCost,
   formatDisplayCostExact,
   formatUsdExact,
   type DisplayCurrency,
 } from "../../../shared/utils/costFormat";
-import { formatInteger } from "../../../shared/utils/numberFormat";
+import { formatCompactInteger, formatInteger } from "../../../shared/utils/numberFormat";
 import styles from "./BreakdownTable.module.scss";
 
 export type BreakdownSortKey =
@@ -39,6 +40,11 @@ export type BreakdownRowBase = {
   cache_write_cost: string;
   average_priced_cost: string | null;
   unpriced_calls: number;
+  incomplete_usage_calls: number;
+  unreported_cache_calls: number;
+  assumed_cache_calls: number;
+  assumed_cache_cost: string;
+  estimated_cache_read_tokens: number;
   speed: SpeedAggregate;
 };
 
@@ -172,6 +178,81 @@ export function successRateText(row: BreakdownRowBase): string {
   return `${((row.successful_calls / row.llm_calls) * 100).toFixed(1)}%`;
 }
 
+export function allCacheUsageUnreported(row: BreakdownRowBase): boolean {
+  return row.unreported_cache_calls > 0
+    && row.unreported_cache_calls + row.incomplete_usage_calls >= row.llm_calls;
+}
+
+export function renderBreakdownCacheCell(row: BreakdownRowBase) {
+  if (allCacheUsageUnreported(row)) {
+    return <span className={styles.subValue}>{t("未上报")}</span>;
+  }
+  const counts = `${formatCompactInteger(row.cache_read_tokens)} / ${formatCompactInteger(row.cache_write_tokens)}`;
+  if (row.unreported_cache_calls <= 0) {
+    return counts;
+  }
+  return <>
+    <div>{counts}</div>
+    <div className={styles.subValue}>
+      {t("含 {count} 次未上报", { count: formatCompactInteger(row.unreported_cache_calls) })}
+    </div>
+  </>;
+}
+
+export function breakdownCacheTitle(row: BreakdownRowBase): string {
+  if (allCacheUsageUnreported(row)) {
+    const base = t("已上报用量的 {count} 次调用均未提供缓存读写字段", {
+      count: formatInteger(row.unreported_cache_calls),
+    });
+    return row.assumed_cache_calls > 0
+      ? `${base}\n${t("计费已对 {count} 次调用按默认命中率估算缓存读取（约 {tokens} Token）", {
+          count: formatInteger(row.assumed_cache_calls),
+          tokens: formatInteger(row.estimated_cache_read_tokens),
+        })}`
+      : base;
+  }
+  const lines = [
+    `${formatInteger(row.cache_read_tokens)} / ${formatInteger(row.cache_write_tokens)}`,
+  ];
+  if (
+    row.cache_read_tokens === 0
+    && row.cache_write_tokens === 0
+    && row.unreported_cache_calls === 0
+    && row.llm_calls > row.incomplete_usage_calls
+  ) {
+    lines.push(t("缓存读写均明确上报为 0"));
+  }
+  if (row.unreported_cache_calls > 0) {
+    lines.push(t("另有 {count} 次调用未上报缓存字段", {
+      count: formatInteger(row.unreported_cache_calls),
+    }));
+  }
+  if (row.assumed_cache_calls > 0) {
+    lines.push(t("计费已对 {count} 次调用按默认命中率估算缓存读取（约 {tokens} Token）", {
+      count: formatInteger(row.assumed_cache_calls),
+      tokens: formatInteger(row.estimated_cache_read_tokens),
+    }));
+  }
+  return lines.join("\n");
+}
+
+export function renderBreakdownCostCell(
+  row: BreakdownRowBase,
+  currency: DisplayCurrency,
+  cnyRate: string | null,
+) {
+  const main = formatDisplayCost(row.total_cost, currency, cnyRate);
+  if (row.assumed_cache_calls <= 0) return main;
+  return <>
+    <div>{main}</div>
+    <div className={styles.subValue}>
+      {row.assumed_cache_calls === row.llm_calls
+        ? t("含估算缓存")
+        : t("含 {count} 次缓存估算", { count: formatCompactInteger(row.assumed_cache_calls) })}
+    </div>
+  </>;
+}
+
 export function breakdownCostTitle(
   row: BreakdownRowBase,
   currency: DisplayCurrency,
@@ -184,6 +265,17 @@ export function breakdownCostTitle(
     t("缓存读取：{cost}", { cost: formatDisplayCostExact(row.cache_read_cost, currency, cnyRate) }),
     t("缓存写入：{cost}", { cost: formatDisplayCostExact(row.cache_write_cost, currency, cnyRate) }),
   ];
+  if (row.assumed_cache_calls > 0) {
+    lines.push(t("其中 {count} 次未上报缓存明细，按默认命中率估算费用 {cost}（缓存读取约 {tokens} Token）", {
+      count: formatInteger(row.assumed_cache_calls),
+      cost: formatDisplayCostExact(row.assumed_cache_cost, currency, cnyRate),
+      tokens: formatInteger(row.estimated_cache_read_tokens),
+    }));
+  } else if (row.unreported_cache_calls > 0) {
+    lines.push(t("其中 {count} 次调用未上报缓存明细", {
+      count: formatInteger(row.unreported_cache_calls),
+    }));
+  }
   const note = formatConversionNote(currency, cnyRate);
   if (note) {
     lines.push(

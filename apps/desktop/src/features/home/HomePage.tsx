@@ -586,15 +586,22 @@ export function HomePage() {
   const hasMatchingCallsPage = hasMatchingCallsFilter
     && callsState.page === callsPage
     && callsState.pageSize === callsPageSize;
-  const callsItems = hasMatchingCallsPage ? callsState.items : [];
-  const callsTotal = hasMatchingCallsFilter ? callsState.total : 0;
   const effectiveCallsError = !hasMatchingCallsPage
     && callsErrorState?.filterKey === filterKey
     && callsErrorState.page === callsPage
     && callsErrorState.pageSize === callsPageSize
     ? callsErrorState.message
     : null;
-  const callsTableLoading = !hasMatchingCallsPage && !effectiveCallsError && callsLoading;
+  // Keep the previous call rows visible while loading the next page/filter so the
+  // VirtualPage section height does not collapse to empty and clamp scrollTop back to 0.
+  const keepPreviousCalls = callsState !== null && !hasMatchingCallsPage && !effectiveCallsError;
+  const callsItems = hasMatchingCallsPage || keepPreviousCalls ? callsState.items : [];
+  const callsTotal = hasMatchingCallsFilter
+    ? callsState.total
+    : keepPreviousCalls
+      ? callsState.total
+      : 0;
+  const callsTableLoading = !hasMatchingCallsPage && !effectiveCallsError && (callsLoading || keepPreviousCalls);
 
   const dailyTokenUsage = useMemo(
     () => (filteredOverview?.token_usage_series ?? []).map((bucket) => ({
@@ -611,6 +618,10 @@ export function HomePage() {
       pricedCalls: bucket.priced_calls,
       unpricedCalls: bucket.unpriced_calls,
       incompleteUsageCalls: bucket.incomplete_usage_calls,
+      unreportedCacheCalls: bucket.unreported_cache_calls,
+      assumedCacheCalls: bucket.assumed_cache_calls,
+      assumedCacheCost: bucket.assumed_cache_cost,
+      estimatedCacheReadTokens: bucket.estimated_cache_read_tokens,
     })),
     [filteredOverview],
   );
@@ -630,6 +641,7 @@ export function HomePage() {
     tokenUsage: filteredOverview.metrics.token_usage,
     promptTokens: filteredOverview.metrics.prompt_tokens,
     inputTokens: filteredOverview.metrics.input_tokens,
+    reportedCacheInputTokens: filteredOverview.metrics.reported_cache_input_tokens,
     cacheReadTokens: filteredOverview.metrics.cache_read_tokens,
     cacheWriteTokens: filteredOverview.metrics.cache_write_tokens,
     outputTokens: filteredOverview.metrics.output_tokens,
@@ -642,6 +654,10 @@ export function HomePage() {
     pricedCalls: filteredOverview.metrics.priced_calls,
     unpricedCalls: filteredOverview.metrics.unpriced_calls,
     incompleteUsageCalls: filteredOverview.metrics.incomplete_usage_calls,
+    unreportedCacheCalls: filteredOverview.metrics.unreported_cache_calls,
+    assumedCacheCalls: filteredOverview.metrics.assumed_cache_calls,
+    assumedCacheCost: filteredOverview.metrics.assumed_cache_cost,
+    estimatedCacheReadTokens: filteredOverview.metrics.estimated_cache_read_tokens,
     speed: filteredOverview.metrics.speed,
   } : null;
 

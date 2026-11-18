@@ -21,6 +21,7 @@ export type HomeMetricsData = {
   tokenUsage: number;
   promptTokens: number;
   inputTokens: number;
+  reportedCacheInputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
   outputTokens: number;
@@ -33,6 +34,10 @@ export type HomeMetricsData = {
   pricedCalls: number;
   unpricedCalls: number;
   incompleteUsageCalls: number;
+  unreportedCacheCalls: number;
+  assumedCacheCalls: number;
+  assumedCacheCost: string;
+  estimatedCacheReadTokens: number;
   speed: SpeedAggregate;
 };
 
@@ -112,28 +117,48 @@ export function HomeMetrics({
     </section>;
   }
 
-  const defaultCacheHitRate = calculateRate(data.cacheReadTokens, data.cacheReadTokens + data.inputTokens);
+  const defaultCacheHitRate = calculateRate(data.cacheReadTokens, data.cacheReadTokens + data.reportedCacheInputTokens);
   const cacheReuseRate = calculateRate(
     data.cacheReadTokens,
-    data.cacheReadTokens + data.cacheWriteTokens + data.inputTokens,
+    data.cacheReadTokens + data.cacheWriteTokens + data.reportedCacheInputTokens,
   );
+  const allUsageUnreported = data.unreportedCacheCalls > 0
+    && data.reportedCacheInputTokens === 0
+    && data.cacheReadTokens === 0
+    && data.cacheWriteTokens === 0;
   const successfulCallRate = calculateRate(data.successfulCalls, data.llmCalls);
   const cacheCost = addUsdStrings(data.cacheReadCost, data.cacheWriteCost);
   const conversionNote = formatConversionNote(currency, cnyRate);
 
-  const cacheHitPrimary = formatRate(defaultCacheHitRate);
-  const cacheHitSecondary = defaultCacheHitRate === null
-    ? t("计入缓存创建 暂无数据")
-    : t("计入缓存创建 {rate}", { rate: formatRate(cacheReuseRate) });
+  const cacheHitPrimary = allUsageUnreported ? t("未上报") : formatRate(defaultCacheHitRate);
+  const cacheHitSecondary = allUsageUnreported
+    ? t("{count} 次调用未上报缓存明细", { count: formatCompactInteger(data.unreportedCacheCalls) })
+    : defaultCacheHitRate === null
+      ? t("计入缓存创建 暂无数据")
+      : data.unreportedCacheCalls > 0
+        ? t("另有 {count} 次未上报缓存", { count: formatCompactInteger(data.unreportedCacheCalls) })
+        : t("计入缓存创建 {rate}", { rate: formatRate(cacheReuseRate) });
 
-  const cacheTooltip = [
-    t("当前：{rate}", { rate: formatRate(defaultCacheHitRate) }),
-    t("公式：缓存读取 /（缓存读取 + 非缓存输入）"),
+  const cacheTooltipLines = [
+    t("当前：{rate}", { rate: cacheHitPrimary }),
+    t("公式：缓存读取 /（缓存读取 + 已上报缓存调用的非缓存输入）；仅统计明确上报缓存字段的调用。"),
     t("默认 {defaultRate} / 计入创建 {reuseRate}", {
       defaultRate: formatRate(defaultCacheHitRate),
       reuseRate: formatRate(cacheReuseRate),
     }),
-  ].join("\n");
+  ];
+  if (data.unreportedCacheCalls > 0) {
+    cacheTooltipLines.push(t("未上报缓存调用：{count} 次（不计入真实命中率分母）", {
+      count: formatMetricValue(data.unreportedCacheCalls),
+    }));
+  }
+  if (data.assumedCacheCalls > 0) {
+    cacheTooltipLines.push(t("其中 {count} 次计费按默认缓存命中率估算（估算缓存读取约 {tokens}）", {
+      count: formatMetricValue(data.assumedCacheCalls),
+      tokens: formatMetricValue(data.estimatedCacheReadTokens),
+    }));
+  }
+  const cacheTooltip = cacheTooltipLines.join("\n");
 
   const callsTooltip = [
     t("按历史 LLM 调用记录汇总，进行中的调用不计入。"),
@@ -166,18 +191,27 @@ export function HomeMetrics({
     t("首次输出不受生成时间 200ms 门槛限制；模型测试不计入。"),
   ].join("\n");
 
-  const tokensTooltip = [
+  const tokensTooltipLines = [
     t("总请求 Token 包含提示词和模型输出。"),
     "",
     t("总请求：{tokens}", { tokens: formatMetricValue(data.tokenUsage) }),
     t("提示词：{tokens}", { tokens: formatMetricValue(data.promptTokens) }),
     t("输出推算：{tokens}", { tokens: formatMetricValue(data.outputTokens) }),
     t("非缓存输入：{tokens}", { tokens: formatMetricValue(data.inputTokens) }),
-    t("缓存读取：{tokens}", { tokens: formatMetricValue(data.cacheReadTokens) }),
-    t("缓存写入：{tokens}", { tokens: formatMetricValue(data.cacheWriteTokens) }),
+    t("缓存读取（已上报）：{tokens}", { tokens: formatMetricValue(data.cacheReadTokens) }),
+    t("缓存写入（已上报）：{tokens}", { tokens: formatMetricValue(data.cacheWriteTokens) }),
     "",
     t("缓存读写已计入提示词侧统计。"),
-  ].join("\n");
+  ];
+  if (data.unreportedCacheCalls > 0) {
+    tokensTooltipLines.push(t("未上报缓存明细：{count} 次调用", { count: formatMetricValue(data.unreportedCacheCalls) }));
+  }
+  if (data.estimatedCacheReadTokens > 0) {
+    tokensTooltipLines.push(t("按估算计费拆分缓存读取：约 {tokens} Token", {
+      tokens: formatMetricValue(data.estimatedCacheReadTokens),
+    }));
+  }
+  const tokensTooltip = tokensTooltipLines.join("\n");
 
   const costTooltipLines = [
     t("基于每条调用冻结的价格快照累计；未定价或用量不完整的调用不计入总金额。"),
@@ -189,6 +223,13 @@ export function HomeMetrics({
     "",
     t("已计费调用：{count}", { count: formatMetricValue(data.pricedCalls) }),
   ];
+  if (data.assumedCacheCalls > 0) {
+    costTooltipLines.push(t("其中 {count} 次未上报缓存明细，按默认缓存命中率估算费用 {cost}（估算缓存读取约 {tokens} Token）", {
+      count: formatMetricValue(data.assumedCacheCalls),
+      cost: formatDisplayCostExact(data.assumedCacheCost, currency, cnyRate),
+      tokens: formatMetricValue(data.estimatedCacheReadTokens),
+    }));
+  }
   if (data.averagePricedCost) {
     costTooltipLines.push(t("单次平均费用：{cost}", { cost: formatDisplayCostExact(data.averagePricedCost, currency, cnyRate) }));
   }
@@ -210,7 +251,12 @@ export function HomeMetrics({
     ? t("含 {count} 次未定价调用", { count: formatCompactInteger(data.unpricedCalls) })
     : data.incompleteUsageCalls > 0 && data.pricedCalls === 0
       ? t("含 {count} 次用量不完整", { count: formatCompactInteger(data.incompleteUsageCalls) })
-      : t("缓存读写 {cost}", { cost: formatDisplayCost(cacheCost, currency, cnyRate) });
+      : data.assumedCacheCalls > 0
+        ? t("含 {count} 次按缓存估算（{cost}）", {
+            count: formatCompactInteger(data.assumedCacheCalls),
+            cost: formatDisplayCost(data.assumedCacheCost, currency, cnyRate),
+          })
+        : t("缓存读写 {cost}", { cost: formatDisplayCost(cacheCost, currency, cnyRate) });
 
   const costValueTitle = conversionNote
     ? `${formatDisplayCostExact(data.totalCost, currency, cnyRate)}\n${t("原美元金额：{cost}", { cost: formatUsdExact(data.totalCost) })}\n${conversionNote}`

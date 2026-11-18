@@ -65,6 +65,7 @@ impl Store {
                 COALESCE(SUM(status = 'completed'), 0) AS successful_calls,
                 COALESCE(SUM(status != 'completed'), 0) AS failed_calls,
                 COALESCE(SUM({fresh_input}), 0) AS input_tokens,
+                COALESCE(SUM(CASE WHEN cache_read_tokens IS NOT NULL OR cache_write_tokens IS NOT NULL THEN {fresh_input} ELSE 0 END), 0) AS reported_cache_input_tokens,
                 COALESCE(SUM(COALESCE(cache_read_tokens, 0)), 0) AS cache_read_tokens,
                 COALESCE(SUM(COALESCE(cache_write_tokens, 0)), 0) AS cache_write_tokens,
                 COALESCE(SUM(COALESCE(output_tokens, 0)), 0) AS output_tokens,
@@ -75,7 +76,8 @@ impl Store {
                 COALESCE(SUM(CASE WHEN cost_status = 'priced' THEN COALESCE(total_cost_nano, 0) ELSE 0 END), 0) AS total_cost_nano,
                 COALESCE(SUM(cost_status = 'priced'), 0) AS priced_calls,
                 COALESCE(SUM(cost_status IS NULL OR cost_status = 'unpriced'), 0) AS unpriced_calls,
-                COALESCE(SUM(cost_status = 'incomplete_usage'), 0) AS incomplete_usage_calls
+                COALESCE(SUM(cost_status = 'incomplete_usage'), 0) AS incomplete_usage_calls,
+                {cache_estimation_cols}
              FROM llm_calls
              WHERE status != 'running'
                AND (? IS NULL OR created_at_ms >= ?)
@@ -83,6 +85,7 @@ impl Store {
                AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
                AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))",
             fresh_input = fresh_input_sql(),
+            cache_estimation_cols = cache_estimation_aggregate_sql(),
         ))
         .bind(start_ms)
         .bind(start_ms)
@@ -96,6 +99,8 @@ impl Store {
         .await?;
 
         let input_tokens = non_negative(summary_row.try_get("input_tokens")?);
+        let reported_cache_input_tokens =
+            non_negative(summary_row.try_get("reported_cache_input_tokens")?);
         let cache_read_tokens = non_negative(summary_row.try_get("cache_read_tokens")?);
         let cache_write_tokens = non_negative(summary_row.try_get("cache_write_tokens")?);
         let output_tokens = non_negative(summary_row.try_get("output_tokens")?);
@@ -109,6 +114,11 @@ impl Store {
         let priced_calls = non_negative(summary_row.try_get("priced_calls")?);
         let unpriced_calls = non_negative(summary_row.try_get("unpriced_calls")?);
         let incomplete_usage_calls = non_negative(summary_row.try_get("incomplete_usage_calls")?);
+        let unreported_cache_calls = non_negative(summary_row.try_get("unreported_cache_calls")?);
+        let assumed_cache_calls = non_negative(summary_row.try_get("assumed_cache_calls")?);
+        let assumed_cache_cost_nano = non_negative(summary_row.try_get("assumed_cache_cost_nano")?);
+        let estimated_cache_read_tokens =
+            non_negative(summary_row.try_get("estimated_cache_read_tokens")?);
         let overall_speed = self
             .load_overall_speed(
                 start_ms,
@@ -125,6 +135,7 @@ impl Store {
             token_usage: prompt_tokens.saturating_add(output_tokens),
             prompt_tokens,
             input_tokens,
+            reported_cache_input_tokens,
             cache_read_tokens,
             cache_write_tokens,
             output_tokens,
@@ -138,6 +149,10 @@ impl Store {
             priced_calls,
             unpriced_calls,
             incomplete_usage_calls,
+            unreported_cache_calls,
+            assumed_cache_calls,
+            assumed_cache_cost: format_nano_usd(assumed_cache_cost_nano),
+            estimated_cache_read_tokens,
             speed: overall_speed,
         };
 
@@ -157,7 +172,8 @@ impl Store {
                 COALESCE(SUM(CASE WHEN cost_status = 'priced' THEN COALESCE(total_cost_nano, 0) ELSE 0 END), 0) AS total_cost_nano,
                 COALESCE(SUM(cost_status = 'priced'), 0) AS priced_calls,
                 COALESCE(SUM(cost_status IS NULL OR cost_status = 'unpriced'), 0) AS unpriced_calls,
-                COALESCE(SUM(cost_status = 'incomplete_usage'), 0) AS incomplete_usage_calls
+                COALESCE(SUM(cost_status = 'incomplete_usage'), 0) AS incomplete_usage_calls,
+                {cache_estimation_cols}
              FROM llm_calls
              WHERE status != 'running'
                AND created_at_ms >= ?
@@ -167,6 +183,7 @@ impl Store {
              GROUP BY bucket_start_ms
              ORDER BY bucket_start_ms",
             fresh_input = fresh_input_sql(),
+            cache_estimation_cols = cache_estimation_aggregate_sql(),
         ))
         .bind(start_ms.unwrap_or(series_start_ms).max(series_start_ms))
         .bind(end_ms)
@@ -205,6 +222,16 @@ impl Store {
                         unpriced_calls: non_negative(row.try_get("unpriced_calls")?),
                         incomplete_usage_calls: non_negative(
                             row.try_get("incomplete_usage_calls")?,
+                        ),
+                        unreported_cache_calls: non_negative(
+                            row.try_get("unreported_cache_calls")?,
+                        ),
+                        assumed_cache_calls: non_negative(row.try_get("assumed_cache_calls")?),
+                        assumed_cache_cost: format_nano_usd(non_negative(
+                            row.try_get("assumed_cache_cost_nano")?,
+                        )),
+                        estimated_cache_read_tokens: non_negative(
+                            row.try_get("estimated_cache_read_tokens")?,
                         ),
                     },
                 ))
@@ -711,7 +738,8 @@ impl Store {
                 COALESCE(SUM(cost_status = 'incomplete_usage'), 0) AS incomplete_usage_calls,
                 COALESCE(SUM(pricing_source = 'custom'), 0) > 0 AS has_custom_pricing,
                 COALESCE(SUM(pricing_source = 'catalog'), 0) > 0 AS has_catalog_pricing,
-                COALESCE(SUM(pricing_source IS NULL OR pricing_source NOT IN ('custom', 'catalog')), 0) > 0 AS has_unpriced_pricing
+                COALESCE(SUM(pricing_source IS NULL OR pricing_source NOT IN ('custom', 'catalog')), 0) > 0 AS has_unpriced_pricing,
+                {cache_estimation_cols}
              FROM llm_calls
              WHERE status != 'running'
                AND (? IS NULL OR created_at_ms >= ?)
@@ -720,6 +748,7 @@ impl Store {
                AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))
              GROUP BY {supplier_id_expr}",
             fresh_input = fresh_input_sql(),
+            cache_estimation_cols = cache_estimation_aggregate_sql(),
         ))
         .bind(start_ms)
         .bind(start_ms)
@@ -844,6 +873,14 @@ impl Store {
                     priced_calls,
                     unpriced_calls: non_negative(row.try_get("unpriced_calls")?),
                     incomplete_usage_calls: non_negative(row.try_get("incomplete_usage_calls")?),
+                    unreported_cache_calls: non_negative(row.try_get("unreported_cache_calls")?),
+                    assumed_cache_calls: non_negative(row.try_get("assumed_cache_calls")?),
+                    assumed_cache_cost: format_nano_usd(non_negative(
+                        row.try_get("assumed_cache_cost_nano")?,
+                    )),
+                    estimated_cache_read_tokens: non_negative(
+                        row.try_get("estimated_cache_read_tokens")?,
+                    ),
                     speed: SpeedAggregate::from_totals(speed_sample, first_output_median_ms),
                 },
             ));
@@ -896,7 +933,8 @@ impl Store {
                 COALESCE(SUM(cost_status = 'incomplete_usage'), 0) AS incomplete_usage_calls,
                 COALESCE(SUM(pricing_source = 'custom'), 0) > 0 AS has_custom_pricing,
                 COALESCE(SUM(pricing_source = 'catalog'), 0) > 0 AS has_catalog_pricing,
-                COALESCE(SUM(pricing_source IS NULL OR pricing_source NOT IN ('custom', 'catalog')), 0) > 0 AS has_unpriced_pricing
+                COALESCE(SUM(pricing_source IS NULL OR pricing_source NOT IN ('custom', 'catalog')), 0) > 0 AS has_unpriced_pricing,
+                {cache_estimation_cols}
              FROM llm_calls
              WHERE status != 'running'
                AND (? IS NULL OR created_at_ms >= ?)
@@ -905,6 +943,7 @@ impl Store {
                AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))
              GROUP BY model_id",
             fresh_input = fresh_input_sql(),
+            cache_estimation_cols = cache_estimation_aggregate_sql(),
         ))
         .bind(start_ms)
         .bind(start_ms)
@@ -985,6 +1024,14 @@ impl Store {
                     priced_calls,
                     unpriced_calls: non_negative(row.try_get("unpriced_calls")?),
                     incomplete_usage_calls: non_negative(row.try_get("incomplete_usage_calls")?),
+                    unreported_cache_calls: non_negative(row.try_get("unreported_cache_calls")?),
+                    assumed_cache_calls: non_negative(row.try_get("assumed_cache_calls")?),
+                    assumed_cache_cost: format_nano_usd(non_negative(
+                        row.try_get("assumed_cache_cost_nano")?,
+                    )),
+                    estimated_cache_read_tokens: non_negative(
+                        row.try_get("estimated_cache_read_tokens")?,
+                    ),
                     speed: SpeedAggregate::from_totals(speed_sample, first_output_median_ms),
                 },
             ));
@@ -1138,6 +1185,13 @@ fn fresh_input_sql() -> &'static str {
             - COALESCE(cache_read_tokens, 0)
             - COALESCE(cache_write_tokens, 0))
      END"
+}
+
+fn cache_estimation_aggregate_sql() -> &'static str {
+    "COALESCE(SUM(input_tokens IS NOT NULL AND cache_read_tokens IS NULL AND cache_write_tokens IS NULL), 0) AS unreported_cache_calls,
+     COALESCE(SUM(cost_status = 'priced' AND cost_basis = 'assumed_cache'), 0) AS assumed_cache_calls,
+     COALESCE(SUM(CASE WHEN cost_status = 'priced' AND cost_basis = 'assumed_cache' THEN COALESCE(total_cost_nano, 0) ELSE 0 END), 0) AS assumed_cache_cost_nano,
+     COALESCE(SUM(CASE WHEN cost_status = 'priced' AND cost_basis = 'assumed_cache' THEN COALESCE(estimated_cache_read_tokens, 0) ELSE 0 END), 0) AS estimated_cache_read_tokens"
 }
 
 fn non_negative(value: i64) -> i64 {

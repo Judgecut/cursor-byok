@@ -12,9 +12,12 @@ import { ScrollableContent } from "../../../shared/virtual/ScrollableContent";
 import {
   ariaSortValue,
   averageCostTitle,
+  breakdownCacheTitle,
   breakdownCostTitle,
   nextBreakdownSort,
   PricingSourceBadges,
+  renderBreakdownCacheCell,
+  renderBreakdownCostCell,
   sortBreakdownRows,
   sortIndicator,
   successRateText,
@@ -211,17 +214,14 @@ export function HomeSupplierBreakdown({
               <td className={styles.monoNum} title={formatInteger(supplier.input_tokens)}>
                 {formatCompactInteger(supplier.input_tokens)}
               </td>
-              <td
-                className={styles.monoNum}
-                title={`${formatInteger(supplier.cache_read_tokens)} / ${formatInteger(supplier.cache_write_tokens)}`}
-              >
-                {formatCompactInteger(supplier.cache_read_tokens)} / {formatCompactInteger(supplier.cache_write_tokens)}
+              <td className={styles.monoNum} title={breakdownCacheTitle(supplier)}>
+                {renderBreakdownCacheCell(supplier)}
               </td>
               <td className={styles.monoNum} title={formatInteger(supplier.output_tokens)}>
                 {formatCompactInteger(supplier.output_tokens)}
               </td>
               <td className={styles.monoNum} title={breakdownCostTitle(supplier, currency, cnyRate)}>
-                {formatDisplayCost(supplier.total_cost, currency, cnyRate)}
+                {renderBreakdownCostCell(supplier, currency, cnyRate)}
               </td>
               <td
                 className={styles.monoNum}

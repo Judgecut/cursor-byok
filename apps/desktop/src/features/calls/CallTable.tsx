@@ -10,6 +10,7 @@ import {
   formatConversionNote,
   formatDisplayCost,
   formatDisplayCostExact,
+  formatHitRatePercent,
   formatUsdExact,
   type DisplayCurrency,
 } from "../../shared/utils/costFormat";
@@ -21,6 +22,31 @@ import { useCallHighlights } from "./useCallHighlights";
 const value = (input: string | number | null) => input ?? "-";
 const tokenCount = (input: number | null) => input == null ? "-" : formatCompactInteger(input);
 const tokenTitle = (input: number | null) => input == null ? undefined : formatInteger(input);
+
+function hasReportedUsage(call: LlmCall) {
+  return call.call_kind !== "cursor_official" && call.input_tokens != null;
+}
+
+function renderCacheTokens(tokens: number | null, call: LlmCall) {
+  if (!hasReportedUsage(call)) return "-";
+  if (tokens == null) return <span className={styles.costMuted}>{t("未上报")}</span>;
+  return formatCompactInteger(tokens);
+}
+
+function cacheTokensTitle(tokens: number | null, call: LlmCall, kind: "read" | "write"): string | undefined {
+  if (!hasReportedUsage(call)) return undefined;
+  if (tokens == null) {
+    if (kind === "read" && call.cost_basis === "assumed_cache" && call.estimated_cache_read_tokens != null) {
+      return t("上游未上报缓存读取；计费按 {rate}% 命中率估算（约 {tokens} Token）", {
+        rate: formatHitRatePercent(call.assumed_cache_hit_rate_bps),
+        tokens: formatInteger(call.estimated_cache_read_tokens),
+      });
+    }
+    return kind === "read" ? t("上游未上报缓存读取字段") : t("上游未上报缓存写入字段");
+  }
+  if (tokens === 0) return t("上游明确上报为 0");
+  return formatInteger(tokens);
+}
 
 function renderCost(call: LlmCall, currency: DisplayCurrency, cnyRate: string | null) {
   if (call.call_kind === "cursor_official") {
@@ -34,9 +60,11 @@ function renderCost(call: LlmCall, currency: DisplayCurrency, cnyRate: string | 
   }
   const tag = call.status === "running"
     ? t("暂计")
-    : call.cost_backfilled
-      ? t("历史估算")
-      : null;
+    : call.cost_basis === "assumed_cache"
+      ? t("{rate}%缓存估算", { rate: formatHitRatePercent(call.assumed_cache_hit_rate_bps) })
+      : call.cost_backfilled
+        ? t("历史估算")
+        : null;
   return <span className={styles.costCell}>
     <span className={styles.costAmount}>{formatDisplayCost(call.total_cost, currency, cnyRate)}</span>
     {tag && <span className={styles.costTag}>{tag}</span>}
@@ -47,16 +75,34 @@ function costTitle(call: LlmCall, currency: DisplayCurrency, cnyRate: string | n
   if (call.call_kind === "cursor_official") return t("Cursor 官方通道无法估算费用");
   if (call.cost_status === "incomplete_usage") return t("调用用量字段不完整");
   if (call.cost_status !== "priced" || call.total_cost == null) return t("该供应商模型尚未配置定价");
+  const readText = call.cost_basis === "assumed_cache" && call.cache_read_cost != null
+    ? `${formatDisplayCostExact(call.cache_read_cost, currency, cnyRate)} (${t("估算")})`
+    : hasReportedUsage(call) && call.cache_read_tokens == null
+      ? t("未上报")
+      : formatDisplayCostExact(call.cache_read_cost, currency, cnyRate);
+  const writeText = hasReportedUsage(call) && call.cache_write_tokens == null
+    ? t("未上报")
+    : formatDisplayCostExact(call.cache_write_cost, currency, cnyRate);
   const base = t("总费用：{total}（输入 {input} · 输出 {output} · 缓存读 {read} · 缓存写 {write}）", {
     total: formatDisplayCostExact(call.total_cost, currency, cnyRate),
     input: formatDisplayCostExact(call.input_cost, currency, cnyRate),
     output: formatDisplayCostExact(call.output_cost, currency, cnyRate),
-    read: formatDisplayCostExact(call.cache_read_cost, currency, cnyRate),
-    write: formatDisplayCostExact(call.cache_write_cost, currency, cnyRate),
+    read: readText,
+    write: writeText,
   });
+  const lines = [base];
+  if (call.cost_basis === "assumed_cache" && call.estimated_cache_read_tokens != null) {
+    lines.push(t("估算口径：上游未上报缓存明细，按 {rate}% 缓存命中率估算（非缓存 {uncached} · 缓存读约 {cached}）", {
+      rate: formatHitRatePercent(call.assumed_cache_hit_rate_bps),
+      uncached: formatInteger(call.billed_input_tokens ?? 0),
+      cached: formatInteger(call.estimated_cache_read_tokens),
+    }));
+  }
   const note = formatConversionNote(currency, cnyRate);
-  if (!note) return base;
-  return `${base}\n${t("原美元金额：{cost}", { cost: formatUsdExact(call.total_cost) })}\n${note}`;
+  if (note) {
+    lines.push(t("原美元金额：{cost}", { cost: formatUsdExact(call.total_cost) }), note);
+  }
+  return lines.join("\n");
 }
 
 export function CallTable({
@@ -147,14 +193,14 @@ export function CallTable({
     {
       key: "cache_read",
       header: "Cache Read",
-      render: (call) => tokenCount(call.cache_read_tokens),
-      title: (call) => tokenTitle(call.cache_read_tokens),
+      render: (call) => renderCacheTokens(call.cache_read_tokens, call),
+      title: (call) => cacheTokensTitle(call.cache_read_tokens, call, "read"),
     },
     {
       key: "cache_write",
       header: "Cache Write",
-      render: (call) => tokenCount(call.cache_write_tokens),
-      title: (call) => tokenTitle(call.cache_write_tokens),
+      render: (call) => renderCacheTokens(call.cache_write_tokens, call),
+      title: (call) => cacheTokensTitle(call.cache_write_tokens, call, "write"),
     },
     {
       key: "reasoning_tokens",

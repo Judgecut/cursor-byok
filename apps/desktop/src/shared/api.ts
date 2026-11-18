@@ -252,6 +252,7 @@ export type PricingSource = "custom" | "catalog" | "unpriced";
 export type BindingMode = "auto" | "manual";
 export type CatalogMatchKind = "manual" | "manual_missing" | "auto_exact" | "auto_unique" | "auto_default" | "none";
 export type CostStatus = "priced" | "unpriced" | "incomplete_usage";
+export type CostBasis = "reported" | "assumed_cache";
 export type SourceKind = "builtin" | "plugin";
 
 export interface PricingRates {
@@ -511,6 +512,7 @@ export interface OverviewMetrics {
   token_usage: number;
   prompt_tokens: number;
   input_tokens: number;
+  reported_cache_input_tokens: number;
   cache_read_tokens: number;
   cache_write_tokens: number;
   output_tokens: number;
@@ -523,6 +525,10 @@ export interface OverviewMetrics {
   priced_calls: number;
   unpriced_calls: number;
   incomplete_usage_calls: number;
+  unreported_cache_calls: number;
+  assumed_cache_calls: number;
+  assumed_cache_cost: string;
+  estimated_cache_read_tokens: number;
   speed: SpeedAggregate;
 }
 
@@ -542,6 +548,10 @@ export interface OverviewTokenUsageBucket {
   priced_calls: number;
   unpriced_calls: number;
   incomplete_usage_calls: number;
+  unreported_cache_calls: number;
+  assumed_cache_calls: number;
+  assumed_cache_cost: string;
+  estimated_cache_read_tokens: number;
 }
 
 export interface OverviewActivityDay {
@@ -588,6 +598,10 @@ export interface OverviewSupplierBreakdown {
   priced_calls: number;
   unpriced_calls: number;
   incomplete_usage_calls: number;
+  unreported_cache_calls: number;
+  assumed_cache_calls: number;
+  assumed_cache_cost: string;
+  estimated_cache_read_tokens: number;
   speed: SpeedAggregate;
 }
 
@@ -613,6 +627,10 @@ export interface OverviewModelSummary {
   priced_calls: number;
   unpriced_calls: number;
   incomplete_usage_calls: number;
+  unreported_cache_calls: number;
+  assumed_cache_calls: number;
+  assumed_cache_cost: string;
+  estimated_cache_read_tokens: number;
   speed: SpeedAggregate;
 }
 
@@ -692,6 +710,9 @@ export interface LlmCall {
   unit_cache_read_per_million: string | null;
   unit_cache_write_per_million: string | null;
   cost_status: CostStatus | null;
+  cost_basis: CostBasis | null;
+  assumed_cache_hit_rate_bps: number | null;
+  estimated_cache_read_tokens: number | null;
   input_cost: string | null;
   output_cost: string | null;
   cache_read_cost: string | null;

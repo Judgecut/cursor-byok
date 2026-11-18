@@ -8,7 +8,7 @@ import {
 } from "react"
 
 export interface ScrollAreaApi {
-  scrollTo(top: number): void
+  scrollTo(top: number, knownMaxScrollTop?: number): void
   scrollBy(deltaTop: number): void
   scrollToTop(): void
   scrollToBottom(): void
@@ -157,6 +157,8 @@ export function useScrollableModel(options: UseScrollableModelOptions) {
   const notificationScheduledRef = useRef(false)
   const mountedRef = useRef(true)
   const defaultScrollTopAppliedRef = useRef(false)
+  const preservedScrollTopRef = useRef(defaultScrollTop)
+  const wasInactiveViewportRef = useRef(false)
   const onScrollRef = useRef(onScroll)
   const onViewportResizeRef = useRef(onViewportResize)
 
@@ -183,14 +185,44 @@ export function useScrollableModel(options: UseScrollableModelOptions) {
   }, [])
 
   const snapshot = useCallback(
-    (isScrolling = false): ScrollMetrics => {
+    (isScrolling = false, restoreIfInactive = false): ScrollMetrics => {
+      const element = viewportRef.current
+      if (element && (!element.isConnected || element.clientHeight <= 0)) {
+        wasInactiveViewportRef.current = true
+        return metricsRef.current
+      }
+
+      if (restoreIfInactive && element) {
+        const scrollHeight = readScrollHeight(element, contentHeight)
+        const maxScrollTop = Math.max(0, scrollHeight - element.clientHeight)
+        if (maxScrollTop <= 0) {
+          wasInactiveViewportRef.current = false
+          preservedScrollTopRef.current = 0
+        } else if (
+          (wasInactiveViewportRef.current || element.scrollTop === 0) &&
+          preservedScrollTopRef.current > 0
+        ) {
+          wasInactiveViewportRef.current = false
+          const restored = clamp(preservedScrollTopRef.current, 0, maxScrollTop)
+          if (element.scrollTop !== restored) {
+            programmaticScrollTopRef.current = restored
+            element.scrollTop = restored
+          }
+        } else {
+          wasInactiveViewportRef.current = false
+        }
+      }
+
       const metrics = measureScrollArea(
-        viewportRef.current,
+        element,
         trackRef.current,
         contentHeight,
         minThumbSize,
         isScrolling
       )
+      if (element) {
+        preservedScrollTopRef.current = metrics.scrollTop
+      }
       metricsRef.current = metrics
       applyThumbStyle(thumbRef.current, metrics)
 
@@ -249,8 +281,8 @@ export function useScrollableModel(options: UseScrollableModelOptions) {
 
   const api = useMemo<ScrollAreaApi>(
     () => ({
-      scrollTo(top: number) {
-        scrollToNow(top)
+      scrollTo(top: number, knownMaxScrollTop?: number) {
+        scrollToNow(top, true, knownMaxScrollTop)
       },
       scrollBy(deltaTop: number) {
         const element = viewportRef.current
@@ -333,13 +365,13 @@ export function useScrollableModel(options: UseScrollableModelOptions) {
           height: viewportEntry.contentRect.height,
         })
       }
-      snapshot(false)
+      snapshot(false, true)
     })
 
     resizeObserver.observe(element)
     resizeObserver.observe(content)
     resizeObserver.observe(track)
-    snapshot(false)
+    snapshot(false, true)
 
     return () => {
       resizeObserver.disconnect()
@@ -354,6 +386,7 @@ export function useScrollableModel(options: UseScrollableModelOptions) {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
+      wasInactiveViewportRef.current = true
       pendingNotificationRef.current = null
       notificationScheduledRef.current = false
       if (scrollEndTimerRef.current !== null) {

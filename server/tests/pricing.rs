@@ -328,6 +328,8 @@ async fn same_model_across_suppliers_aggregates_cleanly_and_shares_identity_acro
             Usage {
                 input_tokens: Some(500_000),
                 output_tokens: Some(100_000),
+                cache_read_tokens: Some(0),
+                cache_write_tokens: Some(0),
                 ..Default::default()
             },
         )
@@ -722,6 +724,8 @@ async fn running_call_keeps_frozen_snapshot_while_excluded_from_overview() {
             Usage {
                 input_tokens: Some(1_000_000),
                 output_tokens: Some(0),
+                cache_read_tokens: Some(0),
+                cache_write_tokens: Some(0),
                 ..Default::default()
             },
         )
@@ -789,6 +793,8 @@ async fn running_call_keeps_frozen_snapshot_while_excluded_from_overview() {
             Usage {
                 input_tokens: Some(1_000_000),
                 output_tokens: Some(0),
+                cache_read_tokens: Some(0),
+                cache_write_tokens: Some(0),
                 ..Default::default()
             },
         )
@@ -924,6 +930,8 @@ async fn failed_cancelled_zero_incomplete_and_unpriced_states_plus_retry_compact
                 Usage {
                     input_tokens: Some(500_000),
                     output_tokens: Some(250_000),
+                    cache_read_tokens: Some(0),
+                    cache_write_tokens: Some(0),
                     ..Default::default()
                 },
             )
@@ -1635,10 +1643,10 @@ async fn partial_custom_rates_fallback_to_catalog_across_views_calls_and_backfil
             call_id, run_id, conversation_id, provider_call_index, model_hash,
             provider_type, provider_url, request_type, request_url, model_id, display_name,
             status, created_at_ms, finished_at_ms, duration_ms,
-            input_tokens, output_tokens, total_tokens,
+            input_tokens, output_tokens, total_tokens, cache_read_tokens, cache_write_tokens,
             message_count, tool_count, detailed
         ) VALUES ('partial-backfill', 'r-partial-2', 'c-partial', 0, 'mh-relay', 'openai-chat', ?, 'openai-chat', ?, 'gpt-4o', 'Relay GPT-4o',
-                  'completed', 1000, 1100, 100, 1000000, 250000, 1250000, 1, 0, 0)",
+                  'completed', 1000, 1100, 100, 1000000, 250000, 1250000, 0, 0, 1, 0, 0)",
     )
     .bind(relay_ep)
     .bind(relay_ep)
@@ -1722,6 +1730,8 @@ async fn relay_calls_backfill_automatically_from_default_public_catalog() {
             Usage {
                 input_tokens: Some(1_000_000),
                 output_tokens: Some(500_000),
+                cache_read_tokens: Some(0),
+                cache_write_tokens: Some(0),
                 ..Default::default()
             },
         )
@@ -2035,4 +2045,201 @@ async fn overview_and_calls_api_apply_supplier_and_time_filters_before_paginatio
         .unwrap();
     assert_eq!(sup_a["pricing_sources"], json!(["custom", "unpriced"]));
     assert_eq!(sup_a["model_count"], 2);
+}
+
+#[tokio::test]
+async fn unreported_cache_distinguishes_zero_and_uses_assumed_hit_rate_end_to_end() {
+    let (router, store, _pricing, _dir) =
+        setup_control_with_catalog("http://127.0.0.1:1/unused").await;
+    let endpoint = "https://gateway.example.com/v1";
+
+    store
+        .save_supplier_pricing_config(
+            &SaveSupplierPricingInput {
+                source_kind: SourceKind::Builtin,
+                endpoint_key: endpoint.into(),
+                model_id: "gemini-2.5-pro".into(),
+                binding_mode: BindingMode::Auto,
+                catalog_provider_id: None,
+                catalog_model_id: None,
+                custom_rates: PricingRates {
+                    input_per_million: Some("1.5".into()),
+                    output_per_million: Some("7.5".into()),
+                    cache_read_per_million: Some("0.075".into()),
+                    cache_write_per_million: Some("0.375".into()),
+                },
+            },
+            &[],
+        )
+        .await
+        .unwrap();
+
+    for (call_id, protocol, origin, usage) in [
+        (
+            "g4-unreported",
+            ProviderType::Anthropic,
+            CallOrigin::Run,
+            Usage {
+                input_tokens: Some(1_000_000),
+                output_tokens: Some(100_000),
+                ..Default::default()
+            },
+        ),
+        (
+            "g4-explicit-zero",
+            ProviderType::OpenAiChat,
+            CallOrigin::Run,
+            Usage {
+                input_tokens: Some(1_000_000),
+                output_tokens: Some(100_000),
+                cache_read_tokens: Some(0),
+                cache_write_tokens: Some(0),
+                ..Default::default()
+            },
+        ),
+        (
+            "g4-short-unreported",
+            ProviderType::OpenAiResponses,
+            CallOrigin::Run,
+            Usage {
+                input_tokens: Some(500),
+                output_tokens: Some(100),
+                ..Default::default()
+            },
+        ),
+        (
+            "g4-model-test",
+            ProviderType::Anthropic,
+            CallOrigin::ModelTest,
+            Usage {
+                input_tokens: Some(10_000),
+                output_tokens: Some(0),
+                ..Default::default()
+            },
+        ),
+    ] {
+        store
+            .start_llm_call(&NewLlmCall {
+                call_id: call_id.into(),
+                run_id: format!("run-{call_id}"),
+                conversation_id: "conv-cache".into(),
+                provider_call_index: 0,
+                model_hash: format!("mh-{call_id}"),
+                provider_type: protocol,
+                provider_url: endpoint.into(),
+                request_type: protocol,
+                request_url: endpoint.into(),
+                model_id: "gemini-2.5-pro".into(),
+                display_name: "Gemini-2.5-Pro".into(),
+                reasoning_effort: None,
+                fast: false,
+                message_count: 1,
+                tool_count: 0,
+                detailed: false,
+                origin,
+                streaming: true,
+            })
+            .await
+            .unwrap();
+        store.record_llm_usage(call_id, usage).await.unwrap();
+        store
+            .finish_llm_call(
+                call_id,
+                CallFinish {
+                    status: "completed",
+                    finish_reason: Some("stop"),
+                    elapsed_ms: 50,
+                    generation_ms: None,
+                    generation_output_events: None,
+                    error_kind: None,
+                    error_message: None,
+                },
+            )
+            .await
+            .unwrap();
+    }
+
+    let (status, unreported_detail) = send(
+        router.clone(),
+        "GET",
+        "/__byok-api__/api/llm-calls/g4-unreported",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let u_call = &unreported_detail["call"];
+    assert_eq!(u_call["cost_basis"], "assumed_cache");
+    assert_eq!(u_call["assumed_cache_hit_rate_bps"], 9_000);
+    assert_eq!(u_call["estimated_cache_read_tokens"], 900_000);
+    assert!(u_call["cache_read_tokens"].is_null());
+    assert!(u_call["cache_write_tokens"].is_null());
+    assert_eq!(u_call["billed_input_tokens"], 100_000);
+    assert_eq!(u_call["input_cost"], "0.15");
+    assert_eq!(u_call["cache_read_cost"], "0.0675");
+    assert_eq!(u_call["output_cost"], "0.75");
+    assert_eq!(u_call["total_cost"], "0.9675");
+
+    let zero_call = store.llm_call("g4-explicit-zero").await.unwrap().unwrap();
+    assert_eq!(zero_call.cost_basis.as_deref(), Some("reported"));
+    assert_eq!(zero_call.assumed_cache_hit_rate_bps, None);
+    assert_eq!(zero_call.estimated_cache_read_tokens, None);
+    assert_eq!(zero_call.cache_read_tokens, Some(0));
+    assert_eq!(zero_call.cache_write_tokens, Some(0));
+    assert_eq!(zero_call.billed_input_tokens, Some(1_000_000));
+    assert_eq!(zero_call.total_cost.as_deref(), Some("2.25"));
+
+    let short_call = store
+        .llm_call("g4-short-unreported")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(short_call.cost_basis.as_deref(), Some("reported"));
+    assert_eq!(short_call.assumed_cache_hit_rate_bps, None);
+    assert_eq!(short_call.estimated_cache_read_tokens, None);
+    assert_eq!(short_call.billed_input_tokens, Some(500));
+    assert_eq!(short_call.total_cost.as_deref(), Some("0.0015"));
+
+    let test_call = store.llm_call("g4-model-test").await.unwrap().unwrap();
+    assert_eq!(test_call.cost_basis.as_deref(), Some("reported"));
+    assert_eq!(test_call.assumed_cache_hit_rate_bps, None);
+    assert_eq!(test_call.estimated_cache_read_tokens, None);
+    assert_eq!(test_call.billed_input_tokens, Some(10_000));
+    assert_eq!(test_call.total_cost.as_deref(), Some("0.015"));
+
+    let (status, overview) = send(router, "GET", "/__byok-api__/api/overview", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let metrics = &overview["metrics"];
+    assert_eq!(metrics["llm_calls"], 4);
+    assert_eq!(metrics["input_tokens"], 1_110_500);
+    assert_eq!(metrics["reported_cache_input_tokens"], 1_000_000);
+    assert_eq!(metrics["cache_read_tokens"], 0);
+    assert_eq!(metrics["cache_write_tokens"], 0);
+    assert_eq!(metrics["unreported_cache_calls"], 3);
+    assert_eq!(metrics["assumed_cache_calls"], 1);
+    assert_eq!(metrics["assumed_cache_cost"], "0.9675");
+    assert_eq!(metrics["estimated_cache_read_tokens"], 900_000);
+    assert_eq!(metrics["total_cost"], "3.234");
+
+    let model = &overview["models"][0];
+    assert_eq!(model["unreported_cache_calls"], 3);
+    assert_eq!(model["assumed_cache_calls"], 1);
+    assert_eq!(model["assumed_cache_cost"], "0.9675");
+    assert_eq!(model["estimated_cache_read_tokens"], 900_000);
+
+    let supplier = &overview["suppliers"][0];
+    assert_eq!(supplier["unreported_cache_calls"], 3);
+    assert_eq!(supplier["assumed_cache_calls"], 1);
+    assert_eq!(supplier["assumed_cache_cost"], "0.9675");
+    assert_eq!(supplier["estimated_cache_read_tokens"], 900_000);
+
+    let active_bucket = overview["token_usage_series"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|b| b["priced_calls"].as_i64().unwrap_or(0) > 0)
+        .unwrap();
+    assert_eq!(active_bucket["unreported_cache_calls"], 3);
+    assert_eq!(active_bucket["assumed_cache_calls"], 1);
+    assert_eq!(active_bucket["assumed_cache_cost"], "0.9675");
+    assert_eq!(active_bucket["estimated_cache_read_tokens"], 900_000);
 }

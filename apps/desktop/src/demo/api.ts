@@ -145,27 +145,40 @@ const calls: LlmCall[] = Array.from({ length: 84 }, (_, index) => {
   const model = models[index % models.length];
   const failed = index % 17 === 7;
   const catalog = DEMO_CATALOG.find((item) => item.model_id === model.model_id);
-  const billedInput = 1_200 + (index % 11) * 340;
+  const rawInput = 1_200 + (index % 11) * 340;
   const outputTokens = failed ? 0 : 760 + (index % 9) * 135;
-  const cacheReadTokens = index % 13 === 0 ? 0 : 95_000 + (index % 7) * 12_500;
-  const cacheWriteTokens = index % 3 === 0 ? 480 + (index % 5) * 90 : 0;
+  const cacheOmitted = index % 12 === 1;
+  const cacheReadTokens = cacheOmitted ? null : index % 13 === 0 ? 0 : 95_000 + (index % 7) * 12_500;
+  const cacheWriteTokens = cacheOmitted ? null : index % 3 === 0 ? 480 + (index % 5) * 90 : 0;
   const pricingSource: PricingSource = catalog ? (index % 9 === 0 ? "custom" : "catalog") : "unpriced";
   const costStatus = catalog ? "priced" : "unpriced";
+  const hasCacheReadDiscount = catalog != null
+    && Number(catalog.rates.cache_read_per_million) < Number(catalog.rates.input_per_million);
+  const assumedCache = catalog != null && cacheOmitted && rawInput >= 1_024 && hasCacheReadDiscount;
+  const assumedHitRateBps = assumedCache ? 9_000 : null;
+  const estimatedCacheReadTokens = assumedCache ? Math.floor((rawInput * 9_000) / 10_000) : null;
+  const billedInput = estimatedCacheReadTokens != null ? rawInput - estimatedCacheReadTokens : rawInput;
+  const effectiveCacheRead = estimatedCacheReadTokens ?? cacheReadTokens ?? 0;
+  const effectiveCacheWrite = cacheWriteTokens ?? 0;
+  const costBasis = !catalog ? null : assumedCache ? "assumed_cache" : "reported";
   const inputCost = catalog ? formatNano(mulRate(billedInput, catalog.rates.input_per_million)) : null;
   const outputCost = catalog ? formatNano(mulRate(outputTokens, catalog.rates.output_per_million)) : null;
-  const cacheReadCost = catalog ? formatNano(mulRate(cacheReadTokens, catalog.rates.cache_read_per_million)) : null;
-  const cacheWriteCost = catalog ? formatNano(mulRate(cacheWriteTokens, catalog.rates.cache_write_per_million)) : null;
+  const cacheReadCost = catalog ? formatNano(mulRate(effectiveCacheRead, catalog.rates.cache_read_per_million)) : null;
+  const cacheWriteCost = catalog ? formatNano(mulRate(effectiveCacheWrite, catalog.rates.cache_write_per_million)) : null;
   const totalNano = catalog
     ? mulRate(billedInput, catalog.rates.input_per_million)
       + mulRate(outputTokens, catalog.rates.output_per_million)
-      + mulRate(cacheReadTokens, catalog.rates.cache_read_per_million)
-      + mulRate(cacheWriteTokens, catalog.rates.cache_write_per_million)
+      + mulRate(effectiveCacheRead, catalog.rates.cache_read_per_million)
+      + mulRate(effectiveCacheWrite, catalog.rates.cache_write_per_million)
     : null;
   const firstOutputMs = 380 + (index % 8) * 145;
   const generationMs = failed ? null : 4_800 + (index % 7) * 980;
   const observedThinking = index % 2 === 0;
   const reasoningTokens = index % 2 === 0 ? 420 + (index % 5) * 45 : null;
   const streaming = true;
+  const reportedInputTokens = model.type === "anthropic"
+    ? rawInput
+    : rawInput + (cacheReadTokens ?? 0) + (cacheWriteTokens ?? 0);
 
   return {
     call_kind: "provider_llm",
@@ -209,10 +222,10 @@ const calls: LlmCall[] = Array.from({ length: 84 }, (_, index) => {
       generationOutputEvents: failed ? 0 : 20,
       durationMs: failed ? 812 : firstOutputMs + (generationMs ?? 0),
     }),
-    input_tokens: model.type === "anthropic" ? billedInput : billedInput + cacheReadTokens + cacheWriteTokens,
+    input_tokens: reportedInputTokens,
     billed_input_tokens: billedInput,
     output_tokens: outputTokens,
-    total_tokens: failed ? billedInput : billedInput + outputTokens + cacheReadTokens + cacheWriteTokens,
+    total_tokens: failed ? billedInput : rawInput + outputTokens + (cacheReadTokens ?? 0) + (cacheWriteTokens ?? 0),
     cache_read_tokens: cacheReadTokens,
     cache_write_tokens: cacheWriteTokens,
     reasoning_tokens: reasoningTokens,
@@ -225,6 +238,9 @@ const calls: LlmCall[] = Array.from({ length: 84 }, (_, index) => {
     unit_cache_read_per_million: catalog?.rates.cache_read_per_million ?? null,
     unit_cache_write_per_million: catalog?.rates.cache_write_per_million ?? null,
     cost_status: costStatus,
+    cost_basis: costBasis,
+    assumed_cache_hit_rate_bps: assumedHitRateBps,
+    estimated_cache_read_tokens: estimatedCacheReadTokens,
     input_cost: inputCost,
     output_cost: outputCost,
     cache_read_cost: cacheReadCost,
@@ -646,6 +662,7 @@ function aggregateCallStats(matchingCalls: LlmCall[]): Omit<OverviewMetrics, "sp
   let successfulCalls = 0;
   let failedCalls = 0;
   let inputTokens = 0;
+  let reportedCacheInputTokens = 0;
   let cacheReadTokens = 0;
   let cacheWriteTokens = 0;
   let outputTokens = 0;
@@ -657,15 +674,28 @@ function aggregateCallStats(matchingCalls: LlmCall[]): Omit<OverviewMetrics, "sp
   let pricedCalls = 0;
   let unpricedCalls = 0;
   let incompleteCalls = 0;
+  let unreportedCacheCalls = 0;
+  let assumedCacheCalls = 0;
+  let assumedCacheNano = 0;
+  let estimatedCacheReadTokens = 0;
 
   for (const call of matchingCalls) {
     llmCalls += 1;
     if (call.status === "completed") successfulCalls += 1;
     else failedCalls += 1;
-    inputTokens += call.billed_input_tokens ?? call.input_tokens ?? 0;
+    const billedIn = call.billed_input_tokens ?? call.input_tokens ?? 0;
+    inputTokens += billedIn;
     cacheReadTokens += call.cache_read_tokens ?? 0;
     cacheWriteTokens += call.cache_write_tokens ?? 0;
     outputTokens += call.output_tokens ?? 0;
+
+    if (call.input_tokens != null) {
+      if (call.cache_read_tokens != null || call.cache_write_tokens != null) {
+        reportedCacheInputTokens += billedIn;
+      } else {
+        unreportedCacheCalls += 1;
+      }
+    }
 
     if (call.cost_status === "priced") {
       pricedCalls += 1;
@@ -674,6 +704,11 @@ function aggregateCallStats(matchingCalls: LlmCall[]): Omit<OverviewMetrics, "sp
       cacheReadNano += toNano(call.cache_read_cost);
       cacheWriteNano += toNano(call.cache_write_cost);
       totalNano += toNano(call.total_cost);
+      if (call.cost_basis === "assumed_cache") {
+        assumedCacheCalls += 1;
+        assumedCacheNano += toNano(call.total_cost);
+        estimatedCacheReadTokens += call.estimated_cache_read_tokens ?? 0;
+      }
     } else if (call.cost_status === "incomplete_usage") {
       incompleteCalls += 1;
     } else {
@@ -689,6 +724,7 @@ function aggregateCallStats(matchingCalls: LlmCall[]): Omit<OverviewMetrics, "sp
     token_usage: promptTokens + outputTokens,
     prompt_tokens: promptTokens,
     input_tokens: inputTokens,
+    reported_cache_input_tokens: reportedCacheInputTokens,
     cache_read_tokens: cacheReadTokens,
     cache_write_tokens: cacheWriteTokens,
     output_tokens: outputTokens,
@@ -701,6 +737,10 @@ function aggregateCallStats(matchingCalls: LlmCall[]): Omit<OverviewMetrics, "sp
     priced_calls: pricedCalls,
     unpriced_calls: unpricedCalls,
     incomplete_usage_calls: incompleteCalls,
+    unreported_cache_calls: unreportedCacheCalls,
+    assumed_cache_calls: assumedCacheCalls,
+    assumed_cache_cost: formatNano(assumedCacheNano),
+    estimated_cache_read_tokens: estimatedCacheReadTokens,
     speed: mockAggregate(matchingCalls),
   };
 }
@@ -743,9 +783,13 @@ function createOverview(params: URLSearchParams): Overview {
       priced_calls: 0,
       unpriced_calls: 0,
       incomplete_usage_calls: 0,
+      unreported_cache_calls: 0,
+      assumed_cache_calls: 0,
+      assumed_cache_cost: "0",
+      estimated_cache_read_tokens: 0,
     });
   }
-  const bucketNano = new Map<number, { input: number; output: number; cacheRead: number; cacheWrite: number; total: number }>();
+  const bucketNano = new Map<number, { input: number; output: number; cacheRead: number; cacheWrite: number; total: number; assumedCache: number }>();
   for (const call of matchingCalls) {
     const bucketStart = Math.floor(call.created_at_ms / bucketMs) * bucketMs;
     const bucket = bucketMap.get(bucketStart);
@@ -754,7 +798,10 @@ function createOverview(params: URLSearchParams): Overview {
     bucket.cache_read_tokens += call.cache_read_tokens ?? 0;
     bucket.cache_write_tokens += call.cache_write_tokens ?? 0;
     bucket.output_tokens += call.output_tokens ?? 0;
-    const nano = bucketNano.get(bucketStart) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+    if (call.input_tokens != null && call.cache_read_tokens == null && call.cache_write_tokens == null) {
+      bucket.unreported_cache_calls += 1;
+    }
+    const nano = bucketNano.get(bucketStart) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, assumedCache: 0 };
     if (call.cost_status === "priced") {
       bucket.priced_calls += 1;
       nano.input += toNano(call.input_cost);
@@ -762,6 +809,11 @@ function createOverview(params: URLSearchParams): Overview {
       nano.cacheRead += toNano(call.cache_read_cost);
       nano.cacheWrite += toNano(call.cache_write_cost);
       nano.total += toNano(call.total_cost);
+      if (call.cost_basis === "assumed_cache") {
+        bucket.assumed_cache_calls += 1;
+        bucket.estimated_cache_read_tokens += call.estimated_cache_read_tokens ?? 0;
+        nano.assumedCache += toNano(call.total_cost);
+      }
     } else if (call.cost_status === "incomplete_usage") {
       bucket.incomplete_usage_calls += 1;
     } else {
@@ -779,6 +831,7 @@ function createOverview(params: URLSearchParams): Overview {
           cache_read_cost: formatNano(nano.cacheRead),
           cache_write_cost: formatNano(nano.cacheWrite),
           total_cost: formatNano(nano.total),
+          assumed_cache_cost: formatNano(nano.assumedCache),
         }
       : bucket;
   });

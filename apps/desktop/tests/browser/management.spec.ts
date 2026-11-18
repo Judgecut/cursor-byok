@@ -82,7 +82,7 @@ test("switches overview activity chart between heatmap, bar, and line across wee
   {
     await route.fulfill({
       json: {
-        metrics: { llm_calls: 1, successful_calls: 1, failed_calls: 0, token_usage: 300, prompt_tokens: 200, input_tokens: 200, cache_read_tokens: 0, cache_write_tokens: 0, output_tokens: 100, total_cost: "0", input_cost: "0", output_cost: "0", cache_read_cost: "0", cache_write_cost: "0", average_priced_cost: null, priced_calls: 0, unpriced_calls: 1, incomplete_usage_calls: 0, speed: { average_tokens_per_second: 100, output_tokens: 100, generation_ms: 1000, samples: 1, first_output_median_ms: 100 } },
+        metrics: { llm_calls: 1, successful_calls: 1, failed_calls: 0, token_usage: 300, prompt_tokens: 200, input_tokens: 200, reported_cache_input_tokens: 200, cache_read_tokens: 0, cache_write_tokens: 0, output_tokens: 100, total_cost: "0", input_cost: "0", output_cost: "0", cache_read_cost: "0", cache_write_cost: "0", average_priced_cost: null, priced_calls: 0, unpriced_calls: 1, incomplete_usage_calls: 0, unreported_cache_calls: 0, assumed_cache_calls: 0, assumed_cache_cost: "0", estimated_cache_read_tokens: 0, speed: { average_tokens_per_second: 100, output_tokens: 100, generation_ms: 1000, samples: 1, first_output_median_ms: 100 } },
         token_usage_granularity: "day",
         token_usage_series: [],
         activity_series: activitySeries,
@@ -144,4 +144,378 @@ test("switches overview activity chart between heatmap, bar, and line across wee
   await expect(yearSection.getByText("45d total 759K · 33 active days", { exact: true })).toBeVisible();
   await yearSection.getByRole("group", { name: "Activity chart type", exact: true }).getByRole("button", { name: "Line", exact: true }).click();
   await expect(yearSection.getByText("45d total 759K · 33 active days", { exact: true })).toBeVisible();
+});
+
+test("separates unreported cache from explicit zero and displays assumed cache cost basis", async ({ page }) => {
+  const baseCall = {
+    call_kind: "provider_llm",
+    route: "local_byok",
+    run_id: "cache-run",
+    conversation_id: "cache-conv",
+    provider_call_index: 1,
+    model_hash: "gemini-2-5-hash",
+    supplier_key: "gateway-sup",
+    endpoint_key: "https://gateway.example/v1",
+    provider_type: "anthropic",
+    provider_url: "https://gateway.example/v1",
+    request_type: "anthropic",
+    request_url: "https://gateway.example/v1/messages",
+    model_id: "gemini-2.5-pro",
+    display_name: "Gemini 2.5 Pro",
+    reasoning_effort: null,
+    fast: false,
+    status: "completed",
+    finish_reason: "stop",
+    created_at_ms: 1_800_000_000_000,
+    ttfb_ms: 100,
+    ttft_ms: 100,
+    ttfr_ms: null,
+    ttfo_ms: 100,
+    duration_ms: 1100,
+    generation_ms: 1000,
+    generation_output_events: 10,
+    streaming: true,
+    call_origin: "run",
+    observed_thinking: false,
+    performance: {
+      overall_tokens_per_second: 90.9,
+      overall_reason: null,
+      speed_status: "measured",
+      tokens_per_second: 100,
+      reason: null,
+      first_output_ms: 100,
+      generation_ms: 1000,
+    },
+    output_tokens: 100_000,
+    reasoning_tokens: null,
+    pricing_source: "custom",
+    pricing_provider_id: null,
+    pricing_model_id: null,
+    pricing_snapshot_at_ms: 1_800_000_000_000,
+    unit_input_per_million: "1.5",
+    unit_output_per_million: "7.5",
+    unit_cache_read_per_million: "0.075",
+    unit_cache_write_per_million: "0.375",
+    cost_status: "priced",
+    output_cost: "0.75",
+    cache_write_cost: "0",
+    cost_calculated_at_ms: 1_800_000_000_000,
+    cost_backfilled: false,
+    message_count: 1,
+    tool_count: 0,
+    http_status: 200,
+    error_kind: null,
+    error_message: null,
+    detailed: false,
+  };
+  const unreportedCall = {
+    ...baseCall,
+    call_id: "unreported-call",
+    input_tokens: 1_000_000,
+    billed_input_tokens: 100_000,
+    total_tokens: 1_100_000,
+    cache_read_tokens: null,
+    cache_write_tokens: null,
+    cost_basis: "assumed_cache",
+    assumed_cache_hit_rate_bps: 9_000,
+    estimated_cache_read_tokens: 900_000,
+    input_cost: "0.15",
+    cache_read_cost: "0.0675",
+    total_cost: "0.9675",
+  };
+  const explicitZeroCall = {
+    ...baseCall,
+    call_id: "explicit-zero-call",
+    provider_call_index: 2,
+    input_tokens: 1_000_000,
+    billed_input_tokens: 1_000_000,
+    total_tokens: 1_100_000,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    cost_basis: "reported",
+    assumed_cache_hit_rate_bps: null,
+    estimated_cache_read_tokens: null,
+    input_cost: "1.5",
+    cache_read_cost: "0",
+    total_cost: "2.25",
+  };
+
+  await page.route(/\/__byok-api__\/api\/llm-calls(?:\/|\?|$)/, async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname.endsWith("/api/llm-calls/unreported-call")) {
+      await route.fulfill({ json: { call: unreportedCall, request: null, response_chunks: [], cursor_trace: null } });
+      return;
+    }
+    if (pathname.endsWith("/api/llm-calls/explicit-zero-call")) {
+      await route.fulfill({ json: { call: explicitZeroCall, request: null, response_chunks: [], cursor_trace: null } });
+      return;
+    }
+    await route.fulfill({ json: { items: [unreportedCall, explicitZeroCall], total: 2 } });
+  });
+
+  await page.route("**/__byok-api__/api/overview*", async (route) => {
+    await route.fulfill({
+      json: {
+        metrics: {
+          llm_calls: 2,
+          successful_calls: 2,
+          failed_calls: 0,
+          token_usage: 2_200_000,
+          prompt_tokens: 2_000_000,
+          input_tokens: 1_100_000,
+          reported_cache_input_tokens: 0,
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+          output_tokens: 200_000,
+          total_cost: "1.935",
+          input_cost: "0.3",
+          output_cost: "1.5",
+          cache_read_cost: "0.135",
+          cache_write_cost: "0",
+          average_priced_cost: "0.9675",
+          priced_calls: 2,
+          unpriced_calls: 0,
+          incomplete_usage_calls: 0,
+          unreported_cache_calls: 2,
+          assumed_cache_calls: 2,
+          assumed_cache_cost: "1.935",
+          estimated_cache_read_tokens: 1_800_000,
+          speed: { average_tokens_per_second: 100, output_tokens: 200_000, generation_ms: 2000, samples: 2, first_output_median_ms: 100 },
+        },
+        token_usage_granularity: "day",
+        token_usage_series: [],
+        activity_series: [],
+        suppliers: [],
+        models: [
+          {
+            model_id: "gemini-2.5-pro",
+            supplier_count: 1,
+            pricing_sources: ["custom"],
+            llm_calls: 2,
+            successful_calls: 2,
+            failed_calls: 0,
+            token_usage: 2_200_000,
+            prompt_tokens: 2_000_000,
+            input_tokens: 1_100_000,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            output_tokens: 200_000,
+            total_cost: "1.935",
+            input_cost: "0.3",
+            output_cost: "1.5",
+            cache_read_cost: "0.135",
+            cache_write_cost: "0",
+            average_priced_cost: "0.9675",
+            priced_calls: 2,
+            unpriced_calls: 0,
+            incomplete_usage_calls: 0,
+            unreported_cache_calls: 2,
+            assumed_cache_calls: 2,
+            assumed_cache_cost: "1.935",
+            estimated_cache_read_tokens: 1_800_000,
+            speed: { average_tokens_per_second: 100, output_tokens: 200_000, generation_ms: 2000, samples: 2, first_output_median_ms: 100 },
+          },
+        ],
+        available_suppliers: [],
+        available_models: [],
+      },
+    });
+  });
+
+  await page.goto("#/");
+  const stats = page.getByRole("region", { name: "Call statistics", exact: true });
+  await expect(stats.getByText("Unreported", { exact: true })).toBeVisible();
+  await expect(stats.getByText("2 calls omitted cache details", { exact: true })).toBeVisible();
+  await expect(stats.getByText("Incl. 2 assumed-cache ($1.93)", { exact: true })).toBeVisible();
+  await expect(page.getByText("Assumed cache", { exact: true })).toBeVisible();
+
+  await page.goto("#/calls");
+  await expect(page.getByText("~90% cache", { exact: true })).toBeVisible();
+  await expect(page.getByText("Unreported", { exact: true }).first()).toBeVisible();
+
+  await page.goto("#/calls/unreported-call");
+  await expect(page.getByText("Est. 90% cache", { exact: true })).toBeVisible();
+  await expect(page.getByText("Unreported", { exact: true }).first()).toBeVisible();
+
+  await page.goto("#/calls/explicit-zero-call");
+  await expect(page.getByRole("region", { name: "Cost breakdown", exact: true }).getByText("Reported usage", { exact: true })).toBeVisible();
+  await expect(page.getByText("0 (explicit zero)", { exact: true }).first()).toBeVisible();
+});
+
+test("preserves overview table scroll position across call pagination, page size changes, filter changes, and route switches", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 960 });
+
+  const calls = Array.from({ length: 45 }, (_, index) => ({
+    call_kind: "provider_llm",
+    route: "local_byok",
+    call_id: `scroll-call-${index}`,
+    run_id: `scroll-run-${index}`,
+    conversation_id: `scroll-conv-${index}`,
+    provider_call_index: 1,
+    model_hash: "smoke-model",
+    supplier_key: null,
+    endpoint_key: null,
+    provider_type: "openai",
+    provider_url: "https://provider.example",
+    request_type: "responses",
+    request_url: "https://provider.example/v1/responses",
+    model_id: "gpt-5",
+    display_name: "GPT 5",
+    reasoning_effort: null,
+    fast: false,
+    status: "completed",
+    finish_reason: "stop",
+    created_at_ms: 1_800_000_000_000 - index * 1000,
+    ttfb_ms: 100,
+    ttft_ms: 100,
+    ttfr_ms: null,
+    ttfo_ms: 100,
+    duration_ms: 1100,
+    generation_ms: 1000,
+    generation_output_events: 10,
+    streaming: true,
+    call_origin: "run",
+    observed_thinking: false,
+    performance: {
+      overall_tokens_per_second: 90.9,
+      overall_reason: null,
+      speed_status: "measured",
+      tokens_per_second: 100,
+      reason: null,
+      first_output_ms: 100,
+      generation_ms: 1000,
+    },
+    input_tokens: 34_800,
+    billed_input_tokens: 2_100,
+    output_tokens: 563,
+    total_tokens: 35_363,
+    cache_read_tokens: 32_700,
+    cache_write_tokens: 0,
+    reasoning_tokens: 0,
+    pricing_source: "unpriced",
+    pricing_provider_id: null,
+    pricing_model_id: null,
+    pricing_snapshot_at_ms: null,
+    unit_input_per_million: null,
+    unit_output_per_million: null,
+    unit_cache_read_per_million: null,
+    unit_cache_write_per_million: null,
+    cost_status: "unpriced",
+    cost_basis: null,
+    assumed_cache_hit_rate_bps: null,
+    estimated_cache_read_tokens: null,
+    input_cost: null,
+    output_cost: null,
+    cache_read_cost: null,
+    cache_write_cost: null,
+    total_cost: null,
+    cost_calculated_at_ms: null,
+    cost_backfilled: false,
+    message_count: 1,
+    tool_count: 0,
+    http_status: 200,
+    error_kind: null,
+    error_message: null,
+    detailed: false,
+  }));
+
+  const activitySeries = Array.from({ length: 45 }, (_, index) => ({
+    date: new Date(Date.UTC(2026, 9, 5 + index)).toISOString().slice(0, 10),
+    token_usage: (index + 1) * 1000,
+  }));
+  const tokenUsageSeries = Array.from({ length: 7 }, (_, index) => ({
+    bucket_start_ms: Date.UTC(2026, 10, 1 + index),
+    input_tokens: 10_000,
+    cache_read_tokens: 20_000,
+    cache_write_tokens: 0,
+    output_tokens: 2_000,
+    input_cost: "0",
+    output_cost: "0",
+    cache_read_cost: "0",
+    cache_write_cost: "0",
+    total_cost: "0",
+    priced_calls: 0,
+    unpriced_calls: 1,
+    incomplete_usage_calls: 0,
+    unreported_cache_calls: 0,
+    assumed_cache_calls: 0,
+    assumed_cache_cost: "0",
+    estimated_cache_read_tokens: 0,
+  }));
+
+  await page.route("**/__byok-api__/api/llm-calls*", async (route) => {
+    const url = new URL(route.request().url());
+    const limit = Number(url.searchParams.get("limit") ?? "20");
+    const offset = Number(url.searchParams.get("offset") ?? "0");
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    await route.fulfill({ json: { items: calls.slice(offset, offset + limit), total: calls.length } });
+  });
+
+  await page.route("**/__byok-api__/api/overview*", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    await route.fulfill({
+      json: {
+        metrics: { llm_calls: 45, successful_calls: 45, failed_calls: 0, token_usage: 1_000_000, prompt_tokens: 800_000, input_tokens: 200_000, reported_cache_input_tokens: 600_000, cache_read_tokens: 600_000, cache_write_tokens: 0, output_tokens: 200_000, total_cost: "0", input_cost: "0", output_cost: "0", cache_read_cost: "0", cache_write_cost: "0", average_priced_cost: null, priced_calls: 0, unpriced_calls: 45, incomplete_usage_calls: 0, unreported_cache_calls: 0, assumed_cache_calls: 0, assumed_cache_cost: "0", estimated_cache_read_tokens: 0, speed: { average_tokens_per_second: 100, output_tokens: 200_000, generation_ms: 2_000_000, samples: 45, first_output_median_ms: 100 } },
+        token_usage_granularity: "day",
+        token_usage_series: tokenUsageSeries,
+        activity_series: activitySeries,
+        suppliers: [],
+        models: [],
+        available_suppliers: [],
+        available_models: [],
+      },
+    });
+  });
+
+  await page.goto("#/");
+  await page.getByRole("tab", { name: /^Calls/ }).click();
+  await expect(page.getByText("Page 1 of 3", { exact: true })).toBeVisible();
+  await expect(page.getByText("scroll-call-0", { exact: true })).toBeVisible();
+
+  const readScroll = () => page.evaluate(() => {
+    const vertical = [...document.querySelectorAll("*")].find((el) => {
+      const style = getComputedStyle(el);
+      return (style.overflowY === "auto" || style.overflowY === "scroll") && el.scrollHeight > el.clientHeight;
+    });
+    const horizontal = [...document.querySelectorAll("*")].find((el) => el.scrollWidth > el.clientWidth + 100);
+    return {
+      scrollTop: vertical?.scrollTop ?? 0,
+      scrollLeft: horizontal?.scrollLeft ?? 0,
+    };
+  });
+
+  await page.evaluate(() => {
+    const vertical = [...document.querySelectorAll("*")].find((el) => {
+      const style = getComputedStyle(el);
+      return (style.overflowY === "auto" || style.overflowY === "scroll") && el.scrollHeight > el.clientHeight;
+    });
+    const horizontal = [...document.querySelectorAll("*")].find((el) => el.scrollWidth > el.clientWidth + 100);
+    if (vertical) vertical.scrollTop = vertical.scrollHeight;
+    if (horizontal) horizontal.scrollLeft = 800;
+  });
+
+  await expect.poll(async () => (await readScroll()).scrollTop).toBeGreaterThan(300);
+  const initial = await readScroll();
+  expect(initial.scrollLeft).toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: "Next page", exact: true }).click();
+  await expect(page.getByText("Page 2 of 3", { exact: true })).toBeVisible();
+  await expect(page.getByText("scroll-call-20", { exact: true })).toBeVisible();
+  expect(await readScroll()).toEqual(initial);
+
+  await page.getByRole("button", { name: "Items per page", exact: true }).click();
+  await page.getByRole("option", { name: "50 per page", exact: true }).click();
+  await expect(page.getByText("Page 1 of 1", { exact: true })).toBeVisible();
+  await expect(page.getByText("scroll-call-44", { exact: true })).toBeVisible();
+  expect(await readScroll()).toEqual(initial);
+
+  await page.getByRole("button", { name: "Last calendar day", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Last calendar day", exact: true })).toHaveAttribute("aria-pressed", "true");
+  expect(await readScroll()).toEqual(initial);
+
+  await page.getByRole("link", { name: "Call history", exact: true }).click();
+  await expect(page.getByText("scroll-call-0", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Overview", exact: true }).click();
+  await expect(page.getByText("scroll-call-44", { exact: true })).toBeVisible();
+  await expect.poll(readScroll).toEqual(initial);
 });

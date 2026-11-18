@@ -25,6 +25,7 @@ const {
   formatConversionNote,
   formatDisplayCost,
   formatDisplayCostExact,
+  formatHitRatePercent,
   normalizeExchangeRate,
   resolveExchangeRate,
 } = module.namespace;
@@ -78,4 +79,13 @@ test("formatConversionNote distinguishes default rate vs configured rate", () =>
   assert.equal(formatConversionNote("CNY", null), "按默认汇率折算（1 USD = 6.8 CNY）");
   assert.equal(formatConversionNote("CNY", "7.20"), "按设置汇率折算（1 USD = 7.2 CNY）");
   assert.equal(formatConversionNote("CNY", "6.8"), "按设置汇率折算（1 USD = 6.8 CNY）");
+});
+
+test("formatHitRatePercent converts basis points with fallback", () => {
+  assert.equal(formatHitRatePercent(null), "90");
+  assert.equal(formatHitRatePercent(undefined, 85), "85");
+  assert.equal(formatHitRatePercent(9000), "90");
+  assert.equal(formatHitRatePercent(8750), "87.5");
+  assert.equal(formatHitRatePercent(9025), "90.3");
+  assert.equal(formatHitRatePercent(9004), "90");
 });

@@ -91,11 +91,18 @@ function getViewportAnchor(
     }
   }
 
-  return null
+  return {
+    index: visibleRange.start,
+    topDelta: rangeMap.positionAt(visibleRange.start) - scrollTop,
+  }
 }
 
 function isSameRange(left: RenderRange, right: RenderRange): boolean {
   return left.start === right.start && left.end === right.end
+}
+
+function isMeasurableElement(node: HTMLElement | null): node is HTMLElement {
+  return Boolean(node && node.isConnected && node.getClientRects().length > 0)
 }
 
 function VirtualRow(props: VirtualRowProps) {
@@ -195,10 +202,11 @@ export function VirtualList<TItem>(props: VirtualListProps<TItem>) {
 
   const readContentInsets = useCallback(() => {
     const node = contentElementRef.current
-    const styles = node ? getComputedStyle(node) : null
+    if (!isMeasurableElement(node)) return
+    const styles = getComputedStyle(node)
     const nextInsets = {
-      top: styles ? Number.parseFloat(styles.paddingTop) || 0 : 0,
-      bottom: styles ? Number.parseFloat(styles.paddingBottom) || 0 : 0,
+      top: Number.parseFloat(styles.paddingTop) || 0,
+      bottom: Number.parseFloat(styles.paddingBottom) || 0,
     }
     setContentInsets((currentInsets) =>
       currentInsets.top === nextInsets.top && currentInsets.bottom === nextInsets.bottom
@@ -301,15 +309,16 @@ export function VirtualList<TItem>(props: VirtualListProps<TItem>) {
   }, [onRangeChange, renderRange.end, renderRange.start])
 
   const measure = useCallback((index: number, node: HTMLElement | null) => {
-    if (!node) return
+    if (!isMeasurableElement(node)) return
 
     const rangeMap = rangeMapRef.current
     const currentScrollState = scrollStateRef.current
+    const liveScrollTop = scrollApiRef.current?.getScrollElement()?.scrollTop ?? currentScrollState?.scrollTop ?? 0
     let anchor: ViewportAnchor | null = null
     if (currentScrollState) {
       anchor = getViewportAnchor(
         rangeMap,
-        Math.max(0, currentScrollState.scrollTop - contentInsetTop),
+        Math.max(0, liveScrollTop - contentInsetTop),
         currentScrollState.viewportHeight
       )
     }
@@ -326,13 +335,18 @@ export function VirtualList<TItem>(props: VirtualListProps<TItem>) {
     }
 
     if (anchor && index < anchor.index) {
-      scrollApiRef.current?.scrollTo(
-        Math.max(0, contentInsetTop + rangeMap.positionAt(anchor.index) - anchor.topDelta)
-      )
+      const nextTop = Math.max(0, contentInsetTop + rangeMap.positionAt(anchor.index) - anchor.topDelta)
+      const nextContentHeight = contentInsetTop + rangeMap.totalSize + contentInsets.bottom
+      const knownMaxScrollTop = Math.max(0, nextContentHeight - (currentScrollState?.viewportHeight ?? 0))
+      scrollApiRef.current?.scrollTo(nextTop, knownMaxScrollTop)
+      if (scrollStateRef.current) {
+        const appliedTop = scrollApiRef.current?.getScrollElement()?.scrollTop ?? nextTop
+        scrollStateRef.current = { ...scrollStateRef.current, scrollTop: appliedTop }
+      }
     }
 
     forceUpdate((current) => current + 1)
-  }, [contentInsetTop, itemGap, items.length])
+  }, [contentInsetTop, contentInsets.bottom, itemGap, items.length])
 
   const handleScroll = useCallback(
     (nextState: ScrollAreaState) => {

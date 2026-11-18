@@ -35,6 +35,43 @@ pub async fn run_backfill_once(store: &Store, cancellation: &CancellationToken) 
                 });
                 continue;
             }
+            if item.existing_cost_status.as_deref() == Some("priced") {
+                if let Some(snapshot) = item.frozen_snapshot {
+                    let calculated = calculate_cost(
+                        item.request_type,
+                        item.call_origin,
+                        &item.usage,
+                        &snapshot,
+                    )?;
+                    match calculated.status {
+                        CostStatus::Priced => {
+                            backfilled_count += 1;
+                            updates.push(
+                                crate::store::pricing::BackfillCallUpdate::BasisRecalculated {
+                                    call_id: item.call_id,
+                                    calculated,
+                                },
+                            );
+                        }
+                        CostStatus::Unpriced => {
+                            updates.push(
+                                crate::store::pricing::BackfillCallUpdate::StillUnpriced {
+                                    call_id: item.call_id,
+                                    snapshot,
+                                },
+                            );
+                        }
+                        CostStatus::IncompleteUsage => {
+                            updates.push(
+                                crate::store::pricing::BackfillCallUpdate::IncompleteUsage {
+                                    call_id: item.call_id,
+                                },
+                            );
+                        }
+                    }
+                    continue;
+                }
+            }
             let snapshot = if let Some(cached) = cache.get(&item.identity.supplier_key) {
                 cached.clone()
             } else {
@@ -42,7 +79,8 @@ pub async fn run_backfill_once(store: &Store, cancellation: &CancellationToken) 
                 cache.insert(item.identity.supplier_key.clone(), resolved.clone());
                 resolved
             };
-            let calculated = calculate_cost(item.request_type, &item.usage, &snapshot)?;
+            let calculated =
+                calculate_cost(item.request_type, item.call_origin, &item.usage, &snapshot)?;
             match calculated.status {
                 CostStatus::Priced => {
                     backfilled_count += 1;

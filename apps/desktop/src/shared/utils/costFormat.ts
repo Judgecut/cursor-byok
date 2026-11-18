@@ -240,3 +240,9 @@ export function isValidCustomPriceInput(raw: string): boolean {
   if (!trimmed) return true;
   return /^(?:\d+(?:\.\d+)?|\.\d+)$/.test(trimmed);
 }
+
+export function formatHitRatePercent(bps: number | null | undefined, fallbackPercent = 90): string {
+  if (bps == null || !Number.isFinite(bps)) return String(fallbackPercent);
+  const percent = bps / 100;
+  return Number.isInteger(percent) ? String(percent) : percent.toFixed(1).replace(/\.0$/, "");
+}

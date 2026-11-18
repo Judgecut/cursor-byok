@@ -5,20 +5,17 @@ use sqlx::Row;
 
 use crate::{
     model::{
-        evaluate as evaluate_performance, LlmCallRequest, LlmCallResponseChunk, LlmCallSummary,
-        NewLlmCall, ProviderType, SpeedSample, Usage,
+        evaluate as evaluate_performance, CallOrigin, LlmCallRequest, LlmCallResponseChunk,
+        LlmCallSummary, NewLlmCall, ProviderType, SpeedSample, Usage,
     },
-    pricing::{
-        calculate_cost, canonical_supplier_identity, format_nano_usd, PricingRates,
-        PricingSnapshot, PricingSource,
-    },
+    pricing::{calculate_cost, canonical_supplier_identity, format_nano_usd, CostBasis},
     Result,
 };
 
 use super::{
     now_ms,
     overview::{normalize_string_array_filter, supplier_id_sql},
-    pricing::resolve_snapshot_conn,
+    pricing::{resolve_snapshot_conn, snapshot_from_call_row},
     Store,
 };
 
@@ -61,7 +58,8 @@ const LLM_CALL_COLUMNS: &str = r#"
     pricing_source, pricing_provider_id, pricing_model_id, pricing_snapshot_at_ms,
     unit_input_per_million, unit_output_per_million,
     unit_cache_read_per_million, unit_cache_write_per_million,
-    cost_status, input_cost_nano, output_cost_nano,
+    cost_status, cost_basis, assumed_cache_hit_rate_bps, estimated_cache_read_tokens,
+    input_cost_nano, output_cost_nano,
     cache_read_cost_nano, cache_write_cost_nano, total_cost_nano,
     cost_calculated_at_ms, cost_backfilled,
     message_count, tool_count, request_bytes, response_bytes, stream_event_count,
@@ -366,6 +364,7 @@ impl Store {
         let frozen = sqlx::query(
             "SELECT
                 request_type,
+                call_origin,
                 pricing_source,
                 pricing_provider_id,
                 pricing_model_id,
@@ -387,22 +386,10 @@ impl Store {
         let request_type_raw: String = row.try_get("request_type")?;
         let request_type =
             ProviderType::from_str(&request_type_raw).unwrap_or(ProviderType::OpenAiChat);
-        let source_raw: Option<String> = row.try_get("pricing_source")?;
-        let snapshot = PricingSnapshot {
-            source: PricingSource::parse(source_raw.as_deref().unwrap_or("unpriced")),
-            provider_id: row.try_get("pricing_provider_id")?,
-            model_id: row.try_get("pricing_model_id")?,
-            snapshot_at_ms: row
-                .try_get::<Option<i64>, _>("pricing_snapshot_at_ms")?
-                .unwrap_or(now),
-            rates: PricingRates {
-                input_per_million: row.try_get("unit_input_per_million")?,
-                output_per_million: row.try_get("unit_output_per_million")?,
-                cache_read_per_million: row.try_get("unit_cache_read_per_million")?,
-                cache_write_per_million: row.try_get("unit_cache_write_per_million")?,
-            },
-        };
-        let calculated = calculate_cost(request_type, &usage, &snapshot)?;
+        let call_origin_raw: String = row.try_get("call_origin")?;
+        let call_origin = CallOrigin::parse(&call_origin_raw);
+        let snapshot = snapshot_from_call_row(&row, now)?;
+        let calculated = calculate_cost(request_type, call_origin, &usage, &snapshot)?;
 
         sqlx::query(
             "UPDATE llm_calls SET
@@ -414,6 +401,9 @@ impl Store {
                 reasoning_tokens = ?,
                 usage_json = ?,
                 cost_status = ?,
+                cost_basis = ?,
+                assumed_cache_hit_rate_bps = ?,
+                estimated_cache_read_tokens = ?,
                 input_cost_nano = ?,
                 output_cost_nano = ?,
                 cache_read_cost_nano = ?,
@@ -431,6 +421,9 @@ impl Store {
         .bind(as_i64(usage.reasoning_tokens))
         .bind(usage_json)
         .bind(calculated.status.as_str())
+        .bind(calculated.cost_basis.map(CostBasis::as_str))
+        .bind(calculated.assumed_cache_hit_rate_bps)
+        .bind(as_i64(calculated.estimated_cache_read_tokens))
         .bind(calculated.input_cost_nano)
         .bind(calculated.output_cost_nano)
         .bind(calculated.cache_read_cost_nano)
@@ -698,7 +691,15 @@ fn summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<LlmCallSummary> {
     let input_tokens: Option<i64> = row.try_get("input_tokens")?;
     let cache_read_tokens: Option<i64> = row.try_get("cache_read_tokens")?;
     let cache_write_tokens: Option<i64> = row.try_get("cache_write_tokens")?;
+    let cost_basis: Option<String> = row.try_get("cost_basis")?;
+    let assumed_cache_hit_rate_bps: Option<i64> = row.try_get("assumed_cache_hit_rate_bps")?;
+    let estimated_cache_read_tokens: Option<i64> = row.try_get("estimated_cache_read_tokens")?;
     let billed_input_tokens = input_tokens.map(|raw_input| {
+        if cost_basis.as_deref() == Some("assumed_cache") {
+            if let Some(estimated_cache_read) = estimated_cache_read_tokens {
+                return raw_input.max(0).saturating_sub(estimated_cache_read.max(0));
+            }
+        }
         if request_type == ProviderType::Anthropic.as_str() {
             raw_input.max(0)
         } else {
@@ -779,6 +780,9 @@ fn summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<LlmCallSummary> {
         unit_cache_read_per_million: row.try_get("unit_cache_read_per_million")?,
         unit_cache_write_per_million: row.try_get("unit_cache_write_per_million")?,
         cost_status: row.try_get("cost_status")?,
+        cost_basis,
+        assumed_cache_hit_rate_bps,
+        estimated_cache_read_tokens,
         input_cost: row
             .try_get::<Option<i64>, _>("input_cost_nano")?
             .map(format_nano_usd),

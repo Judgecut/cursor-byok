@@ -41,7 +41,7 @@ export function Select({ value, options, disabled, ariaLabel, onChange }: { valu
     setOpen(true);
     setActive((index) => (index + step + options.length) % options.length);
   };
-  const choose = (option: SelectOption) => { onChange(option.value); setOpen(false); button.current?.focus(); };
+  const choose = (option: SelectOption) => { onChange(option.value); setOpen(false); button.current?.focus({ preventScroll: true }); };
   return <>
     <button ref={button} type="button" className={styles.trigger} aria-label={ariaLabel} aria-haspopup="listbox" aria-controls={open ? menuId : undefined} aria-expanded={open} disabled={disabled} onClick={() => { const nextOpen = !open; setOpen(nextOpen); if (nextOpen) setActive(Math.max(0, options.findIndex((option) => option.value === value))); }} onKeyDown={(event) => {
       if (event.key === "ArrowDown") { event.preventDefault(); move(1); }

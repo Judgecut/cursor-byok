@@ -8,9 +8,12 @@ import { ScrollableContent } from "../../../shared/virtual/ScrollableContent";
 import {
   ariaSortValue,
   averageCostTitle,
+  breakdownCacheTitle,
   breakdownCostTitle,
   nextBreakdownSort,
   PricingSourceBadges,
+  renderBreakdownCacheCell,
+  renderBreakdownCostCell,
   sortBreakdownRows,
   sortIndicator,
   successRateText,
@@ -188,17 +191,14 @@ export function HomeModelBreakdown({
               <td className={styles.monoNum} title={formatInteger(model.input_tokens)}>
                 {formatCompactInteger(model.input_tokens)}
               </td>
-              <td
-                className={styles.monoNum}
-                title={`${formatInteger(model.cache_read_tokens)} / ${formatInteger(model.cache_write_tokens)}`}
-              >
-                {formatCompactInteger(model.cache_read_tokens)} / {formatCompactInteger(model.cache_write_tokens)}
+              <td className={styles.monoNum} title={breakdownCacheTitle(model)}>
+                {renderBreakdownCacheCell(model)}
               </td>
               <td className={styles.monoNum} title={formatInteger(model.output_tokens)}>
                 {formatCompactInteger(model.output_tokens)}
               </td>
               <td className={styles.monoNum} title={breakdownCostTitle(model, currency, cnyRate)}>
-                {formatDisplayCost(model.total_cost, currency, cnyRate)}
+                {renderBreakdownCostCell(model, currency, cnyRate)}
               </td>
               <td
                 className={styles.monoNum}

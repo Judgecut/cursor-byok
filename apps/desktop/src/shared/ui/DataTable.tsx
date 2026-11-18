@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode, type RefCallback } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefCallback } from "react";
 import { ScrollableContent } from "../virtual/ScrollableContent";
 import { Pagination } from "./Pagination";
 import styles from "./DataTable.module.scss";
@@ -45,6 +45,7 @@ export function DataTable<T>({
 }) {
   const [clientPage, setClientPage] = useState(1);
   const [clientPageSize, setClientPageSize] = useState(20);
+  const tableViewportRef = useRef<HTMLDivElement | null>(null);
 
   const total = serverPagination ? serverPagination.total : rows.length;
   const pageSize = serverPagination ? serverPagination.pageSize : clientPageSize;
@@ -60,13 +61,31 @@ export function DataTable<T>({
     [page, pageSize, rows, serverPagination],
   );
 
+  const previousPageKeyRef = useRef(`${page}|${pageSize}`);
+  const pendingScrollResetRef = useRef(false);
+  useEffect(() => {
+    const currentKey = `${page}|${pageSize}`;
+    if (previousPageKeyRef.current !== currentKey) {
+      previousPageKeyRef.current = currentKey;
+      pendingScrollResetRef.current = true;
+    }
+    if (pendingScrollResetRef.current && !loading) {
+      pendingScrollResetRef.current = false;
+      const viewport = tableViewportRef.current;
+      if (viewport && viewport.scrollTop > 0) {
+        viewport.scrollTop = 0;
+      }
+    }
+  }, [loading, page, pageSize, rows]);
+
   const showEmpty = pageRows.length === 0;
   const overlayText = loading && showEmpty ? loadingText : showEmpty ? emptyText : null;
 
-  return <div className={styles.root}>
+  return <div className={styles.root} aria-busy={loading || undefined}>
     <div className={styles.tableRegion}>
       <ScrollableContent
         horizontal
+        viewportRef={tableViewportRef}
         className={[styles.viewport, showEmpty ? styles.emptyViewport : ""].filter(Boolean).join(" ")}
         viewportClassName={styles.tableViewport}
         contentClassName={styles.tableContent}
@@ -78,7 +97,7 @@ export function DataTable<T>({
               {columns.map((column) => <th key={column.key} className={columnClass(column)}>{column.header}</th>)}
             </tr>
           </thead>
-          <tbody>
+          <tbody className={loading && !showEmpty ? styles.loadingBody : undefined}>
             {pageRows.map((row) => <tr key={rowKey(row)} className={rowClassName?.(row)} ref={rowRef?.(row)}>
               {columns.map((column) => (
                 <td key={column.key} className={columnClass(column)} title={column.title?.(row)}>

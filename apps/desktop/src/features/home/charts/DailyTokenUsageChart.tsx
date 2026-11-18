@@ -28,6 +28,10 @@ export type DailyTokenUsage = {
   pricedCalls: number;
   unpricedCalls: number;
   incompleteUsageCalls: number;
+  unreportedCacheCalls: number;
+  assumedCacheCalls: number;
+  assumedCacheCost: string;
+  estimatedCacheReadTokens: number;
 };
 
 type TooltipItem = {
@@ -257,14 +261,21 @@ export function DailyTokenUsageChart({
           const day = first ? data[first.dataIndex] : undefined;
           if (!day) return "";
           if (mode === "tokens") {
-            return [
+            const lines = [
               formatTooltipTime(day.bucketStartMs, granularity),
               `${t("总请求")}：${formatCompactInteger(totalTokens(day))}`,
               `${colorMark(seriesColors.input)}${t("输入（非缓存）")}：${formatCompactInteger(day.inputTokens)}`,
-              `${colorMark(seriesColors.cacheRead)}${t("缓存输入")}：${formatCompactInteger(day.cacheReadTokens)}`,
-              `${colorMark(seriesColors.cacheWrite)}${t("缓存写入")}：${formatCompactInteger(day.cacheWriteTokens)}`,
+              `${colorMark(seriesColors.cacheRead)}${t("缓存输入（已上报）")}：${formatCompactInteger(day.cacheReadTokens)}`,
+              `${colorMark(seriesColors.cacheWrite)}${t("缓存写入（已上报）")}：${formatCompactInteger(day.cacheWriteTokens)}`,
               `${colorMark(seriesColors.output)}${t("模型输出")}：${formatCompactInteger(day.outputTokens)}`,
-            ].join("<br/>");
+            ];
+            if (day.unreportedCacheCalls > 0) {
+              lines.push(`${t("未上报缓存调用")}：${formatCompactInteger(day.unreportedCacheCalls)}`);
+            }
+            if (day.estimatedCacheReadTokens > 0) {
+              lines.push(`${t("按估算拆分缓存读取")}：~${formatCompactInteger(day.estimatedCacheReadTokens)}`);
+            }
+            return lines.join("<br/>");
           }
           const lines = [
             formatTooltipTime(day.bucketStartMs, granularity),
@@ -279,6 +290,9 @@ export function DailyTokenUsageChart({
               `${t("原美元金额：{cost}", { cost: formatUsdExact(day.totalCost) })}`,
               conversionNote,
             );
+          }
+          if (day.assumedCacheCalls > 0) {
+            lines.push(`${t("按缓存估算调用")}：${formatCompactInteger(day.assumedCacheCalls)}（${formatDisplayCost(day.assumedCacheCost, currency, cnyRate)}）`);
           }
           if (day.unpricedCalls > 0) {
             lines.push(`${t("未定价调用")}：${formatCompactInteger(day.unpricedCalls)}`);
