@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use crate::{
     pricing::PricingSyncState,
-    store::{CatalogSearchResult, SaveSupplierPricingInput, SupplierPricingView},
+    store::{pricing::PricingSettings, CatalogSearchResult, SaveSupplierPricingInput, SupplierPricingView},
     Result,
 };
 
@@ -53,6 +53,16 @@ pub async fn update_model(
     Json(input): Json<SaveSupplierPricingInput>,
 ) -> Result<Json<SupplierPricingView>> {
     Ok(Json(service.save_pricing_model(&input).await?))
+}
+
+pub async fn get_settings(State(service): State<ControlService>) -> Result<Json<PricingSettings>>
+{
+    Ok(Json(service.pricing_settings().await?))
+}
+
+pub async fn update_settings(State(service): State<ControlService>, Json(settings): Json<PricingSettings>) -> Result<Json<PricingSettings>>
+{
+    Ok(Json(service.set_pricing_settings(settings).await?))
 }
 
 pub async fn sync_status(State(service): State<ControlService>) -> Result<Json<PricingSyncState>> {

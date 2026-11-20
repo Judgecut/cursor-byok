@@ -86,6 +86,6 @@ test("formatHitRatePercent converts basis points with fallback", () => {
   assert.equal(formatHitRatePercent(undefined, 85), "85");
   assert.equal(formatHitRatePercent(9000), "90");
   assert.equal(formatHitRatePercent(8750), "87.5");
-  assert.equal(formatHitRatePercent(9025), "90.3");
-  assert.equal(formatHitRatePercent(9004), "90");
+  assert.equal(formatHitRatePercent(9025), "90.25");
+  assert.equal(formatHitRatePercent(9004), "90.04");
 });

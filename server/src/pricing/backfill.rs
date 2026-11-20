@@ -11,6 +11,7 @@ const BACKFILL_BATCH_SIZE: usize = 200;
 
 pub async fn run_backfill_once(store: &Store, cancellation: &CancellationToken) -> Result<usize> {
     store.ensure_llm_call_supplier_keys().await?;
+    let assumed_cache_hit_rate_bps = store.pricing_settings().await?.assumed_cache_hit_rate_bps;
     let mut backfilled_count = 0usize;
     let mut cache: HashMap<String, PricingSnapshot> = HashMap::new();
     let mut after_rowid: i64 = 0;
@@ -42,6 +43,7 @@ pub async fn run_backfill_once(store: &Store, cancellation: &CancellationToken) 
                         item.call_origin,
                         &item.usage,
                         &snapshot,
+                        assumed_cache_hit_rate_bps,
                     )?;
                     match calculated.status {
                         CostStatus::Priced => {
@@ -79,8 +81,7 @@ pub async fn run_backfill_once(store: &Store, cancellation: &CancellationToken) 
                 cache.insert(item.identity.supplier_key.clone(), resolved.clone());
                 resolved
             };
-            let calculated =
-                calculate_cost(item.request_type, item.call_origin, &item.usage, &snapshot)?;
+            let calculated = calculate_cost(item.request_type, item.call_origin, &item.usage, &snapshot, assumed_cache_hit_rate_bps)?;
             match calculated.status {
                 CostStatus::Priced => {
                     backfilled_count += 1;

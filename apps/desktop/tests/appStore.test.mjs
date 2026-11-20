@@ -58,6 +58,7 @@ async function setup()
     observability: async () => ({ detailed: false }),
     ports: async () => ({ proxy_port: 0, service_port: 0 }),
     pricingModels: async () => [],
+    pricingSettings: async () => ({ assumed_cache_hit_rate_bps: 9_000 }),
     pricingSync: async () => null,
     cursorHarness: async () => null,
     pluginRuntime: async () => null,

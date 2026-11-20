@@ -1,10 +1,11 @@
 import { test as base, expect } from "@playwright/test";
-import type { CallDetail, InterfaceSettings, Model, ModelInput, Overview, Provider, ProviderInput } from "../../src/shared/api";
+import type { CallDetail, InterfaceSettings, Model, ModelInput, Overview, PricingSettings, Provider, ProviderInput } from "../../src/shared/api";
 
 type ManagementState = {
   providers: Provider[];
   models: Model[];
   settings: InterfaceSettings;
+  pricingSettings: PricingSettings;
   writes: Array<{ path: string; body: unknown }>;
   openedUrls: string[];
 };
@@ -37,6 +38,7 @@ export const test = base.extend<{ management: ManagementState }>({
       providers: [],
       models: [],
       settings,
+      pricingSettings: { assumed_cache_hit_rate_bps: 9_000 },
       writes: [],
       openedUrls: [],
     };
@@ -84,6 +86,11 @@ export const test = base.extend<{ management: ManagementState }>({
       {
         response = { ...body, default_prompt: "Write a commit message." };
       }
+      else if (path === "/pricing/settings" && method === "PUT")
+      {
+        state.pricingSettings = body as PricingSettings;
+        response = state.pricingSettings;
+      }
       else if (path === "/desktop/open-external-url" && method === "POST")
       {
         state.openedUrls.push(body.url);
@@ -108,6 +115,7 @@ export const test = base.extend<{ management: ManagementState }>({
           "/settings/external-api": { enabled: false, api_key: "" },
           "/settings/commit": { model_id: "", prompt: "", prompt_locale: "en-US", default_prompt: "Write a commit message." },
           "/pricing/models": [],
+          "/pricing/settings": state.pricingSettings,
           "/pricing/sync": { auto_sync_enabled: false, sync_interval_hours: 24, catalog_model_count: 0, last_attempted_at_ms: null, last_synced_at_ms: null, last_error: null, syncing: false, backfilling: false },
           "/harness/cursor/status": { platform: "windows", ca: "ready", configured_models: state.models.length, enabled_models: 0, integration: "disabled", settings_applied: false, proxy_url: null, ca_install_command: null },
           "/plugins": [],

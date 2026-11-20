@@ -21,6 +21,7 @@ import {
   type PluginDescriptor,
   type PluginRuntimeStatus,
   type PortSettings,
+  type PricingSettings,
   type PricingSyncState,
   type Provider,
   type ProviderInput,
@@ -83,6 +84,7 @@ export type AppSnapshot = {
   detailed: boolean;
   ports: PortSettings;
   pricingModels: SupplierPricingView[];
+  pricingSettings: PricingSettings | null;
   pricingSync: PricingSyncState | null;
   busy: boolean;
   error: string | null;
@@ -130,6 +132,7 @@ let snapshot: AppSnapshot = {
       token_usage: 0,
       prompt_tokens: 0,
       input_tokens: 0,
+      reported_cache_input_tokens: 0,
       cache_read_tokens: 0,
       cache_write_tokens: 0,
       output_tokens: 0,
@@ -142,6 +145,10 @@ let snapshot: AppSnapshot = {
       priced_calls: 0,
       unpriced_calls: 0,
       incomplete_usage_calls: 0,
+      unreported_cache_calls: 0,
+      assumed_cache_calls: 0,
+      assumed_cache_cost: "0",
+      estimated_cache_read_tokens: 0,
       speed: emptySpeed(),
     },
     token_usage_granularity: "day",
@@ -155,6 +162,7 @@ let snapshot: AppSnapshot = {
   detailed: false,
   ports: { proxy_port: 0, service_port: 0 },
   pricingModels: [],
+  pricingSettings: null,
   pricingSync: null,
   busy: false,
   error: null,
@@ -316,8 +324,9 @@ export const appStore = {
     update({ busy: true, error: null });
     const interfaceRevisionBefore = interfaceRevision;
     const canApplyInterfaceSettings = pendingInterfaceWrites === 0;
+    const pricingSettingsBefore = snapshot.pricingSettings;
     try {
-      const [providers, models, callsResult, overview, settings, ports, interfaceSettings, pricingModels, pricingSync, cursorHarness, pluginRuntime, plugins] = await Promise.all([
+      const [providers, models, callsResult, overview, settings, ports, interfaceSettings, pricingModels, pricingSettings, pricingSync, cursorHarness, pluginRuntime, plugins] = await Promise.all([
         api.providers(),
         api.models(),
         api.calls({ limit: 20, offset: 0 }),
@@ -326,6 +335,7 @@ export const appStore = {
         api.ports(),
         api.interfaceSettings(),
         api.pricingModels(),
+        api.pricingSettings(),
         api.pricingSync(),
         api.cursorHarness(),
         api.pluginRuntime(),
@@ -340,6 +350,7 @@ export const appStore = {
         detailed: settings.detailed,
         ports,
         pricingModels,
+        pricingSettings: snapshot.pricingSettings === pricingSettingsBefore ? pricingSettings : snapshot.pricingSettings,
         pricingSync,
         cursorHarness,
         pluginRuntime,
@@ -640,6 +651,21 @@ export const appStore = {
       await appStore.refreshPricing();
       return saved;
     } catch (cause) {
+      update({ error: cause instanceof Error ? cause.message : String(cause) });
+      return null;
+    }
+  },
+  async savePricingSettings(settings: PricingSettings)
+  {
+    try
+    {
+      update({ error: null });
+      const pricingSettings = await api.savePricingSettings(settings);
+      update({ pricingSettings });
+      return pricingSettings;
+    }
+    catch (cause)
+    {
       update({ error: cause instanceof Error ? cause.message : String(cause) });
       return null;
     }

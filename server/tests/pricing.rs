@@ -2052,6 +2052,15 @@ async fn unreported_cache_distinguishes_zero_and_uses_assumed_hit_rate_end_to_en
     let (router, store, _pricing, _dir) =
         setup_control_with_catalog("http://127.0.0.1:1/unused").await;
     let endpoint = "https://gateway.example.com/v1";
+    let settings_path = "/__byok-api__/api/pricing/settings";
+    let (status, settings) = send(router.clone(), "GET", settings_path, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(settings["assumed_cache_hit_rate_bps"], 9_000);
+    let (status, _) = send(router.clone(), "PUT", settings_path, Some(json!({ "assumed_cache_hit_rate_bps": 10_001 }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, saved) = send(router.clone(), "PUT", settings_path, Some(json!({ "assumed_cache_hit_rate_bps": 7_525 }))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(saved["assumed_cache_hit_rate_bps"], 7_525);
 
     store
         .save_supplier_pricing_config(
@@ -2159,6 +2168,12 @@ async fn unreported_cache_distinguishes_zero_and_uses_assumed_hit_rate_end_to_en
             .unwrap();
     }
 
+    let (status, settings) = send(router.clone(), "GET", settings_path, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(settings["assumed_cache_hit_rate_bps"], 7_525);
+    let (status, _) = send(router.clone(), "PUT", settings_path, Some(json!({ "assumed_cache_hit_rate_bps": 9_000 }))).await;
+    assert_eq!(status, StatusCode::OK);
+
     let (status, unreported_detail) = send(
         router.clone(),
         "GET",
@@ -2169,15 +2184,15 @@ async fn unreported_cache_distinguishes_zero_and_uses_assumed_hit_rate_end_to_en
     assert_eq!(status, StatusCode::OK);
     let u_call = &unreported_detail["call"];
     assert_eq!(u_call["cost_basis"], "assumed_cache");
-    assert_eq!(u_call["assumed_cache_hit_rate_bps"], 9_000);
-    assert_eq!(u_call["estimated_cache_read_tokens"], 900_000);
+    assert_eq!(u_call["assumed_cache_hit_rate_bps"], 7_525);
+    assert_eq!(u_call["estimated_cache_read_tokens"], 752_500);
     assert!(u_call["cache_read_tokens"].is_null());
     assert!(u_call["cache_write_tokens"].is_null());
-    assert_eq!(u_call["billed_input_tokens"], 100_000);
-    assert_eq!(u_call["input_cost"], "0.15");
-    assert_eq!(u_call["cache_read_cost"], "0.0675");
+    assert_eq!(u_call["billed_input_tokens"], 247_500);
+    assert_eq!(u_call["input_cost"], "0.37125");
+    assert_eq!(u_call["cache_read_cost"], "0.0564375");
     assert_eq!(u_call["output_cost"], "0.75");
-    assert_eq!(u_call["total_cost"], "0.9675");
+    assert_eq!(u_call["total_cost"], "1.1776875");
 
     let zero_call = store.llm_call("g4-explicit-zero").await.unwrap().unwrap();
     assert_eq!(zero_call.cost_basis.as_deref(), Some("reported"));
@@ -2210,27 +2225,27 @@ async fn unreported_cache_distinguishes_zero_and_uses_assumed_hit_rate_end_to_en
     assert_eq!(status, StatusCode::OK);
     let metrics = &overview["metrics"];
     assert_eq!(metrics["llm_calls"], 4);
-    assert_eq!(metrics["input_tokens"], 1_110_500);
+    assert_eq!(metrics["input_tokens"], 2_010_500);
     assert_eq!(metrics["reported_cache_input_tokens"], 1_000_000);
     assert_eq!(metrics["cache_read_tokens"], 0);
     assert_eq!(metrics["cache_write_tokens"], 0);
     assert_eq!(metrics["unreported_cache_calls"], 3);
     assert_eq!(metrics["assumed_cache_calls"], 1);
-    assert_eq!(metrics["assumed_cache_cost"], "0.9675");
-    assert_eq!(metrics["estimated_cache_read_tokens"], 900_000);
-    assert_eq!(metrics["total_cost"], "3.234");
+    assert_eq!(metrics["assumed_cache_cost"], "1.1776875");
+    assert_eq!(metrics["estimated_cache_read_tokens"], 752_500);
+    assert_eq!(metrics["total_cost"], "3.4441875");
 
     let model = &overview["models"][0];
     assert_eq!(model["unreported_cache_calls"], 3);
     assert_eq!(model["assumed_cache_calls"], 1);
-    assert_eq!(model["assumed_cache_cost"], "0.9675");
-    assert_eq!(model["estimated_cache_read_tokens"], 900_000);
+    assert_eq!(model["assumed_cache_cost"], "1.1776875");
+    assert_eq!(model["estimated_cache_read_tokens"], 752_500);
 
     let supplier = &overview["suppliers"][0];
     assert_eq!(supplier["unreported_cache_calls"], 3);
     assert_eq!(supplier["assumed_cache_calls"], 1);
-    assert_eq!(supplier["assumed_cache_cost"], "0.9675");
-    assert_eq!(supplier["estimated_cache_read_tokens"], 900_000);
+    assert_eq!(supplier["assumed_cache_cost"], "1.1776875");
+    assert_eq!(supplier["estimated_cache_read_tokens"], 752_500);
 
     let active_bucket = overview["token_usage_series"]
         .as_array()
@@ -2240,6 +2255,6 @@ async fn unreported_cache_distinguishes_zero_and_uses_assumed_hit_rate_end_to_en
         .unwrap();
     assert_eq!(active_bucket["unreported_cache_calls"], 3);
     assert_eq!(active_bucket["assumed_cache_calls"], 1);
-    assert_eq!(active_bucket["assumed_cache_cost"], "0.9675");
-    assert_eq!(active_bucket["estimated_cache_read_tokens"], 900_000);
+    assert_eq!(active_bucket["assumed_cache_cost"], "1.1776875");
+    assert_eq!(active_bucket["estimated_cache_read_tokens"], 752_500);
 }

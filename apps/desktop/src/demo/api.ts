@@ -20,6 +20,7 @@ import type {
   OverviewSupplierBreakdown,
   OverviewTokenUsageBucket,
   PricingRates,
+  PricingSettings,
   PricingSource,
   PricingSyncState,
   Provider,
@@ -39,6 +40,7 @@ const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 const MAX_RANGE_BUCKETS = 60;
 const MIN_SPEED_GENERATION_MS = 200;
+const DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS = 9_000;
 
 let models: Model[] = [
   createModel({ hash: "mock-claude-sonnet", order: 1, name: "Claude Sonnet 4", type: "anthropic", url: "https://api.anthropic.com", modelId: "claude-sonnet-4-20250514" }),
@@ -155,8 +157,8 @@ const calls: LlmCall[] = Array.from({ length: 84 }, (_, index) => {
   const hasCacheReadDiscount = catalog != null
     && Number(catalog.rates.cache_read_per_million) < Number(catalog.rates.input_per_million);
   const assumedCache = catalog != null && cacheOmitted && rawInput >= 1_024 && hasCacheReadDiscount;
-  const assumedHitRateBps = assumedCache ? 9_000 : null;
-  const estimatedCacheReadTokens = assumedCache ? Math.floor((rawInput * 9_000) / 10_000) : null;
+  const assumedHitRateBps = assumedCache ? DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS : null;
+  const estimatedCacheReadTokens = assumedHitRateBps === null ? null : Math.round(rawInput * assumedHitRateBps / 10_000);
   const billedInput = estimatedCacheReadTokens != null ? rawInput - estimatedCacheReadTokens : rawInput;
   const effectiveCacheRead = estimatedCacheReadTokens ?? cacheReadTokens ?? 0;
   const effectiveCacheWrite = cacheWriteTokens ?? 0;
@@ -256,6 +258,8 @@ const calls: LlmCall[] = Array.from({ length: 84 }, (_, index) => {
     detailed: true,
   };
 });
+
+let pricingSettings: PricingSettings = { assumed_cache_hit_rate_bps: DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS };
 
 let pricingSyncState: PricingSyncState = {
   auto_sync_enabled: true,
@@ -410,6 +414,20 @@ export function installDemoApi(initialInterface?: Partial<Pick<InterfaceSettings
       }
       const updated = buildSupplierPricingViews().find((item) => item.supplier_key === key) ?? buildSupplierPricingViews()[0];
       return json(updated);
+    }
+    if (path === "/pricing/settings" && method === "GET")
+    {
+      return json(pricingSettings);
+    }
+    if (path === "/pricing/settings" && method === "PUT")
+    {
+      const bps = (body as Partial<PricingSettings> | null)?.assumed_cache_hit_rate_bps;
+      if (typeof bps !== "number" || !Number.isInteger(bps) || bps < 0 || bps > 10_000)
+      {
+        return json({ message: "Assumed cache hit rate must be between 0% and 100%" }, 400);
+      }
+      pricingSettings = { assumed_cache_hit_rate_bps: bps };
+      return json(pricingSettings);
     }
     if (path === "/pricing/sync" && method === "GET") return json(pricingSyncState);
     if (path === "/pricing/sync" && method === "PUT") {

@@ -15,7 +15,7 @@ use crate::{
 use super::{
     now_ms,
     overview::{normalize_string_array_filter, supplier_id_sql},
-    pricing::{resolve_snapshot_conn, snapshot_from_call_row},
+    pricing::{read_pricing_settings, resolve_snapshot_conn, snapshot_from_call_row},
     Store,
 };
 
@@ -389,7 +389,8 @@ impl Store {
         let call_origin_raw: String = row.try_get("call_origin")?;
         let call_origin = CallOrigin::parse(&call_origin_raw);
         let snapshot = snapshot_from_call_row(&row, now)?;
-        let calculated = calculate_cost(request_type, call_origin, &usage, &snapshot)?;
+        let pricing = read_pricing_settings(&mut *transaction).await?;
+        let calculated = calculate_cost(request_type, call_origin, &usage, &snapshot, pricing.assumed_cache_hit_rate_bps)?;
 
         sqlx::query(
             "UPDATE llm_calls SET

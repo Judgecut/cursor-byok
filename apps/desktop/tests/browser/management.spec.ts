@@ -38,6 +38,15 @@ test("saves settings, reads them after reload, and applies translated modules", 
   await page.reload();
   await expect(interval).toHaveValue("45");
 
+  const cacheRate = page.getByRole("spinbutton", { name: "Assumed cache hit rate (%)", exact: true });
+  await expect(cacheRate).toHaveValue("90");
+  await cacheRate.fill("75.25");
+  await cacheRate.press("Enter");
+  await expect.poll(() => management.pricingSettings.assumed_cache_hit_rate_bps).toBe(7525);
+  expect(management.writes).toContainEqual({ path: "/pricing/settings", body: { assumed_cache_hit_rate_bps: 7525 } });
+  await page.reload();
+  await expect(cacheRate).toHaveValue("75.25");
+
   await page.getByRole("button", { name: "Display language", exact: true }).click();
   await page.getByRole("option", { name: "简体中文", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");

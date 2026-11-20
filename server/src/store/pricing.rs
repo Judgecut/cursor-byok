@@ -15,7 +15,7 @@ use crate::{
         canonical_supplier_identity, canonicalize_custom_price, parse_models_dev_catalog,
         resolve_supplier_pricing, BindingMode, CalculatedCost, CatalogMatchKind, CatalogModel,
         CostBasis, CostStatus, ModelPricingConfig, PricingRates, PricingSnapshot, PricingSource,
-        PricingSyncState, SourceKind, SupplierIdentity, DEFAULT_SYNC_INTERVAL_HOURS,
+        PricingSyncState, SourceKind, SupplierIdentity, DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS, DEFAULT_SYNC_INTERVAL_HOURS,
     },
     Error, Result,
 };
@@ -23,8 +23,14 @@ use crate::{
 use super::{now_ms, Store};
 
 const PRICING_SYNC_SETTING_KEY: &str = "pricing_catalog_sync";
+const ASSUMED_CACHE_HIT_RATE_SETTING_KEY: &str = "assumed_cache_hit_rate_bps";
 const CATALOG_SEARCH_DEFAULT_LIMIT: i64 = 100;
 const CATALOG_SEARCH_MAX_LIMIT: i64 = 200;
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub struct PricingSettings {
+    pub assumed_cache_hit_rate_bps: i64,
+}
 
 #[derive(Clone, Debug)]
 pub enum BackfillCallUpdate {
@@ -140,6 +146,33 @@ fn default_true() -> bool {
 }
 
 impl Store {
+    pub async fn pricing_settings(&self) -> Result<PricingSettings>
+    {
+        read_pricing_settings(&self.pool).await
+    }
+
+    pub async fn set_pricing_settings(&self, settings: PricingSettings) -> Result<PricingSettings>
+    {
+        if !(0..=10_000).contains(&settings.assumed_cache_hit_rate_bps)
+        {
+            return Err(Error::Config("assumed cache hit rate must be between 0% and 100%".into()));
+        }
+        let _write = self.writes.lock().await;
+        sqlx::query(
+            "INSERT INTO service_settings(setting_key, value_json, updated_at_ms)
+             VALUES (?, ?, ?)
+             ON CONFLICT(setting_key) DO UPDATE SET
+                value_json = excluded.value_json,
+                updated_at_ms = excluded.updated_at_ms",
+        )
+        .bind(ASSUMED_CACHE_HIT_RATE_SETTING_KEY)
+        .bind(settings.assumed_cache_hit_rate_bps.to_string())
+        .bind(now_ms())
+        .execute(&self.pool)
+        .await?;
+        Ok(settings)
+    }
+
     pub(crate) async fn ensure_llm_call_supplier_keys(&self) -> Result<usize> {
         let missing = sqlx::query(
             "SELECT call_id, request_type, request_url, provider_url, model_id
@@ -1145,6 +1178,17 @@ pub(crate) async fn resolve_snapshot_conn(
         resolve_supplier_pricing(identity, config.as_ref(), &candidates, manual_entry, now_ms)
             .snapshot,
     )
+}
+
+pub(super) async fn read_pricing_settings<'e>(executor: impl sqlx::SqliteExecutor<'e>) -> Result<PricingSettings>
+{
+    let raw: Option<String> = sqlx::query_scalar("SELECT value_json FROM service_settings WHERE setting_key = ?")
+        .bind(ASSUMED_CACHE_HIT_RATE_SETTING_KEY)
+        .fetch_optional(executor)
+        .await?;
+    Ok(PricingSettings {
+        assumed_cache_hit_rate_bps: raw.as_deref().map(serde_json::from_str).transpose()?.unwrap_or(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS),
+    })
 }
 
 async fn read_sync_meta(pool: &sqlx::SqlitePool) -> Result<StoredSyncMeta> {

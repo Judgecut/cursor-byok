@@ -253,6 +253,10 @@ pub fn api_router(service: ControlService) -> Router {
             get(pricing::list_models).put(pricing::update_model),
         )
         .route(
+            "/__byok-api__/api/pricing/settings",
+            get(pricing::get_settings).put(pricing::update_settings),
+        )
+        .route(
             "/__byok-api__/api/pricing/sync",
             get(pricing::sync_status)
                 .put(pricing::update_sync)

@@ -319,6 +319,11 @@ export interface SaveSupplierPricingInput {
   custom_rates: PricingRates;
 }
 
+export interface PricingSettings
+{
+  assumed_cache_hit_rate_bps: number;
+}
+
 export interface PricingSyncState {
   auto_sync_enabled: boolean;
   sync_interval_hours: number;
@@ -924,6 +929,8 @@ export const api = {
   },
   pricingModels: () => request<SupplierPricingView[]>("/pricing/models"),
   savePricingModel: (input: SaveSupplierPricingInput) => request<SupplierPricingView>("/pricing/models", { method: "PUT", body: JSON.stringify(input) }),
+  pricingSettings: () => request<PricingSettings>("/pricing/settings"),
+  savePricingSettings: (settings: PricingSettings) => request<PricingSettings>("/pricing/settings", { method: "PUT", body: JSON.stringify(settings) }),
   pricingSync: () => request<PricingSyncState>("/pricing/sync"),
   setPricingAutoSync: (autoSyncEnabled: boolean) => request<PricingSyncState>("/pricing/sync", { method: "PUT", body: JSON.stringify({ auto_sync_enabled: autoSyncEnabled }) }),
   syncPricingNow: () => request<PricingSyncState>("/pricing/sync", { method: "POST" }),

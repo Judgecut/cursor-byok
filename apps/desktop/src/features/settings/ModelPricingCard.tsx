@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import type { CatalogModel, PricingRates, SupplierPricingView } from "../../shared/api";
 import { useI18n } from "../../i18n/store";
 import { appStore, useAppStore } from "../../shared/store/appStore";
@@ -100,13 +100,18 @@ function catalogMatchSummary(item: SupplierPricingView) {
 }
 
 export function ModelPricingCard() {
-  const { pricingModels, pricingSync } = useAppStore();
+  const { pricingModels, pricingSettings, pricingSync } = useAppStore();
   const { locale } = useI18n();
   const message = useMessage();
   const [query, setQuery] = useState("");
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [syncingNow, setSyncingNow] = useState(false);
   const [toggleBusy, setToggleBusy] = useState(false);
+  const [cacheRateDraft, setCacheRateDraft] = useState<string | null>(null);
+  const [savingCacheRate, setSavingCacheRate] = useState(false);
+  const cacheRateInputId = useId();
+  const cacheRateDescriptionId = useId();
+  const savedCacheRateBps = pricingSettings?.assumed_cache_hit_rate_bps;
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [draft, setDraft] = useState<RatesDraft>(() => toDraft(EMPTY_RATES));
@@ -270,6 +275,28 @@ export function ModelPricingCard() {
     message(t("已绑定公开价目表：{provider} / {model}", { provider: catalog.provider_name, model: catalog.model_id }));
   };
 
+  const saveCacheRate = async () =>
+  {
+    if (cacheRateDraft === null || savedCacheRateBps === undefined || savingCacheRate)
+    {
+      return;
+    }
+    setSavingCacheRate(true);
+    try
+    {
+      const saved = await appStore.savePricingSettings({ assumed_cache_hit_rate_bps: Math.round(Number(cacheRateDraft) * 100) });
+      if (saved)
+      {
+        setCacheRateDraft(null);
+        message(t("缓存估算比例已保存"));
+      }
+    }
+    finally
+    {
+      setSavingCacheRate(false);
+    }
+  };
+
   const syncAction = (
     <Button
       size="small"
@@ -288,6 +315,22 @@ export function ModelPricingCard() {
   return <>
     <TitledCard title={t("模型定价")} action={syncAction}>
       <div className={styles.content}>
+        <div className={styles.cacheRateRow}>
+          <div className={styles.syncText}>
+            <label htmlFor={cacheRateInputId}><strong>{t("缓存估算比例（%）")}</strong></label>
+            <span id={cacheRateDescriptionId} className={styles.syncMeta}>{t("调用未上报缓存用量且符合估算条件时，按此比例估算缓存读取。已计价的记录保留原比例。")}</span>
+          </div>
+          <form className={styles.cacheRateForm} onSubmit={(event) =>
+          {
+            event.preventDefault();
+            void saveCacheRate();
+          }}>
+            <TextInput id={cacheRateInputId} type="number" inputMode="decimal" min={0} max={100} step={0.01} required aria-describedby={cacheRateDescriptionId} value={cacheRateDraft ?? (savedCacheRateBps === undefined ? "" : String(savedCacheRateBps / 100))} disabled={savedCacheRateBps === undefined || savingCacheRate} onChange={(event) => setCacheRateDraft(event.target.value)} />
+            <Button size="small" variant="primary" type="submit" disabled={savedCacheRateBps === undefined || cacheRateDraft === null || savingCacheRate}>
+              {savingCacheRate ? t("保存中…") : t("保存")}
+            </Button>
+          </form>
+        </div>
         <div className={styles.syncRow}>
           <div className={styles.syncText}>
             <strong>{t("自动同步公开定价（每 {hours} 小时）", { hours: pricingSync?.sync_interval_hours ?? 6 })}</strong>

@@ -30,6 +30,7 @@ use crate::{
     pricing::{PricingService, PricingSyncState},
     provider::{ModelEvent, Provider},
     store::{
+        pricing::PricingSettings,
         normalize_string_array_filter, CallFinish, CatalogSearchResult, CommitSettings,
         DesktopSettings, ExternalApiSettings, InterfaceSettings, InterfaceSettingsPatch,
         LlmCallFilter, PortSettings, ProxySettings, ProxySettingsInput, SaveSupplierPricingInput,
@@ -895,6 +896,16 @@ impl ControlService {
             .await?;
         self.pricing.trigger_backfill_oneshot();
         Ok(saved)
+    }
+
+    pub async fn pricing_settings(&self) -> Result<PricingSettings>
+    {
+        self.store.pricing_settings().await
+    }
+
+    pub async fn set_pricing_settings(&self, settings: PricingSettings) -> Result<PricingSettings>
+    {
+        self.store.set_pricing_settings(settings).await
     }
 
     pub async fn pricing_sync_status(&self) -> Result<PricingSyncState> {
