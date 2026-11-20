@@ -298,6 +298,7 @@ let proxySettings: ProxySettings = {
 let tabSettings: TabSettings = { mode: "public", address: "" };
 let storage: StatisticsStorage = { call_count: calls.length, trace_count: calls.length };
 let interfaceSettings: InterfaceSettings = {
+  sidebar_collapsed: false,
   locale: "system",
   theme: "default-dark",
   currency: "USD",
@@ -1155,6 +1156,14 @@ function applyDemoInterfacePatch(
     return { settings: interfaceSettings };
   }
   const next: InterfaceSettings = { ...interfaceSettings };
+  if (patch.sidebar_collapsed !== undefined)
+  {
+    if (typeof patch.sidebar_collapsed !== "boolean")
+    {
+      return { error: "invalid sidebar collapsed state" };
+    }
+    next.sidebar_collapsed = patch.sidebar_collapsed;
+  }
   if (patch.locale !== undefined) {
     if (!["system", "zh-CN", "en-US", "pt-BR"].includes(patch.locale)) {
       return { error: "invalid interface locale" };

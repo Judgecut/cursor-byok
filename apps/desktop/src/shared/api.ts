@@ -223,6 +223,7 @@ export type OverviewCalendarWindow = "year" | "month" | "week";
 export type OverviewCalendarChartType = "heatmap" | "bar" | "line";
 
 export interface InterfaceSettings {
+  sidebar_collapsed: boolean;
   locale: LocalePreference;
   theme: ThemeId;
   currency: DisplayCurrency;
@@ -236,6 +237,7 @@ export interface InterfaceSettings {
 }
 
 export interface InterfaceSettingsPatch {
+  sidebar_collapsed?: boolean;
   locale?: LocalePreference;
   theme?: ThemeId;
   currency?: DisplayCurrency;

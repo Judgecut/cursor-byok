@@ -619,12 +619,12 @@
       "refs": [
         {
           "file": "shared/store/appStore.ts",
-          "line": 411,
+          "line": 419,
           "column": 23
         },
         {
           "file": "shared/store/appStore.ts",
-          "line": 418,
+          "line": 426,
           "column": 25
         }
       ]
@@ -1845,7 +1845,7 @@
       "refs": [
         {
           "file": "shell/AppLayout.tsx",
-          "line": 286,
+          "line": 294,
           "column": 14
         }
       ]
@@ -2011,12 +2011,12 @@
         },
         {
           "file": "shell/AppLayout.tsx",
-          "line": 276,
+          "line": 284,
           "column": 20
         },
         {
           "file": "shell/AppLayout.tsx",
-          "line": 287,
+          "line": 295,
           "column": 20
         }
       ]
@@ -2161,7 +2161,7 @@
       "refs": [
         {
           "file": "shell/AppLayout.tsx",
-          "line": 275,
+          "line": 283,
           "column": 14
         }
       ]
@@ -2456,7 +2456,7 @@
         },
         {
           "file": "shell/AppLayout.tsx",
-          "line": 288,
+          "line": 296,
           "column": 21
         }
       ]
@@ -2777,8 +2777,8 @@
       "refs": [
         {
           "file": "shell/ads/AdMenu.tsx",
-          "line": 62,
-          "column": 56
+          "line": 64,
+          "column": 96
         }
       ]
     },
@@ -3463,13 +3463,13 @@
       "refs": [
         {
           "file": "shell/ads/AdMenu.tsx",
-          "line": 72,
-          "column": 99
+          "line": 75,
+          "column": 101
         },
         {
           "file": "shell/AppLayout.tsx",
-          "line": 242,
-          "column": 67
+          "line": 257,
+          "column": 66
         }
       ]
     },
@@ -3699,7 +3699,7 @@
         },
         {
           "file": "shell/AppLayout.tsx",
-          "line": 262,
+          "line": 254,
           "column": 51
         }
       ]
@@ -4221,6 +4221,18 @@
         }
       ]
     },
+    "5f3ed861a0b132ca": {
+      "source": "有可用更新",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "shell/AppLayout.tsx",
+          "line": 257,
+          "column": 76
+        }
+      ]
+    },
     "5f600b307b4eb0fb": {
       "source": "API 密钥",
       "kind": "text",
@@ -4252,7 +4264,7 @@
       "refs": [
         {
           "file": "shell/AppLayout.tsx",
-          "line": 292,
+          "line": 300,
           "column": 11
         }
       ]
@@ -4529,7 +4541,7 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 868,
+          "line": 870,
           "column": 43
         }
       ]
@@ -4565,6 +4577,18 @@
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
           "line": 120,
           "column": 18
+        }
+      ]
+    },
+    "658ff1eade42c4b4": {
+      "source": "展开侧栏",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "shell/AppLayout.tsx",
+          "line": 75,
+          "column": 44
         }
       ]
     },
@@ -4756,7 +4780,7 @@
       "refs": [
         {
           "file": "shell/AppLayout.tsx",
-          "line": 82,
+          "line": 83,
           "column": 47
         }
       ]
@@ -5082,12 +5106,12 @@
       "refs": [
         {
           "file": "shared/store/appStore.ts",
-          "line": 571,
+          "line": 579,
           "column": 23
         },
         {
           "file": "shared/store/appStore.ts",
-          "line": 578,
+          "line": 586,
           "column": 25
         }
       ]
@@ -5240,7 +5264,7 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 863,
+          "line": 865,
           "column": 43
         }
       ]
@@ -5517,7 +5541,7 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 782,
+          "line": 784,
           "column": 21
         }
       ]
@@ -6056,7 +6080,7 @@
       "refs": [
         {
           "file": "shell/AppLayout.tsx",
-          "line": 78,
+          "line": 79,
           "column": 29
         }
       ]
@@ -6135,7 +6159,7 @@
       "refs": [
         {
           "file": "shell/AppLayout.tsx",
-          "line": 294,
+          "line": 302,
           "column": 16
         }
       ]
@@ -6246,7 +6270,7 @@
         },
         {
           "file": "shell/AppLayout.tsx",
-          "line": 76,
+          "line": 77,
           "column": 39
         }
       ]
@@ -6301,7 +6325,7 @@
         },
         {
           "file": "shell/AppLayout.tsx",
-          "line": 262,
+          "line": 254,
           "column": 62
         }
       ]
@@ -6639,7 +6663,7 @@
       "refs": [
         {
           "file": "shell/AppLayout.tsx",
-          "line": 281,
+          "line": 289,
           "column": 11
         }
       ]
@@ -7232,7 +7256,7 @@
       "refs": [
         {
           "file": "shell/AppLayout.tsx",
-          "line": 277,
+          "line": 285,
           "column": 21
         }
       ]
@@ -7629,12 +7653,12 @@
         },
         {
           "file": "shell/AppLayout.tsx",
-          "line": 308,
+          "line": 316,
           "column": 64
         },
         {
           "file": "shell/AppLayout.tsx",
-          "line": 308,
+          "line": 316,
           "column": 125
         }
       ]
@@ -8101,7 +8125,7 @@
       "refs": [
         {
           "file": "shell/ads/AdMenu.tsx",
-          "line": 88,
+          "line": 92,
           "column": 24
         }
       ]
@@ -8217,6 +8241,18 @@
           "file": "features/models/CursorSettingsPage.tsx",
           "line": 244,
           "column": 13
+        }
+      ]
+    },
+    "bb0b6e36b3ae6382": {
+      "source": "收起侧栏",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "shell/AppLayout.tsx",
+          "line": 75,
+          "column": 56
         }
       ]
     },
@@ -8343,7 +8379,7 @@
       "refs": [
         {
           "file": "shell/AppLayout.tsx",
-          "line": 299,
+          "line": 307,
           "column": 24
         }
       ]
@@ -9300,8 +9336,8 @@
       "refs": [
         {
           "file": "shell/AppLayout.tsx",
-          "line": 228,
-          "column": 54
+          "line": 236,
+          "column": 75
         }
       ]
     },
@@ -9558,7 +9594,7 @@
         },
         {
           "file": "shell/AppLayout.tsx",
-          "line": 80,
+          "line": 81,
           "column": 29
         }
       ]
@@ -9788,7 +9824,7 @@
       "refs": [
         {
           "file": "shell/AppLayout.tsx",
-          "line": 77,
+          "line": 78,
           "column": 44
         }
       ]
@@ -10572,7 +10608,7 @@
         },
         {
           "file": "shell/AppLayout.tsx",
-          "line": 81,
+          "line": 82,
           "column": 46
         }
       ]
@@ -11027,7 +11063,7 @@
       "refs": [
         {
           "file": "shell/AppLayout.tsx",
-          "line": 83,
+          "line": 84,
           "column": 48
         }
       ]

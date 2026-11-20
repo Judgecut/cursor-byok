@@ -3,7 +3,7 @@
 .root {
   --app-region-gap: 16px;
   --app-toolbar-height: 36px;
-  --app-content-left: calc(var(--app-edge) + var(--app-menu-width) );
+  --app-content-left: calc(var(--app-edge) + var(--app-menu-width));
   --app-scroll-shadow-top: calc(var(--window-safe-top) + var(--app-toolbar-height) + 10px);
   background: var(--vscode-editor-background);
 }
@@ -15,12 +15,29 @@
   bottom: var(--app-edge);
   left: var(--app-edge);
   width: var(--app-menu-width);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+}
+
+.menuHeader
+{
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 6px 0;
+}
+
+.sidebarToggle
+{
+  width: 36px;
+  height: 28px;
+  -webkit-app-region: no-drag;
 }
 
 .navigation {
   width: 100%;
-  height: 100%;
+  flex: 1 1 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -53,6 +70,7 @@
 
   a,
   button {
+    position: relative;
     width: 100%;
     height: 36px;
     display: flex;
@@ -106,6 +124,51 @@
   margin-left: auto;
   background: #ef4444;
   border-radius: 50%;
+}
+
+.sidebarCollapsed
+{
+  --app-menu-width: 56px;
+
+  .menuHeader
+  {
+    justify-content: center;
+  }
+
+  .menuLabel,
+  .menuStatusTag
+  {
+    display: none;
+  }
+
+  .navigationGroup
+  {
+    height: 9px;
+    padding: 0;
+    justify-content: center;
+
+    &::after
+    {
+      content: "";
+      width: 20px;
+      border-top: 1px solid var(--vscode-sideBar-border);
+    }
+  }
+
+  .navigationRow a,
+  .navigationRow button
+  {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .menuIndicatorDot
+  {
+    position: absolute;
+    top: 5px;
+    inset-inline-end: 5px;
+    margin: 0;
+  }
 }
 
 .dismissReason {

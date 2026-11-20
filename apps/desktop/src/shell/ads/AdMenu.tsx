@@ -1,12 +1,14 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Marquee } from "react-css-marquee";
 import { Icon } from "../../shared/ui/Icon";
+import { TooltipTrigger } from "../../shared/ui/TooltipTrigger";
 import { windowCloseIcon } from "../../shared/ui/icons";
 import type { AdSlot } from "./types";
 import styles from "./Ads.module.scss";
 
 type AdMenuProps = {
   ads: AdSlot[];
+  collapsed: boolean;
   activeAdId?: string;
   dismissingAdId?: string;
   readAdIds: ReadonlySet<string>;
@@ -58,30 +60,32 @@ function OverflowText({ children, className }: OverflowTextProps) {
   </div>;
 }
 
-export function AdMenu({ ads, activeAdId, dismissingAdId, readAdIds, triggerRefs, onOpen, onDismiss }: AdMenuProps) {
-  return <div className={styles.menuSlots} aria-label={t("推荐内容")}>
+export function AdMenu({ ads, collapsed, activeAdId, dismissingAdId, readAdIds, triggerRefs, onOpen, onDismiss }: AdMenuProps) {
+  return <div className={styles.menuSlots} data-collapsed={collapsed || undefined} aria-label={t("推荐内容")}>
     {ads.map((ad) => <div key={ad.id} className={styles.menuSlotContainer}>
-      <button
-        ref={(node) => {
-          if (node) triggerRefs.current.set(ad.id, node);
-          else triggerRefs.current.delete(ad.id);
-        }}
-        type="button"
-        className={styles.menuSlot}
-        title={`${ad.target.title}\n${ad.target.description}`}
-        aria-label={`${ad.target.title}，${ad.target.description}${readAdIds.has(ad.id) ? "" : `，${t("未读")}`}`}
-        aria-haspopup="dialog"
-        aria-expanded={activeAdId === ad.id}
-        aria-controls={activeAdId === ad.id ? "menu-ad-dialog" : undefined}
-        onClick={() => onOpen(ad)}
-      >
-        {!readAdIds.has(ad.id) && <span className={styles.unreadDot} aria-hidden="true" />}
-        <img className={styles.menuImage} src={ad.target.imageUrl} alt="" />
-        <div className={styles.menuCopy}>
-          <OverflowText className={styles.menuTitle}>{ad.target.title}</OverflowText>
-          <OverflowText className={styles.menuSubtitle}>{ad.target.description}</OverflowText>
-        </div>
-      </button>
+      <TooltipTrigger label={ad.target.title} placement="right" enabled={collapsed}>
+        <button
+          ref={(node) => {
+            if (node) triggerRefs.current.set(ad.id, node);
+            else triggerRefs.current.delete(ad.id);
+          }}
+          type="button"
+          className={styles.menuSlot}
+          title={collapsed ? undefined : `${ad.target.title}\n${ad.target.description}`}
+          aria-label={`${ad.target.title}，${ad.target.description}${readAdIds.has(ad.id) ? "" : `，${t("未读")}`}`}
+          aria-haspopup="dialog"
+          aria-expanded={activeAdId === ad.id}
+          aria-controls={activeAdId === ad.id ? "menu-ad-dialog" : undefined}
+          onClick={() => onOpen(ad)}
+        >
+          {!readAdIds.has(ad.id) && <span className={styles.unreadDot} aria-hidden="true" />}
+          <img className={styles.menuImage} src={ad.target.imageUrl} alt="" />
+          {!collapsed && <div className={styles.menuCopy}>
+            <OverflowText className={styles.menuTitle}>{ad.target.title}</OverflowText>
+            <OverflowText className={styles.menuSubtitle}>{ad.target.description}</OverflowText>
+          </div>}
+        </button>
+      </TooltipTrigger>
       <button
         type="button"
         className={styles.menuDismiss}

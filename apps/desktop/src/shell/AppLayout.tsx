@@ -14,7 +14,7 @@ import { ConfirmDialog } from "../shared/ui/ConfirmDialog";
 import controls from "../shared/ui/Controls.module.scss";
 import { Icon } from "../shared/ui/Icon";
 import { TooltipTrigger } from "../shared/ui/TooltipTrigger";
-import { flatColorAboutIcon, flatColorAreaChartIcon, flatColorCrystalOscillatorIcon, flatColorSalesPerformanceIcon, flatColorSettingsIcon, refreshIcon } from "../shared/ui/icons";
+import { chevronDoubleLeftIcon, chevronDoubleRightIcon, flatColorAboutIcon, flatColorAreaChartIcon, flatColorCrystalOscillatorIcon, flatColorSalesPerformanceIcon, flatColorSettingsIcon, refreshIcon } from "../shared/ui/icons";
 import { useMessage } from "../shared/ui/message";
 import { VirtualList } from "../shared/virtual/VirtualList";
 import { useI18n } from "../i18n/store";
@@ -44,7 +44,7 @@ function loadStoredAdIds(key: string): Set<string> {
 }
 
 export function AppLayout() {
-  const { busy, cursorHarness } = useAppStore();
+  const { busy, cursorHarness, sidebarCollapsed } = useAppStore();
   const { availableVersion } = useUpdateStore();
   const { locale } = useI18n();
   const message = useMessage();
@@ -72,6 +72,7 @@ export function AppLayout() {
   const adTriggers = useRef(new Map<string, HTMLButtonElement>());
   const closeAd = useCallback(() => setActiveAd(null), []);
   const visibleAds = ads.filter((ad) => ad.enabled && ad.placement === "menu" && !dismissedAdIds.has(ad.id));
+  const sidebarAction = sidebarCollapsed ? t("展开侧栏") : t("收起侧栏");
   const menuItems: MenuItem[] = [
     { kind: "page", path: "/", label: t("数据概览"), icon: flatColorAreaChartIcon },
     { kind: "page", path: "/calls", label: t("调用详细"), icon: flatColorSalesPerformanceIcon },
@@ -223,9 +224,16 @@ export function AppLayout() {
     return () => observer.disconnect();
   }, []);
 
-  return <PageLayout className={styles.root}>
+  return <PageLayout className={sidebarCollapsed ? `${styles.root} ${styles.sidebarCollapsed}` : styles.root}>
     <Card as="aside" className={styles.menuCard}>
-      <nav className={styles.navigation} aria-label={t("主菜单")}>
+      <div className={styles.menuHeader}>
+        <TooltipTrigger label={sidebarAction} placement="right">
+          <button type="button" className={`${controls.iconButton} ${styles.sidebarToggle}`} aria-label={sidebarAction} aria-controls="main-navigation" aria-expanded={!sidebarCollapsed} onClick={appStore.toggleSidebar}>
+            <Icon icon={sidebarCollapsed ? chevronDoubleRightIcon : chevronDoubleLeftIcon} size="1.25em" />
+          </button>
+        </TooltipTrigger>
+      </div>
+      <nav id="main-navigation" className={styles.navigation} aria-label={t("主菜单")}>
         <VirtualList
           items={menuItems}
           itemKey={(item) => item.kind === "group" ? `group-${item.label}` : item.kind === "external" ? `external-${item.id}` : item.path}
@@ -233,39 +241,39 @@ export function AppLayout() {
           itemGap={3}
           className={`${styles.navigationList} scroll-shadow-bottom`}
         >
-          {(item) => item.kind === "group"
-          ? <div className={styles.navigationGroup} key={`group-${item.label}`}>{item.label}</div>
-          : item.kind === "external"
-          ? <div className={styles.navigationRow} key={item.id}>
-            <button
-              type="button"
-              aria-label={`${item.label}${tutorialRead ? "" : `，${t("未读")}`}`}
-              onClick={() => setConfirmTutorial(true)}
-            >
+          {(item) =>
+          {
+            if (item.kind === "group")
+            {
+              return <div className={styles.navigationGroup} aria-hidden={sidebarCollapsed || undefined}>
+                <span className={styles.menuLabel}>{item.label}</span>
+              </div>;
+            }
+            const external = item.kind === "external";
+            const status = !external && item.path === "/harness/cursor" && cursorHarness
+              ? (cursorHarness.settings_applied ? t("已接管") : t("未接管"))
+              : null;
+            const hasIndicator = external ? !tutorialRead : item.path === "/settings" && Boolean(availableVersion);
+            const detail = status ?? (hasIndicator ? (external ? t("未读") : t("有可用更新")) : null);
+            const label = detail ? `${item.label} · ${detail}` : item.label;
+            const content = <>
               {typeof item.icon === "string"
                 ? <Icon src={item.icon} size="1.3em" />
                 : <Icon icon={item.icon} size="1.3em" />}
-              <span>{item.label}</span>
-              {!tutorialRead && <span className={styles.menuIndicatorDot} aria-hidden="true" />}
-            </button>
-          </div>
-          : <div className={styles.navigationRow} key={item.path}>
-            <NavLink to={item.path} end={item.path === "/"}>
-              {typeof item.icon === "string"
-                ? <Icon src={item.icon} size="1.3em" />
-                : <Icon icon={item.icon} size="1.3em" />}
-              <span>{item.label}</span>
-              {item.path === "/harness/cursor" && cursorHarness && <span
-                className={styles.menuStatusTag}
-                data-taken={cursorHarness.settings_applied || undefined}
-              >
-                {cursorHarness.settings_applied ? t("已接管") : t("未接管")}
-              </span>}
-              {item.path === "/settings" && availableVersion && <span className={styles.menuIndicatorDot} aria-hidden="true" />}
-            </NavLink>
-          </div>}
+              <span className={styles.menuLabel}>{item.label}</span>
+              {status && <span className={styles.menuStatusTag} data-taken={cursorHarness?.settings_applied || undefined}>{status}</span>}
+              {hasIndicator && <span className={styles.menuIndicatorDot} aria-hidden="true" />}
+            </>;
+            return <div className={styles.navigationRow}>
+              <TooltipTrigger label={label} placement="right" enabled={sidebarCollapsed}>
+                {external
+                  ? <button type="button" aria-label={label} onClick={() => setConfirmTutorial(true)}>{content}</button>
+                  : <NavLink to={item.path} end={item.path === "/"} aria-label={sidebarCollapsed || hasIndicator ? label : undefined}>{content}</NavLink>}
+              </TooltipTrigger>
+            </div>;
+          }}
         </VirtualList>
-        <AdMenu ads={visibleAds} activeAdId={activeAd?.id} dismissingAdId={dismissCandidate?.id} readAdIds={readAdIds} triggerRefs={adTriggers} onOpen={openAd} onDismiss={openDismissAd} />
+        <AdMenu ads={visibleAds} collapsed={sidebarCollapsed} activeAdId={activeAd?.id} dismissingAdId={dismissCandidate?.id} readAdIds={readAdIds} triggerRefs={adTriggers} onOpen={openAd} onDismiss={openDismissAd} />
       </nav>
     </Card>
     {activeAd && <FloatingAd ad={activeAd} trigger={adTriggers.current.get(activeAd.id) ?? null} onClose={closeAd} onAction={performAdAction} />}

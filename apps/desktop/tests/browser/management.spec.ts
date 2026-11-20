@@ -57,6 +57,92 @@ test("saves settings, reads them after reload, and applies translated modules", 
   await expect(page.getByRole("textbox", { name: "主页自动刷新间隔（秒）", exact: true })).toHaveValue("45");
 });
 
+test("collapses the sidebar at minimum window size and remembers the choice with save rollback", async ({ page, management }) =>
+{
+  await page.setViewportSize({ width: 820, height: 558 });
+  const imageUrl = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+  await page.route("**/__byok-api__/api/promotions*", (route) => route.fulfill({ json: { slots: [{
+    id: "sidebar-ad", enabled: true, placement: "menu",
+    target: { title: "Sidebar example", description: "Example description", imageUrl },
+    content: { title: "Sidebar promotion", description: "Example content", imageUrl, details: [], button: { label: "Open", action: { type: "open_browser", url: "https://example.com" } } },
+  }] } }));
+  await page.route("**/__byok-api__/api/promotions/sidebar-ad/dismissals", (route) => route.fulfill({ status: 204 }));
+  await page.goto("#/");
+
+  const collapse = page.getByRole("button", { name: "Collapse sidebar", exact: true });
+  const expand = page.getByRole("button", { name: "Expand sidebar", exact: true });
+  const navigation = page.locator("#main-navigation");
+  const sidebar = page.locator("aside").filter({ has: navigation });
+  const main = page.getByRole("main");
+  const overview = navigation.getByRole("link", { name: "Overview", exact: true });
+  const calls = navigation.getByRole("link", { name: "Call history", exact: true });
+  await expect(sidebar).toHaveCSS("width", "204px");
+  await expect(collapse).toHaveAttribute("aria-expanded", "true");
+  await expect(overview.getByText("Overview", { exact: true })).toBeVisible();
+  const expandedContentWidth = (await main.boundingBox())!.width;
+
+  await collapse.press("Enter");
+  await expect(expand).toHaveAttribute("aria-expanded", "false");
+  await expect(sidebar).toHaveCSS("width", "56px");
+  await expect.poll(async () => (await main.boundingBox())!.width).toBe(expandedContentWidth + 148);
+  await expect(overview.getByText("Overview", { exact: true })).toBeHidden();
+  await expect(overview).toHaveAttribute("aria-current", "page");
+  await page.keyboard.press("Tab");
+  await expect(overview).toBeFocused();
+  const tooltip = page.getByRole("tooltip");
+  await expect(tooltip).toHaveText("Overview");
+  await expect.poll(async () => (await tooltip.boundingBox())!.x).toBeGreaterThan((await sidebar.boundingBox())!.x + 56);
+  await page.keyboard.press("Escape");
+  await expect(tooltip).toBeHidden();
+  await navigation.getByRole("link", { name: /^Cursor/ }).hover();
+  await expect(tooltip).toHaveText("Cursor · Not taken over");
+
+  const promotion = navigation.getByRole("button", { name: /^Sidebar example/ });
+  await expect(promotion.getByText("Sidebar example")).toHaveCount(0);
+  await promotion.click();
+  await expect(page.getByRole("dialog", { name: "Sidebar promotion" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(promotion).toBeFocused();
+  await page.mouse.move(400, 200);
+  await page.keyboard.press("Tab");
+  const dismiss = navigation.getByRole("button", { name: /^Hide ad/ });
+  await expect(dismiss).toBeFocused();
+  await dismiss.press("Enter");
+  const dismissal = page.getByRole("alertdialog", { name: "Do not show this ad again" });
+  await dismissal.getByRole("button", { name: "Confirm", exact: true }).click();
+  await expect(promotion).toHaveCount(0);
+
+  await calls.click();
+  await expect(calls).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("button", { name: "Refresh", exact: true })).toBeInViewport();
+  await expect.poll(() => management.settings.sidebar_collapsed).toBe(true);
+  await page.reload();
+  await expect(expand).toHaveAttribute("aria-expanded", "false");
+  await expect(calls).toHaveAttribute("aria-current", "page");
+
+  let failSave!: () => void;
+  const saveResponse = new Promise<void>((resolve) =>
+  {
+    failSave = resolve;
+  });
+  await page.route("**/__byok-api__/api/settings/interface", async (route) =>
+  {
+    if (route.request().method() !== "PUT")
+    {
+      await route.fallback();
+      return;
+    }
+    await saveResponse;
+    await route.fulfill({ status: 500, json: { message: "Sidebar preference could not be saved." } });
+  });
+  await expand.press("Space");
+  await expect(collapse).toHaveAttribute("aria-expanded", "true");
+  failSave();
+  await expect(expand).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("status").getByText("Sidebar preference could not be saved.")).toBeVisible();
+  expect(management.settings.sidebar_collapsed).toBe(true);
+});
+
 test("opens call details using the URL sent to the desktop boundary", async ({ page, context, management }) =>
 {
   await page.goto("#/calls");
@@ -153,6 +239,13 @@ test("switches overview activity chart between heatmap, bar, and line across wee
   await expect(yearSection.getByText("45d total 759K · 33 active days", { exact: true })).toBeVisible();
   await yearSection.getByRole("group", { name: "Activity chart type", exact: true }).getByRole("button", { name: "Line", exact: true }).click();
   await expect(yearSection.getByText("45d total 759K · 33 active days", { exact: true })).toBeVisible();
+
+  await page.setViewportSize({ width: 820, height: 558 });
+  const lineChart = yearSection.getByRole("img", { name: "Token usage line chart for the past year", exact: true }).locator("canvas");
+  await expect(lineChart).toBeVisible();
+  const expandedChartWidth = (await lineChart.boundingBox())!.width;
+  await page.getByRole("button", { name: "Collapse sidebar", exact: true }).click();
+  await expect.poll(async () => (await lineChart.boundingBox())?.width ?? 0).toBeGreaterThan(expandedChartWidth);
 });
 
 test("separates unreported cache from explicit zero and displays assumed cache cost basis", async ({ page }) => {
@@ -527,4 +620,7 @@ test("preserves overview table scroll position across call pagination, page size
   await page.getByRole("link", { name: "Overview", exact: true }).click();
   await expect(page.getByText("scroll-call-44", { exact: true })).toBeVisible();
   await expect.poll(readScroll).toEqual(initial);
+
+  await page.getByRole("button", { name: "Collapse sidebar", exact: true }).click();
+  await expect.poll(async () => (await readScroll()).scrollTop).toBe(initial.scrollTop);
 });

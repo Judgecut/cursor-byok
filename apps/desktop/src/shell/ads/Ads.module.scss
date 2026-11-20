@@ -61,7 +61,8 @@
   }
 }
 
-.menuSlotContainer:hover .menuDismiss {
+.menuSlotContainer:hover .menuDismiss,
+.menuSlotContainer:focus-within .menuDismiss {
   display: flex;
 }
 
@@ -81,6 +82,29 @@
   width: 30px;
   height: 30px;
   display: block;
+}
+
+.menuSlots[data-collapsed]
+{
+  .menuSlot
+  {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .unreadDot
+  {
+    left: 3px;
+    right: auto;
+  }
+
+  .menuDismiss
+  {
+    top: 1px;
+    right: 1px;
+    color: var(--vscode-descriptionForeground);
+    background: var(--vscode-editorWidget-background);
+  }
 }
 
 .menuCopy {

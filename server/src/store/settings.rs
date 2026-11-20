@@ -270,6 +270,8 @@ pub enum OverviewCalendarChartType {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct InterfaceSettings {
     #[serde(default)]
+    pub sidebar_collapsed: bool,
+    #[serde(default)]
     pub locale: InterfaceLocale,
     #[serde(default)]
     pub theme: InterfaceTheme,
@@ -294,6 +296,7 @@ pub struct InterfaceSettings {
 impl Default for InterfaceSettings {
     fn default() -> Self {
         Self {
+            sidebar_collapsed: false,
             locale: InterfaceLocale::default(),
             theme: InterfaceTheme::default(),
             currency: DisplayCurrency::default(),
@@ -310,6 +313,8 @@ impl Default for InterfaceSettings {
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 pub struct InterfaceSettingsPatch {
+    #[serde(default)]
+    pub sidebar_collapsed: Option<bool>,
     #[serde(default)]
     pub locale: Option<InterfaceLocale>,
     #[serde(default)]
@@ -711,6 +716,10 @@ impl Store {
     ) -> Result<InterfaceSettings> {
         let _write = self.writes.lock().await;
         let mut settings = read_interface_settings(&self.pool).await?;
+        if let Some(sidebar_collapsed) = patch.sidebar_collapsed
+        {
+            settings.sidebar_collapsed = sidebar_collapsed;
+        }
         if let Some(locale) = patch.locale {
             settings.locale = locale;
         }
@@ -959,6 +968,7 @@ mod tests {
         assert_eq!(
             store.interface_settings().await.unwrap(),
             InterfaceSettings {
+                sidebar_collapsed: false,
                 locale: InterfaceLocale::System,
                 theme: InterfaceTheme::DefaultDark,
                 currency: DisplayCurrency::Usd,

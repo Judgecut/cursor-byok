@@ -1,4 +1,5 @@
-import { cloneElement, useCallback, useEffect, useId, useRef, useState, type FocusEventHandler, type PointerEventHandler, type ReactElement } from "react";
+import type { Placement } from "@floating-ui/dom";
+import { cloneElement, useCallback, useEffect, useId, useState, type FocusEventHandler, type PointerEventHandler, type ReactElement } from "react";
 import { useTooltip, type TooltipAnchor } from "./Tooltip";
 
 
@@ -15,50 +16,57 @@ type TriggerProps = {
   onBlur?: FocusEventHandler<HTMLElement>;
 };
 
-export function TooltipTrigger({ label, children }: { label: string; children: ReactElement<TriggerProps> }) {
+export function TooltipTrigger({ label, placement, enabled = true, children }: { label: string; placement?: Placement; enabled?: boolean; children: ReactElement<TriggerProps> })
+{
   const { show: showTooltip, hide: hideTooltip } = useTooltip();
   const [anchor, setAnchor] = useState<TooltipAnchor | null>(null);
   const tooltipId = useId();
-  const timerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const hide = useCallback(() =>
+  {
+    setAnchor(null);
+    hideTooltip(tooltipId);
+  }, [hideTooltip, tooltipId]);
 
-  const clearTimer = useCallback(() => {
-    if (timerRef.current !== null) {
-      window.clearTimeout(timerRef.current);
-      timerRef.current = null;
+  useEffect(() => () => hideTooltip(tooltipId), [hideTooltip, tooltipId]);
+  useEffect(() =>
+  {
+    if (!enabled)
+    {
+      hide();
     }
-  }, []);
-  const hide = useCallback(() => {
-    clearTimer();
-    setAnchor(null);
-    hideTooltip();
-  }, [clearTimer, hideTooltip]);
-  const scheduleHide = useCallback(() => {
-    clearTimer();
-    setAnchor(null);
-    hideTooltip();
-  }, [clearTimer, hideTooltip]);
-
-  useEffect(() => () => clearTimer(), [clearTimer]);
-  useEffect(() => {
-    if (!anchor) return;
+    else if (anchor)
+    {
+      showTooltip(anchor, tooltipId, label, placement);
+    }
+  }, [anchor, enabled, hide, label, placement, showTooltip, tooltipId]);
+  useEffect(() =>
+  {
+    if (!enabled || !anchor)
+    {
+      return;
+    }
     const close = (event: KeyboardEvent) => { if (event.key === "Escape") hide(); };
     document.addEventListener("keydown", close);
     return () => document.removeEventListener("keydown", close);
-  }, [anchor, hide]);
+  }, [anchor, enabled, hide]);
+
+  if (!enabled)
+  {
+    return children;
+  }
 
   const trigger = cloneElement(children, {
     "aria-describedby": [children.props["aria-describedby"], anchor ? tooltipId : null].filter(Boolean).join(" ") || undefined,
     onPointerMove: (event) => {
       children.props.onPointerMove?.(event);
-      if (event.pointerType !== "touch" && event.buttons === 0 && !anchor) {
-        const nextAnchor = anchorFor(event.currentTarget);
-        setAnchor(nextAnchor);
-        showTooltip(nextAnchor, tooltipId, label);
+      if (event.pointerType !== "touch" && event.buttons === 0 && !anchor)
+      {
+        setAnchor(anchorFor(event.currentTarget));
       }
     },
     onPointerLeave: (event) => {
       children.props.onPointerLeave?.(event);
-      scheduleHide();
+      hide();
     },
     onPointerDown: (event) => {
       children.props.onPointerDown?.(event);
@@ -66,18 +74,14 @@ export function TooltipTrigger({ label, children }: { label: string; children: R
     },
     onFocus: (event) => {
       children.props.onFocus?.(event);
-      clearTimer();
-      if (event.currentTarget.matches(":focus-visible")) {
-        const nextAnchor = anchorFor(event.currentTarget);
-        setAnchor(nextAnchor);
-        showTooltip(nextAnchor, tooltipId, label);
-      } else {
-        setAnchor(null);
+      if (event.currentTarget.matches(":focus-visible"))
+      {
+        setAnchor(anchorFor(event.currentTarget));
       }
     },
     onBlur: (event) => {
       children.props.onBlur?.(event);
-      scheduleHide();
+      hide();
     },
   });
 

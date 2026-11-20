@@ -46,6 +46,7 @@ export type OverviewQuickPresetValue = "four-hours" | "twenty-four-hours";
 export const DEFAULT_HOME_REFRESH_INTERVAL_SECONDS = 30;
 
 const DEFAULT_INTERFACE_SETTINGS: InterfaceSettings = {
+  sidebar_collapsed: false,
   locale: "system",
   theme: "default-dark",
   currency: "USD",
@@ -76,6 +77,7 @@ export type CallsFilterHandoff = {
 };
 
 export type AppSnapshot = {
+  sidebarCollapsed: boolean;
   providers: Provider[];
   models: Model[];
   calls: LlmCall[];
@@ -120,6 +122,7 @@ let pendingInterfaceWrites = 0;
 let interfaceWriteQueue: Promise<void> = Promise.resolve();
 
 let snapshot: AppSnapshot = {
+  sidebarCollapsed: DEFAULT_INTERFACE_SETTINGS.sidebar_collapsed,
   providers: [],
   models: [],
   calls: [],
@@ -200,6 +203,7 @@ function applyInterfaceSettings(
   if (themeChanged) applyTheme(next.theme);
   if (localeChanged) applyLocalePreference(next.locale);
   update({
+    sidebarCollapsed: next.sidebar_collapsed,
     theme: next.theme,
     currency: next.currency,
     cnyRate: next.cny_rate,
@@ -232,6 +236,10 @@ async function persistInterfacePatch(
 
   if (options.optimistic) {
     const optimisticPatch: Partial<AppSnapshot> = { error: null };
+    if (patch.sidebar_collapsed !== undefined)
+    {
+      optimisticPatch.sidebarCollapsed = patch.sidebar_collapsed;
+    }
     if (patch.theme !== undefined) {
       if (snapshot.theme !== patch.theme) applyTheme(patch.theme);
       optimisticPatch.theme = patch.theme;
@@ -692,6 +700,10 @@ export const appStore = {
       update({ error: cause instanceof Error ? cause.message : String(cause) });
       return null;
     }
+  },
+  toggleSidebar()
+  {
+    void persistInterfacePatch({ sidebar_collapsed: !snapshot.sidebarCollapsed }, { optimistic: true });
   },
   selectLocalePreference(locale: LocalePreference) {
     if (getLocalePreference() === locale && persistedInterface.locale === locale) return;

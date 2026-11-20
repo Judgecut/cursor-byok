@@ -70,9 +70,9 @@ function InfoTooltip({ content }: { content: string }) {
     className={styles.info}
     aria-label={t("查看说明")}
     onMouseEnter={(event) => show(elementAnchor(event.currentTarget), undefined, <div className={styles.tooltipText}>{content}</div>)}
-    onMouseLeave={hide}
+    onMouseLeave={() => hide()}
     onFocus={(event) => show(elementAnchor(event.currentTarget), undefined, <div className={styles.tooltipText}>{content}</div>)}
-    onBlur={hide}
+    onBlur={() => hide()}
   ><Icon icon={informationOutlineIcon} size="1.1em" /></button>;
 }
 
