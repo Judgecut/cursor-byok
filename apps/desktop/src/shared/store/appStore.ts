@@ -871,6 +871,7 @@ export function useCurrencyDisplay()
 {
   const { currency, customExchangeRate, exchangeRateSync } = useAppStore();
   const synced = exchangeRateSync?.snapshot;
-  const exchangeRate = useMemo(() => resolveExchangeRate(currency, customExchangeRate, synced), [currency, customExchangeRate, synced]);
+  const manualRate = exchangeRateSync?.auto_sync_enabled === false ? customExchangeRate : null;
+  const exchangeRate = useMemo(() => resolveExchangeRate(currency, manualRate, synced), [currency, manualRate, synced]);
   return { currency, exchangeRate };
 }

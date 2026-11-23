@@ -2962,8 +2962,8 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 78,
-          "column": 139
+          "line": 82,
+          "column": 41
         }
       ]
     },
@@ -3000,6 +3000,23 @@
           "file": "features/settings/ProxySettingsCard.tsx",
           "line": 55,
           "column": 59
+        }
+      ]
+    },
+    "4482543450f61526": {
+      "source": "汇率模式",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/CurrencySettingsCard.tsx",
+          "line": 81,
+          "column": 22
+        },
+        {
+          "file": "features/settings/CurrencySettingsCard.tsx",
+          "line": 84,
+          "column": 77
         }
       ]
     },
@@ -4239,7 +4256,7 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 70,
+          "line": 72,
           "column": 19
         }
       ]
@@ -4579,7 +4596,7 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 56,
+          "line": 58,
           "column": 30
         }
       ]
@@ -5082,7 +5099,7 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 65,
+          "line": 67,
           "column": 29
         }
       ]
@@ -5480,6 +5497,18 @@
           "file": "features/models/LegacyModelImport.tsx",
           "line": 84,
           "column": 41
+        }
+      ]
+    },
+    "7eb336e42cb5076b": {
+      "source": "自动",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/CurrencySettingsCard.tsx",
+          "line": 85,
+          "column": 222
         }
       ]
     },
@@ -5988,8 +6017,8 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 87,
-          "column": 100
+          "line": 102,
+          "column": 119
         }
       ]
     },
@@ -6515,6 +6544,18 @@
         }
       ]
     },
+    "962f41ef825b7266": {
+      "source": "手动",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/CurrencySettingsCard.tsx",
+          "line": 86,
+          "column": 223
+        }
+      ]
+    },
     "9638021caee5231a": {
       "source": "总 Token",
       "kind": "text",
@@ -6966,7 +7007,7 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 56,
+          "line": 58,
           "column": 102
         }
       ]
@@ -7108,7 +7149,7 @@
         },
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 109,
+          "line": 118,
           "column": 35
         },
         {
@@ -7605,7 +7646,7 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 80,
+          "line": 95,
           "column": 70
         }
       ]
@@ -8275,8 +8316,8 @@
         },
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 111,
-          "column": 108
+          "line": 120,
+          "column": 114
         }
       ]
     },
@@ -9078,7 +9119,7 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 80,
+          "line": 95,
           "column": 84
         }
       ]
@@ -9638,7 +9679,7 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 85,
+          "line": 100,
           "column": 12
         }
       ]
@@ -9801,13 +9842,13 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 91,
+          "line": 90,
           "column": 20
         },
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 101,
-          "column": 97
+          "line": 110,
+          "column": 101
         }
       ]
     },
@@ -10060,8 +10101,8 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 113,
-          "column": 69
+          "line": 122,
+          "column": 87
         }
       ]
     },
@@ -10666,7 +10707,7 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 69,
+          "line": 71,
           "column": 20
         },
         {
@@ -11220,7 +11261,7 @@
         },
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 109,
+          "line": 118,
           "column": 23
         },
         {
