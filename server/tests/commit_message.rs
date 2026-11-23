@@ -17,9 +17,7 @@ use cursor_server::{
         protocol::{connect, proto::aiserver::v1 as ai},
         transport::TransportRegistry,
     },
-    model::{
-        ContentPart, ModelConfigInput, RequestFormat, ProjectedContent, ProviderConfigInput,
-    },
+    model::{ContentPart, ModelConfigInput, ProjectedContent, ProviderConfigInput, RequestFormat},
     network::NetworkClients,
     provider::{FinishReason, ModelEvent},
     store::{CommitPromptLocale, CommitSettings, DEFAULT_COMMIT_PROMPT_ZH_CN},

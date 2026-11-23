@@ -21,7 +21,7 @@ use cursor_server::{
         proto::{agent::v1 as pb, aiserver::v1 as ai},
     },
     cursor::transport::TransportRegistry,
-    model::{ModelConfigInput, RequestFormat, ProviderConfigInput},
+    model::{ModelConfigInput, ProviderConfigInput, RequestFormat},
     network::NetworkClients,
     provider::{FinishReason, ModelEvent},
 };

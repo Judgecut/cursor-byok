@@ -15,7 +15,8 @@ use crate::{
         canonical_supplier_identity, canonicalize_custom_price, parse_models_dev_catalog,
         resolve_supplier_pricing, BindingMode, CalculatedCost, CatalogMatchKind, CatalogModel,
         CostBasis, CostStatus, ModelPricingConfig, PricingRates, PricingSnapshot, PricingSource,
-        PricingSyncState, SourceKind, SupplierIdentity, DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS, DEFAULT_SYNC_INTERVAL_HOURS,
+        PricingSyncState, SourceKind, SupplierIdentity, DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS,
+        DEFAULT_SYNC_INTERVAL_HOURS,
     },
     Error, Result,
 };
@@ -146,16 +147,15 @@ fn default_true() -> bool {
 }
 
 impl Store {
-    pub async fn pricing_settings(&self) -> Result<PricingSettings>
-    {
+    pub async fn pricing_settings(&self) -> Result<PricingSettings> {
         read_pricing_settings(&self.pool).await
     }
 
-    pub async fn set_pricing_settings(&self, settings: PricingSettings) -> Result<PricingSettings>
-    {
-        if !(0..=10_000).contains(&settings.assumed_cache_hit_rate_bps)
-        {
-            return Err(Error::Config("assumed cache hit rate must be between 0% and 100%".into()));
+    pub async fn set_pricing_settings(&self, settings: PricingSettings) -> Result<PricingSettings> {
+        if !(0..=10_000).contains(&settings.assumed_cache_hit_rate_bps) {
+            return Err(Error::Config(
+                "assumed cache hit rate must be between 0% and 100%".into(),
+            ));
         }
         let _write = self.writes.lock().await;
         sqlx::query(
@@ -1180,14 +1180,20 @@ pub(crate) async fn resolve_snapshot_conn(
     )
 }
 
-pub(super) async fn read_pricing_settings<'e>(executor: impl sqlx::SqliteExecutor<'e>) -> Result<PricingSettings>
-{
-    let raw: Option<String> = sqlx::query_scalar("SELECT value_json FROM service_settings WHERE setting_key = ?")
-        .bind(ASSUMED_CACHE_HIT_RATE_SETTING_KEY)
-        .fetch_optional(executor)
-        .await?;
+pub(super) async fn read_pricing_settings<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+) -> Result<PricingSettings> {
+    let raw: Option<String> =
+        sqlx::query_scalar("SELECT value_json FROM service_settings WHERE setting_key = ?")
+            .bind(ASSUMED_CACHE_HIT_RATE_SETTING_KEY)
+            .fetch_optional(executor)
+            .await?;
     Ok(PricingSettings {
-        assumed_cache_hit_rate_bps: raw.as_deref().map(serde_json::from_str).transpose()?.unwrap_or(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS),
+        assumed_cache_hit_rate_bps: raw
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()?
+            .unwrap_or(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS),
     })
 }
 

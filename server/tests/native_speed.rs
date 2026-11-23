@@ -13,9 +13,7 @@ use axum::{
 };
 use cursor_server::{
     api::byok,
-    model::{
-        ModelConfigInput, RequestFormat, ProviderConfigInput, SpeedStatus,
-    },
+    model::{ModelConfigInput, ProviderConfigInput, RequestFormat, SpeedStatus},
     network::NetworkClients,
     plugin::{PluginRegistry, PluginRuntime},
     store::{ExternalApiSettings, LlmCallFilter},

@@ -116,8 +116,13 @@ pub async fn run_backfill_once(store: &Store, cancellation: &CancellationToken) 
                 assumed_cache_hit_rate_bps,
             )
             .await?;
-            let calculated =
-                calculate_cost(item.request_type, item.call_origin, &item.usage, &snapshot, hit_rate)?;
+            let calculated = calculate_cost(
+                item.request_type,
+                item.call_origin,
+                &item.usage,
+                &snapshot,
+                hit_rate,
+            )?;
             match calculated.status {
                 CostStatus::Priced => {
                     backfilled_count += 1;
@@ -260,12 +265,25 @@ mod tests {
             )
             .await;
         }
-        record_call(&store, "history-boundary", ProviderType::OpenAiChat, 2_048, 1).await;
-        store.record_llm_usage("history-boundary", Usage {
-            input_tokens: Some(2_048),
-            output_tokens: Some(1),
-            ..Default::default()
-        }).await.unwrap();
+        record_call(
+            &store,
+            "history-boundary",
+            ProviderType::OpenAiChat,
+            2_048,
+            1,
+        )
+        .await;
+        store
+            .record_llm_usage(
+                "history-boundary",
+                Usage {
+                    input_tokens: Some(2_048),
+                    output_tokens: Some(1),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
         let boundary = store.llm_call("history-boundary").await.unwrap().unwrap();
         assert_eq!(boundary.cost_basis.as_deref(), Some("reported"));
 

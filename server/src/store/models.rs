@@ -9,7 +9,7 @@ use sqlx::{Row, Sqlite, Transaction};
 use crate::{
     model::{
         generate_provider_id, model_hash, normalize_model_input, normalize_provider_input,
-        ModelConfig, ModelConfigInput, RequestFormat, ProviderConfig, ProviderConfigInput,
+        ModelConfig, ModelConfigInput, ProviderConfig, ProviderConfigInput, RequestFormat,
     },
     Error, Result,
 };
@@ -184,8 +184,7 @@ impl Store {
         let mut hashes = HashSet::with_capacity(inputs.len());
         for input in inputs {
             let input = normalize_model_input(input)?;
-            if checked_providers.insert(input.provider_id.clone())
-            {
+            if checked_providers.insert(input.provider_id.clone()) {
                 ensure_provider_exists(&mut transaction, &input.provider_id).await?;
             }
             let hash = model_hash(&input)?;
@@ -233,8 +232,7 @@ impl Store {
             .await?
             .ok_or_else(|| Error::RunNotFound(format!("model {current_hash}")))?;
         let mut input = normalize_model_input(input)?;
-        if input.provider_id != current.provider_id
-        {
+        if input.provider_id != current.provider_id {
             ensure_provider_exists(&mut transaction, &input.provider_id).await?;
         }
         if input.sort_order <= 0 {
@@ -442,11 +440,16 @@ async fn model_in_tx(
         .transpose()
 }
 
-async fn ensure_provider_exists(transaction: &mut Transaction<'_, Sqlite>, provider_id: &str) -> Result<()>
-{
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM provider_configs WHERE provider_id = ?)").bind(provider_id).fetch_one(&mut **transaction).await?;
-    if !exists
-    {
+async fn ensure_provider_exists(
+    transaction: &mut Transaction<'_, Sqlite>,
+    provider_id: &str,
+) -> Result<()> {
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM provider_configs WHERE provider_id = ?)")
+            .bind(provider_id)
+            .fetch_one(&mut **transaction)
+            .await?;
+    if !exists {
         return Err(Error::Config(format!("provider {provider_id} not found")));
     }
     Ok(())

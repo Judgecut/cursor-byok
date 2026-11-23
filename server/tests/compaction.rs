@@ -13,8 +13,8 @@ use cursor_server::{
         TransportCommand, TransportRegistry,
     },
     model::{
-        ContentPart, ConversationId, MessageContent, ModelConfigInput, RequestFormat, Origin,
-        ProjectedContent, ProviderConfigInput, Role, Usage,
+        ContentPart, ConversationId, MessageContent, ModelConfigInput, Origin, ProjectedContent,
+        ProviderConfigInput, RequestFormat, Role, Usage,
     },
     provider::{FinishReason, ModelEvent},
 };

@@ -23,19 +23,19 @@ use crate::{
     model::{
         evaluate as evaluate_performance, CallOrigin, ContentPart, CursorRunTraceArtifact,
         CursorRunTraceSummary, LlmCallRequest, LlmCallResponseChunk, LlmCallSummary, ModelConfig,
-        ModelConfigInput, ModelInvocation, ModelRequest, ModelSpec, RequestFormat, Overview,
-        ProjectedContent, ProjectedMessage, PromptSpec, ProviderConfig, ProviderConfigInput,
-        Role, SpeedSample, SpeedStatus, SpeedUnavailableReason,
+        ModelConfigInput, ModelInvocation, ModelRequest, ModelSpec, Overview, ProjectedContent,
+        ProjectedMessage, PromptSpec, ProviderConfig, ProviderConfigInput, RequestFormat, Role,
+        SpeedSample, SpeedStatus, SpeedUnavailableReason,
     },
     plugin::{PluginDescriptor, PluginRegistry, PluginRuntime, PluginRuntimeStatus},
     pricing::{PricingService, PricingSyncState},
     provider::{ModelEvent, Provider},
     store::{
-        pricing::PricingSettings,
-        normalize_string_array_filter, CallFinish, CatalogSearchResult, CommitSettings,
-        DesktopSettings, ExternalApiSettings, InterfaceSettings, InterfaceSettingsPatch,
-        LlmCallFilter, PortSettings, ProxySettings, ProxySettingsInput, SaveSupplierPricingInput,
-        StatisticsStorage, Store, SupplierPricingView, TabSettings, TimelineCallRef,
+        normalize_string_array_filter, pricing::PricingSettings, CallFinish, CatalogSearchResult,
+        CommitSettings, DesktopSettings, ExternalApiSettings, InterfaceSettings,
+        InterfaceSettingsPatch, LlmCallFilter, PortSettings, ProxySettings, ProxySettingsInput,
+        SaveSupplierPricingInput, StatisticsStorage, Store, SupplierPricingView, TabSettings,
+        TimelineCallRef,
     },
     Error, Result,
 };
@@ -184,8 +184,7 @@ impl ControlService {
         &self.pricing
     }
 
-    pub fn exchange_rates(&self) -> &ExchangeRateService
-    {
+    pub fn exchange_rates(&self) -> &ExchangeRateService {
         &self.exchange_rates
     }
 
@@ -598,24 +597,37 @@ impl ControlService {
         })
     }
 
-    pub async fn discover_provider_models(&self, provider_id: &str, request_format: RequestFormat, request_url_override: Option<&str>) -> Result<DiscoveredModels> {
+    pub async fn discover_provider_models(
+        &self,
+        provider_id: &str,
+        request_format: RequestFormat,
+        request_url_override: Option<&str>,
+    ) -> Result<DiscoveredModels> {
         let provider = self
             .store
             .provider(provider_id)
             .await?
             .ok_or_else(|| Error::RunNotFound(format!("provider {provider_id}")))?;
         let client = self.clients.default_client().await?;
-        let headers = if provider.custom_headers_enabled { &provider.custom_headers } else { empty_json_object_ref() };
-        if request_format == RequestFormat::Gemini
-        {
+        let headers = if provider.custom_headers_enabled {
+            &provider.custom_headers
+        } else {
+            empty_json_object_ref()
+        };
+        if request_format == RequestFormat::Gemini {
             let url = crate::model::gemini_models_url(&provider.base_url, request_url_override)?;
-            return Ok(DiscoveredModels { models: gemini_models(&client, url, &provider.api_key, headers).await? });
+            return Ok(DiscoveredModels {
+                models: gemini_models(&client, url, &provider.api_key, headers).await?,
+            });
         }
-        let request_url_override = crate::model::normalize_request_url_override(request_url_override)?;
+        let request_url_override =
+            crate::model::normalize_request_url_override(request_url_override)?;
         discover_models_from_endpoint(
             &client,
             request_format,
-            request_url_override.as_deref().unwrap_or(&provider.base_url),
+            request_url_override
+                .as_deref()
+                .unwrap_or(&provider.base_url),
             &provider.api_key,
             headers,
         )
@@ -909,13 +921,11 @@ impl ControlService {
         Ok(saved)
     }
 
-    pub async fn pricing_settings(&self) -> Result<PricingSettings>
-    {
+    pub async fn pricing_settings(&self) -> Result<PricingSettings> {
         self.store.pricing_settings().await
     }
 
-    pub async fn set_pricing_settings(&self, settings: PricingSettings) -> Result<PricingSettings>
-    {
+    pub async fn set_pricing_settings(&self, settings: PricingSettings) -> Result<PricingSettings> {
         self.store.set_pricing_settings(settings).await
     }
 
@@ -1103,43 +1113,64 @@ async fn discover_models_from_endpoint(
     Ok(DiscoveredModels { models })
 }
 
-async fn gemini_models(client: &reqwest::Client, url: Url, api_key: &str, custom_headers: &serde_json::Value) -> Result<Vec<String>>
-{
+async fn gemini_models(
+    client: &reqwest::Client,
+    url: Url,
+    api_key: &str,
+    custom_headers: &serde_json::Value,
+) -> Result<Vec<String>> {
     let mut models = BTreeSet::new();
     let mut seen_pages = std::collections::HashSet::new();
     let mut page_token = None::<String>;
-    loop
-    {
+    loop {
         let mut request = client.get(url.clone()).header("x-goog-api-key", api_key);
-        if let Some(token) = &page_token
-        {
+        if let Some(token) = &page_token {
             request = request.query(&[("pageToken", token)]);
         }
-        let response = apply_discovery_headers(request, custom_headers)?.send().await?;
+        let response = apply_discovery_headers(request, custom_headers)?
+            .send()
+            .await?;
         let status = response.status();
         let body: serde_json::Value = response.json().await?;
-        if !status.is_success()
-        {
-            return Err(Error::Provider(format!("Gemini model discovery failed ({status}): {body}")));
+        if !status.is_success() {
+            return Err(Error::Provider(format!(
+                "Gemini model discovery failed ({status}): {body}"
+            )));
         }
-        if let Some(entries) = body.get("models").and_then(serde_json::Value::as_array)
-        {
-            for model in entries
-            {
-                if !model.get("supportedGenerationMethods").and_then(serde_json::Value::as_array).is_some_and(|methods| methods.iter().any(|method| method.as_str() == Some("generateContent")))
+        if let Some(entries) = body.get("models").and_then(serde_json::Value::as_array) {
+            for model in entries {
+                if !model
+                    .get("supportedGenerationMethods")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|methods| {
+                        methods
+                            .iter()
+                            .any(|method| method.as_str() == Some("generateContent"))
+                    })
                 {
                     continue;
                 }
-                if let Some(name) = model.get("name").and_then(serde_json::Value::as_str).and_then(|name| name.strip_prefix("models/")).filter(|name| !name.is_empty())
+                if let Some(name) = model
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|name| name.strip_prefix("models/"))
+                    .filter(|name| !name.is_empty())
                 {
                     models.insert(name.to_owned());
                 }
             }
         }
-        let Some(token) = body.get("nextPageToken").and_then(serde_json::Value::as_str).filter(|token| !token.is_empty()) else { break };
-        if !seen_pages.insert(token.to_owned())
-        {
-            return Err(Error::Provider("Gemini model discovery repeated a page token".into()));
+        let Some(token) = body
+            .get("nextPageToken")
+            .and_then(serde_json::Value::as_str)
+            .filter(|token| !token.is_empty())
+        else {
+            break;
+        };
+        if !seen_pages.insert(token.to_owned()) {
+            return Err(Error::Provider(
+                "Gemini model discovery repeated a page token".into(),
+            ));
         }
         page_token = Some(token.to_owned());
     }

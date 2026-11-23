@@ -18,8 +18,8 @@ use cursor_server::{
     api::byok,
     control,
     model::{
-        CallOrigin, ModelConfig, ModelConfigInput, RequestFormat, NewLlmCall, ProviderConfigInput,
-        ProviderType, Usage,
+        CallOrigin, ModelConfig, ModelConfigInput, NewLlmCall, ProviderConfigInput, ProviderType,
+        RequestFormat, Usage,
     },
     network::NetworkClients,
     plugin::{PluginRegistry, PluginRuntime},
@@ -2045,9 +2045,21 @@ async fn unreported_cache_estimation_requires_supplier_evidence_end_to_end() {
     let (status, settings) = send(router.clone(), "GET", settings_path, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(settings["assumed_cache_hit_rate_bps"], 9_000);
-    let (status, _) = send(router.clone(), "PUT", settings_path, Some(json!({ "assumed_cache_hit_rate_bps": 10_001 }))).await;
+    let (status, _) = send(
+        router.clone(),
+        "PUT",
+        settings_path,
+        Some(json!({ "assumed_cache_hit_rate_bps": 10_001 })),
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    let (status, saved) = send(router.clone(), "PUT", settings_path, Some(json!({ "assumed_cache_hit_rate_bps": 7_525 }))).await;
+    let (status, saved) = send(
+        router.clone(),
+        "PUT",
+        settings_path,
+        Some(json!({ "assumed_cache_hit_rate_bps": 7_525 })),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(saved["assumed_cache_hit_rate_bps"], 7_525);
 
@@ -2215,7 +2227,13 @@ async fn unreported_cache_estimation_requires_supplier_evidence_end_to_end() {
     let (status, settings) = send(router.clone(), "GET", settings_path, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(settings["assumed_cache_hit_rate_bps"], 7_525);
-    let (status, _) = send(router.clone(), "PUT", settings_path, Some(json!({ "assumed_cache_hit_rate_bps": 9_000 }))).await;
+    let (status, _) = send(
+        router.clone(),
+        "PUT",
+        settings_path,
+        Some(json!({ "assumed_cache_hit_rate_bps": 9_000 })),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
 
     let (status, unreported_detail) = send(

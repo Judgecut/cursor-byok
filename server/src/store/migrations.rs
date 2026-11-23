@@ -476,7 +476,13 @@ mod tests {
             .unwrap();
 
             assert_eq!(checksum_after, checksum_before);
-            assert_eq!(versions, historical.iter().map(|migration| migration.version).collect::<Vec<_>>());
+            assert_eq!(
+                versions,
+                historical
+                    .iter()
+                    .map(|migration| migration.version)
+                    .collect::<Vec<_>>()
+            );
             assert_eq!(checkpoint_table_exists, 1);
             assert_eq!(argument_error_column_exists, 1);
             assert_eq!(pricing_catalog_exists, 1);
@@ -826,11 +832,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn migration_0015_moves_request_settings_without_changing_existing_calls()
-    {
+    async fn migration_0015_moves_request_settings_without_changing_existing_calls() {
         use crate::model::{resolve_request_url, RequestFormat};
 
-        let pool = SqlitePoolOptions::new().max_connections(1).connect_with(SqliteConnectOptions::from_str("sqlite::memory:").unwrap().foreign_keys(true)).await.unwrap();
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                SqliteConnectOptions::from_str("sqlite::memory:")
+                    .unwrap()
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
         let historical = migrator_with_line_endings(MigrationLineEndings::Lf);
         let before = Migrator {
             migrations: Cow::Owned(historical.iter().take(14).cloned().collect()),
@@ -848,13 +861,42 @@ mod tests {
             VALUES ('original-call', 'run', 'conversation', 0, 'responses-hash', 'openai-responses', 'https://example.com/relay/v2/responses?route=1', 'openai-responses', 'https://example.com/relay/v2/responses?route=1', 'responses-upstream', 'Responses', 'completed', 3, 1, 0, 0);
         "#).execute(&pool).await.unwrap();
 
-        run(&pool, Path::new("upgrade-v14-to-v15.db")).await.unwrap();
-        for (id, expected_format, expected_base, expected_url, expected_extra_enabled, expected_extra) in [
-            ("chat", RequestFormat::OpenAiChat, "https://example.com/prefix/v2", "https://example.com/prefix/v2/chat/completions", false, r#"{"temperature":0.5}"#),
-            ("responses", RequestFormat::OpenAiResponses, "https://example.com/relay/v2", "https://example.com/relay/v2/responses?route=1", true, r#"{"top_p":0.8}"#),
-            ("anthropic", RequestFormat::Anthropic, "https://example.com:8443", "https://example.com:8443/custom?route=2", false, "{}"),
-        ]
-        {
+        run(&pool, Path::new("upgrade-v14-to-v15.db"))
+            .await
+            .unwrap();
+        for (
+            id,
+            expected_format,
+            expected_base,
+            expected_url,
+            expected_extra_enabled,
+            expected_extra,
+        ) in [
+            (
+                "chat",
+                RequestFormat::OpenAiChat,
+                "https://example.com/prefix/v2",
+                "https://example.com/prefix/v2/chat/completions",
+                false,
+                r#"{"temperature":0.5}"#,
+            ),
+            (
+                "responses",
+                RequestFormat::OpenAiResponses,
+                "https://example.com/relay/v2",
+                "https://example.com/relay/v2/responses?route=1",
+                true,
+                r#"{"top_p":0.8}"#,
+            ),
+            (
+                "anthropic",
+                RequestFormat::Anthropic,
+                "https://example.com:8443",
+                "https://example.com:8443/custom?route=2",
+                false,
+                "{}",
+            ),
+        ] {
             let row = sqlx::query("SELECT m.model_hash, m.sort_order, m.request_format, m.request_url_override, m.extra_params_enabled, m.extra_params_json, p.base_url FROM model_configs m JOIN provider_configs p ON p.provider_id = m.provider_id WHERE p.provider_id = ?").bind(id).fetch_one(&pool).await.unwrap();
             let format = RequestFormat::from_str(row.get::<&str, _>("request_format")).unwrap();
             let base = row.get::<&str, _>("base_url");
@@ -864,13 +906,27 @@ mod tests {
             assert_eq!(format, expected_format);
             assert_eq!(base, expected_base);
             assert_eq!(override_url, (id != "chat").then_some(expected_url));
-            assert_eq!(resolve_request_url(format, base, override_url, "upstream").unwrap(), expected_url);
-            assert_eq!(row.get::<bool, _>("extra_params_enabled"), expected_extra_enabled);
+            assert_eq!(
+                resolve_request_url(format, base, override_url, "upstream").unwrap(),
+                expected_url
+            );
+            assert_eq!(
+                row.get::<bool, _>("extra_params_enabled"),
+                expected_extra_enabled
+            );
             assert_eq!(row.get::<&str, _>("extra_params_json"), expected_extra);
         }
-        let model_hash: String = sqlx::query_scalar("SELECT model_hash FROM llm_calls WHERE call_id = 'original-call'").fetch_one(&pool).await.unwrap();
+        let model_hash: String =
+            sqlx::query_scalar("SELECT model_hash FROM llm_calls WHERE call_id = 'original-call'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(model_hash, "responses-hash");
-        assert!(sqlx::query("PRAGMA foreign_key_check").fetch_all(&pool).await.unwrap().is_empty());
+        assert!(sqlx::query("PRAGMA foreign_key_check")
+            .fetch_all(&pool)
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]

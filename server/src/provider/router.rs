@@ -377,7 +377,9 @@ fn build_inner(
         ProviderKind::OpenAiResponses => {
             Arc::new(OpenAiResponsesProvider::new(client, config.clone()).with_recorder(recorder))
         }
-        ProviderKind::Gemini => Arc::new(GeminiProvider::new(client, config.clone()).with_recorder(recorder)),
+        ProviderKind::Gemini => {
+            Arc::new(GeminiProvider::new(client, config.clone()).with_recorder(recorder))
+        }
         ProviderKind::Anthropic => {
             Arc::new(AnthropicProvider::new(client, config.clone()).with_recorder(recorder))
         }

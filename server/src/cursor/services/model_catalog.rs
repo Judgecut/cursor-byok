@@ -728,7 +728,7 @@ fn usable_model(model: &ModelConfig) -> agent::ModelDetails {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{RequestFormat};
+    use crate::model::RequestFormat;
 
     fn model() -> ModelConfig {
         ModelConfig {

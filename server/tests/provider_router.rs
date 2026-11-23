@@ -12,8 +12,8 @@ use axum::{
 use cursor_server::{
     control::ControlService,
     model::{
-        CallOrigin, ModelConfigInput, ModelInvocation, ModelRequest, ModelSpec, RequestFormat,
-        PromptSpec, ProviderConfigInput,
+        CallOrigin, ModelConfigInput, ModelInvocation, ModelRequest, ModelSpec, PromptSpec,
+        ProviderConfigInput, RequestFormat,
     },
     network::NetworkClients,
     plugin::{PluginRegistry, PluginRuntime},
@@ -54,18 +54,18 @@ async fn upstream(
     ([(header::CONTENT_TYPE, "text/event-stream")], body)
 }
 
-async fn discover(uri: Uri, headers: HeaderMap) -> Json<Value>
-{
+async fn discover(uri: Uri, headers: HeaderMap) -> Json<Value> {
     assert_eq!(headers["x-shared"], "gateway");
-    let id = if headers.contains_key("x-api-key")
-    {
+    let id = if headers.contains_key("x-api-key") {
         assert_eq!(headers["x-api-key"], "test-key");
         "anthropic-model"
-    }
-    else
-    {
+    } else {
         assert_eq!(headers["authorization"], "Bearer test-key");
-        if uri.path() == "/relay/v2/models" { "responses-model" } else { "openai-model" }
+        if uri.path() == "/relay/v2/models" {
+            "responses-model"
+        } else {
+            "openai-model"
+        }
     };
     Json(json!({"data": [{"id": id}]}))
 }
@@ -76,17 +76,16 @@ async fn recorded_reasoning_effort_matches_the_effective_request() {
     let (requests, mut received) = mpsc::unbounded_channel();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let app = Router::new().route("/v1/models", axum::routing::get(discover)).route("/relay/v2/models", axum::routing::get(discover)).fallback(upstream).with_state(requests);
+    let app = Router::new()
+        .route("/v1/models", axum::routing::get(discover))
+        .route("/relay/v2/models", axum::routing::get(discover))
+        .fallback(upstream)
+        .with_state(requests);
     let server = tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
     let runtime = PluginRuntime::managed().unwrap();
-    let plugins = PluginRegistry::managed(
-        store.clone(),
-        runtime.clone(),
-        "0.1.0".into(),
-    )
-    .unwrap();
+    let plugins = PluginRegistry::managed(store.clone(), runtime.clone(), "0.1.0".into()).unwrap();
     let clients = NetworkClients::new(store.clone());
     let router = Arc::new(ProviderRouter::new(
         store.clone(),
@@ -95,23 +94,31 @@ async fn recorded_reasoning_effort_matches_the_effective_request() {
         Duration::from_secs(5),
         Duration::from_secs(5),
     ));
-    let control = ControlService::new(store.clone(), router.clone(), runtime, plugins, clients, "test".into()).unwrap();
-    let provider_cfg = store.create_provider(&ProviderConfigInput {
-        sort_order: 0,
-        name: "Shared gateway".into(),
-        base_url: format!("http://{address}"),
-        api_key: "test-key".into(),
-        custom_headers_enabled: true,
-        custom_headers: json!({"x-shared": "gateway"}),
-    }).await.unwrap();
+    let control = ControlService::new(
+        store.clone(),
+        router.clone(),
+        runtime,
+        plugins,
+        clients,
+        "test".into(),
+    )
+    .unwrap();
+    let provider_cfg = store
+        .create_provider(&ProviderConfigInput {
+            sort_order: 0,
+            name: "Shared gateway".into(),
+            base_url: format!("http://{address}"),
+            api_key: "test-key".into(),
+            custom_headers_enabled: true,
+            custom_headers: json!({"x-shared": "gateway"}),
+        })
+        .await
+        .unwrap();
 
     for (request_format, effort_pointer) in [
         (RequestFormat::Anthropic, "/output_config/effort"),
         (RequestFormat::OpenAiChat, "/reasoning_effort"),
-        (
-            RequestFormat::OpenAiResponses,
-            "/reasoning/effort",
-        ),
+        (RequestFormat::OpenAiResponses, "/reasoning/effort"),
     ] {
         for (configured, requested, expected) in [
             (Some("medium"), None, Some("medium")),
@@ -125,7 +132,8 @@ async fn recorded_reasoning_effort_matches_the_effective_request() {
             let input = ModelConfigInput {
                 provider_id: provider_cfg.provider_id.clone(),
                 request_format,
-                request_url_override: (request_format == RequestFormat::OpenAiResponses).then(|| format!("http://{address}/relay/v2/responses?channel=direct")),
+                request_url_override: (request_format == RequestFormat::OpenAiResponses)
+                    .then(|| format!("http://{address}/relay/v2/responses?channel=direct")),
                 extra_params_enabled: configured.is_some(),
                 extra_params: json!({"top_p": 0.8}),
                 sort_order: 0,
@@ -139,19 +147,37 @@ async fn recorded_reasoning_effort_matches_the_effective_request() {
                 thinking_budget_tokens: None,
             };
             let configured_model = store.create_model(&input).await.unwrap();
-            if requested.is_none() && configured.is_some()
-            {
-                let models = control.discover_provider_models(&provider_cfg.provider_id, request_format, input.request_url_override.as_deref()).await.unwrap().models;
-                assert_eq!(models, [match request_format
-                {
-                    RequestFormat::Gemini => unreachable!("tested separately"),
-                    RequestFormat::OpenAiChat => "openai-model",
-                    RequestFormat::OpenAiResponses => "responses-model",
-                    RequestFormat::Anthropic => "anthropic-model",
-                }]);
-                let result = control.test_model(&configured_model.model_hash, &uuid::Uuid::new_v4().to_string()).await.unwrap();
+            if requested.is_none() && configured.is_some() {
+                let models = control
+                    .discover_provider_models(
+                        &provider_cfg.provider_id,
+                        request_format,
+                        input.request_url_override.as_deref(),
+                    )
+                    .await
+                    .unwrap()
+                    .models;
+                assert_eq!(
+                    models,
+                    [match request_format {
+                        RequestFormat::Gemini => unreachable!("tested separately"),
+                        RequestFormat::OpenAiChat => "openai-model",
+                        RequestFormat::OpenAiResponses => "responses-model",
+                        RequestFormat::Anthropic => "anthropic-model",
+                    }]
+                );
+                let result = control
+                    .test_model(
+                        &configured_model.model_hash,
+                        &uuid::Uuid::new_v4().to_string(),
+                    )
+                    .await
+                    .unwrap();
                 assert_eq!(result.output, "ok");
-                assert_eq!(received.try_recv().unwrap().2["model"], configured_model.model_id);
+                assert_eq!(
+                    received.try_recv().unwrap().2["model"],
+                    configured_model.model_id
+                );
             }
             let mut model = ModelSpec::new(&configured_model.model_hash);
             model.extra_params = json!({"temperature": 0.25, "stop": ["done"]});
@@ -178,23 +204,19 @@ async fn recorded_reasoning_effort_matches_the_effective_request() {
             }
             let (uri, headers, body) = received.try_recv().unwrap();
             assert_eq!(headers["x-shared"], "gateway");
-            match request_format
-            {
+            match request_format {
                 RequestFormat::Gemini => unreachable!("tested separately"),
-                RequestFormat::OpenAiChat =>
-                {
+                RequestFormat::OpenAiChat => {
                     assert_eq!(uri.path(), "/v1/chat/completions");
                     assert_eq!(headers["authorization"], "Bearer test-key");
                     assert!(body["messages"].is_array());
                 }
-                RequestFormat::OpenAiResponses =>
-                {
+                RequestFormat::OpenAiResponses => {
                     assert_eq!(uri.to_string(), "/relay/v2/responses?channel=direct");
                     assert_eq!(headers["authorization"], "Bearer test-key");
                     assert!(body["input"].is_array());
                 }
-                RequestFormat::Anthropic =>
-                {
+                RequestFormat::Anthropic => {
                     assert_eq!(uri.path(), "/v1/messages");
                     assert_eq!(headers["x-api-key"], "test-key");
                     assert!(body["messages"].is_array());

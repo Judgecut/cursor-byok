@@ -116,8 +116,8 @@ mod tests {
     async fn send_once_marks_request_sent_before_http_send() {
         use crate::{
             model::{
-                CallOrigin, ModelConfigInput, RequestFormat, NewLlmCall, ProviderConfigInput,
-                ProviderType,
+                CallOrigin, ModelConfigInput, NewLlmCall, ProviderConfigInput, ProviderType,
+                RequestFormat,
             },
             provider::FinishReason,
             store::Store,

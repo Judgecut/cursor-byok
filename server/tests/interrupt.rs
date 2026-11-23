@@ -12,8 +12,8 @@ use cursor_server::{
     cursor::protocol::{connect, proto::agent::v1 as pb},
     cursor::{TransportCommand, TransportRegistry},
     model::{
-        CanonicalMessage, ConversationId, ModelConfigInput, ModelSpec, RequestFormat, Origin,
-        PreparedRun, PromptSpec, ProviderConfigInput, Role, RunAction, RunId, RunKind, Usage,
+        CanonicalMessage, ConversationId, ModelConfigInput, ModelSpec, Origin, PreparedRun,
+        PromptSpec, ProviderConfigInput, RequestFormat, Role, RunAction, RunId, RunKind, Usage,
     },
     provider::{FinishReason, ModelEvent},
     run::{self, CommandResult, CommitCause, RunEngine, RunEvent, RunOutcome, RunPhase},

@@ -198,11 +198,12 @@ pub fn billed_tokens(request_type: ProviderType, usage: &Usage) -> Option<Billed
     let cache_write = usage.cache_write_tokens.unwrap_or(0);
     let non_cached_input = match request_type {
         ProviderType::Anthropic => raw_input,
-        ProviderType::OpenAiChat | ProviderType::OpenAiResponses | ProviderType::Gemini | ProviderType::Plugin => {
-            raw_input
-                .saturating_sub(cache_read)
-                .saturating_sub(cache_write)
-        }
+        ProviderType::OpenAiChat
+        | ProviderType::OpenAiResponses
+        | ProviderType::Gemini
+        | ProviderType::Plugin => raw_input
+            .saturating_sub(cache_read)
+            .saturating_sub(cache_write),
     };
     Some(BilledTokens {
         non_cached_input,
@@ -385,8 +386,14 @@ mod tests {
             ProviderType::OpenAiResponses,
             ProviderType::Plugin,
         ] {
-            let cost =
-                calculate_cost(protocol, CallOrigin::Run, &usage, &priced_snapshot(), Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS)).unwrap();
+            let cost = calculate_cost(
+                protocol,
+                CallOrigin::Run,
+                &usage,
+                &priced_snapshot(),
+                Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS),
+            )
+            .unwrap();
             assert_eq!(cost.status, CostStatus::Priced);
             assert_eq!(cost.cost_basis, Some(CostBasis::Reported));
             assert_eq!(cost.assumed_cache_hit_rate_bps, None);
@@ -518,8 +525,14 @@ mod tests {
             cache_read_tokens: Some(2_000),
             ..Usage::default()
         };
-        let cost =
-            calculate_cost(ProviderType::OpenAiChat, CallOrigin::Run, &usage, &free, Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS)).unwrap();
+        let cost = calculate_cost(
+            ProviderType::OpenAiChat,
+            CallOrigin::Run,
+            &usage,
+            &free,
+            Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS),
+        )
+        .unwrap();
         assert_eq!(cost.status, CostStatus::Priced);
         assert_eq!(cost.total_cost_nano, Some(0));
     }
@@ -550,8 +563,14 @@ mod tests {
             ProviderType::OpenAiChat,
             ProviderType::OpenAiResponses,
         ] {
-            let estimated =
-                calculate_cost(protocol, CallOrigin::Run, &unreported, &gemini, Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS)).unwrap();
+            let estimated = calculate_cost(
+                protocol,
+                CallOrigin::Run,
+                &unreported,
+                &gemini,
+                Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS),
+            )
+            .unwrap();
             assert_eq!(estimated.status, CostStatus::Priced);
             assert_eq!(estimated.cost_basis, Some(CostBasis::AssumedCache));
             assert_eq!(estimated.assumed_cache_hit_rate_bps, Some(9_000));

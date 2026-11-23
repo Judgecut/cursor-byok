@@ -13,8 +13,8 @@ use crate::{
         transport::TransportRegistry,
     },
     model::{
-        ModelConfigInput, ModelInvocation, ModelRequest, RequestFormat, ProjectedContent,
-        ProviderConfigInput, Usage,
+        ModelConfigInput, ModelInvocation, ModelRequest, ProjectedContent, ProviderConfigInput,
+        RequestFormat, Usage,
     },
     network::NetworkClients,
     provider::{FinishReason, ModelEvent, Provider, ProviderStream},

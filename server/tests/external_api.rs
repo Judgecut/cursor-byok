@@ -15,9 +15,7 @@ use axum::{
 use cursor_server::{
     api::byok,
     control,
-    model::{
-        ModelConfigInput, RequestFormat, ProjectedContent, ProviderConfigInput, Usage,
-    },
+    model::{ModelConfigInput, ProjectedContent, ProviderConfigInput, RequestFormat, Usage},
     network::NetworkClients,
     plugin::{PluginRegistry, PluginRuntime},
     provider::{FinishReason, ModelEvent, ProviderRouter},
@@ -805,11 +803,7 @@ async fn all_entry_and_upstream_protocol_pairs_preserve_cache_usage() {
 
     for (order, group, request_format) in [
         (1, "bridge-chat", RequestFormat::OpenAiChat),
-        (
-            2,
-            "bridge-responses",
-            RequestFormat::OpenAiResponses,
-        ),
+        (2, "bridge-responses", RequestFormat::OpenAiResponses),
         (3, "bridge-messages", RequestFormat::Anthropic),
     ] {
         let mut provider_cfg = provider_input(group, &format!("http://127.0.0.1:{port}/byok/v1"));

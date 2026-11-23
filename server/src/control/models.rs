@@ -71,8 +71,7 @@ pub async fn remove_provider(
 }
 
 #[derive(Deserialize)]
-pub struct DiscoverModels
-{
+pub struct DiscoverModels {
     pub request_format: RequestFormat,
     pub request_url_override: Option<String>,
 }
@@ -82,7 +81,15 @@ pub async fn discover_provider_models(
     Path(provider_id): Path<String>,
     Json(input): Json<DiscoverModels>,
 ) -> Result<Json<DiscoveredModels>> {
-    Ok(Json(service.discover_provider_models(&provider_id, input.request_format, input.request_url_override.as_deref()).await?))
+    Ok(Json(
+        service
+            .discover_provider_models(
+                &provider_id,
+                input.request_format,
+                input.request_url_override.as_deref(),
+            )
+            .await?,
+    ))
 }
 
 pub async fn list(State(service): State<ControlService>) -> Result<Json<Vec<ModelConfig>>> {

@@ -426,9 +426,17 @@ pub(crate) fn normalize_exchange_rate(raw: &str) -> Result<Option<String>> {
 }
 
 fn normalize_loaded_interface_settings(mut settings: InterfaceSettings) -> InterfaceSettings {
-    for rate in [&mut settings.cny_rate, &mut settings.eur_rate, &mut settings.jpy_rate, &mut settings.twd_rate, &mut settings.try_rate, &mut settings.krw_rate]
-    {
-        *rate = rate.as_deref().and_then(|value| normalize_exchange_rate(value).ok().flatten());
+    for rate in [
+        &mut settings.cny_rate,
+        &mut settings.eur_rate,
+        &mut settings.jpy_rate,
+        &mut settings.twd_rate,
+        &mut settings.try_rate,
+        &mut settings.krw_rate,
+    ] {
+        *rate = rate
+            .as_deref()
+            .and_then(|value| normalize_exchange_rate(value).ok().flatten());
     }
     if settings.home_refresh_interval_seconds == 0 {
         settings.home_refresh_interval_seconds = DEFAULT_HOME_REFRESH_INTERVAL_SECONDS;
@@ -740,13 +748,14 @@ impl Store {
         read_interface_settings(&self.pool).await
     }
 
-    pub(crate) async fn exchange_rate_sync_meta(&self) -> Result<ExchangeRateSyncMeta>
-    {
+    pub(crate) async fn exchange_rate_sync_meta(&self) -> Result<ExchangeRateSyncMeta> {
         read_exchange_rate_sync_meta(&self.pool).await
     }
 
-    pub(crate) async fn update_exchange_rate_sync_meta(&self, change: impl FnOnce(&mut ExchangeRateSyncMeta) + Send) -> Result<()>
-    {
+    pub(crate) async fn update_exchange_rate_sync_meta(
+        &self,
+        change: impl FnOnce(&mut ExchangeRateSyncMeta) + Send,
+    ) -> Result<()> {
         let _write = self.writes.lock().await;
         let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let mut meta = read_exchange_rate_sync_meta(&mut *transaction).await?;
@@ -767,8 +776,7 @@ impl Store {
     ) -> Result<InterfaceSettings> {
         let _write = self.writes.lock().await;
         let mut settings = read_interface_settings(&self.pool).await?;
-        if let Some(sidebar_collapsed) = patch.sidebar_collapsed
-        {
+        if let Some(sidebar_collapsed) = patch.sidebar_collapsed {
             settings.sidebar_collapsed = sidebar_collapsed;
         }
         if let Some(locale) = patch.locale {
@@ -800,12 +808,16 @@ impl Store {
             }
             settings.home_refresh_interval_seconds = interval;
         }
-        for (rate, change) in [(&mut settings.cny_rate, patch.cny_rate), (&mut settings.eur_rate, patch.eur_rate), (&mut settings.jpy_rate, patch.jpy_rate), (&mut settings.twd_rate, patch.twd_rate), (&mut settings.try_rate, patch.try_rate), (&mut settings.krw_rate, patch.krw_rate)]
-        {
-            if let Some(change) = change
-            {
-                *rate = match change
-                {
+        for (rate, change) in [
+            (&mut settings.cny_rate, patch.cny_rate),
+            (&mut settings.eur_rate, patch.eur_rate),
+            (&mut settings.jpy_rate, patch.jpy_rate),
+            (&mut settings.twd_rate, patch.twd_rate),
+            (&mut settings.try_rate, patch.try_rate),
+            (&mut settings.krw_rate, patch.krw_rate),
+        ] {
+            if let Some(change) = change {
+                *rate = match change {
                     None => None,
                     Some(raw) => normalize_exchange_rate(&raw)?,
                 };
@@ -827,14 +839,15 @@ impl Store {
     }
 }
 
-async fn read_exchange_rate_sync_meta<'e>(executor: impl sqlx::SqliteExecutor<'e>) -> Result<ExchangeRateSyncMeta>
-{
-    let stored: Option<String> = sqlx::query_scalar("SELECT value_json FROM service_settings WHERE setting_key = ?")
-        .bind(EXCHANGE_RATE_SYNC_KEY)
-        .fetch_optional(executor)
-        .await?;
-    match stored
-    {
+async fn read_exchange_rate_sync_meta<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+) -> Result<ExchangeRateSyncMeta> {
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT value_json FROM service_settings WHERE setting_key = ?")
+            .bind(EXCHANGE_RATE_SYNC_KEY)
+            .fetch_optional(executor)
+            .await?;
+    match stored {
         Some(value) => Ok(serde_json::from_str(&value)?),
         None => Ok(ExchangeRateSyncMeta::default()),
     }

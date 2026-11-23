@@ -21,7 +21,7 @@ use cursor_server::{
     },
     cursor::{TransportCommand, TransportRegistry},
     model::{
-        MessageContent, ModelConfigInput, RequestFormat, ProjectedContent, ProviderConfigInput,
+        MessageContent, ModelConfigInput, ProjectedContent, ProviderConfigInput, RequestFormat,
         ToolCall,
     },
     provider::{FinishReason, ModelEvent},

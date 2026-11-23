@@ -572,7 +572,7 @@ mod tests {
     use std::time::Duration;
 
     use crate::model::{
-        CallOrigin, ModelConfigInput, RequestFormat, NewLlmCall, ProviderConfigInput, ProviderType,
+        CallOrigin, ModelConfigInput, NewLlmCall, ProviderConfigInput, ProviderType, RequestFormat,
         Usage,
     };
 

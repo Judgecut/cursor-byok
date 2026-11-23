@@ -125,12 +125,20 @@ impl Store {
         let existing_models = self.models().await?;
 
         let mut provider_ids_by_key = HashMap::new();
-        let providers_by_id: HashMap<_, _> = existing_providers.iter().map(|provider| (provider.provider_id.as_str(), provider)).collect();
-        for model in existing_models.iter().filter(|model| model.request_format != RequestFormat::Gemini)
+        let providers_by_id: HashMap<_, _> = existing_providers
+            .iter()
+            .map(|provider| (provider.provider_id.as_str(), provider))
+            .collect();
+        for model in existing_models
+            .iter()
+            .filter(|model| model.request_format != RequestFormat::Gemini)
         {
             let key = provider_match_key(
                 model.request_format,
-                model.request_url_override.as_deref().unwrap_or(&model.base_url),
+                model
+                    .request_url_override
+                    .as_deref()
+                    .unwrap_or(&model.base_url),
                 model.request_url_override.is_some(),
                 &model.api_key,
                 model.custom_headers_enabled,
@@ -138,7 +146,9 @@ impl Store {
                 model.extra_params_enabled,
                 &model.extra_params,
             )?;
-            provider_ids_by_key.entry(key).or_insert_with(|| model.provider_id.clone());
+            provider_ids_by_key
+                .entry(key)
+                .or_insert_with(|| model.provider_id.clone());
         }
 
         let mut existing_by_identity = HashMap::new();
@@ -164,7 +174,10 @@ impl Store {
             let provider = normalize_provider_input(&entry.provider)?;
             let key = provider_match_key(
                 entry.request_format,
-                entry.request_url_override.as_deref().unwrap_or(&provider.base_url),
+                entry
+                    .request_url_override
+                    .as_deref()
+                    .unwrap_or(&provider.base_url),
                 entry.request_url_override.is_some(),
                 &provider.api_key,
                 provider.custom_headers_enabled,
@@ -179,38 +192,38 @@ impl Store {
             } else {
                 let id = deterministic_provider_id(&key);
                 planned_provider_ids.insert(key, id.clone());
-                if let Some(existing) = providers_by_id.get(id.as_str())
-                {
-                    if existing.base_url != provider.base_url || existing.api_key != provider.api_key || existing.custom_headers_enabled != provider.custom_headers_enabled || existing.custom_headers != provider.custom_headers
+                if let Some(existing) = providers_by_id.get(id.as_str()) {
+                    if existing.base_url != provider.base_url
+                        || existing.api_key != provider.api_key
+                        || existing.custom_headers_enabled != provider.custom_headers_enabled
+                        || existing.custom_headers != provider.custom_headers
                     {
-                        return Err(Error::Config(format!("legacy import conflicts with provider {id}")));
+                        return Err(Error::Config(format!(
+                            "legacy import conflicts with provider {id}"
+                        )));
                     }
-                }
-                else
-                {
+                } else {
                     new_providers.push((id.clone(), provider));
                 }
                 id
             };
 
-            let model_input = normalize_model_input(
-                &ModelConfigInput {
-                    provider_id: provider_id.clone(),
-                    request_format: entry.request_format,
-                    request_url_override: entry.request_url_override,
-                    extra_params_enabled: entry.extra_params_enabled,
-                    extra_params: entry.extra_params,
-                    sort_order: entry.sort_order,
-                    display_name: entry.display_name,
-                    tooltip_data: entry.tooltip_data,
-                    model_id: entry.model_id,
-                    reasoning_effort: entry.reasoning_effort,
-                    context_window_tokens: entry.context_window_tokens,
-                    max_output_tokens: entry.max_output_tokens,
-                    anthropic_thinking_effort: entry.anthropic_thinking_effort,
-                    thinking_budget_tokens: entry.thinking_budget_tokens,
-                },
-            )?;
+            let model_input = normalize_model_input(&ModelConfigInput {
+                provider_id: provider_id.clone(),
+                request_format: entry.request_format,
+                request_url_override: entry.request_url_override,
+                extra_params_enabled: entry.extra_params_enabled,
+                extra_params: entry.extra_params,
+                sort_order: entry.sort_order,
+                display_name: entry.display_name,
+                tooltip_data: entry.tooltip_data,
+                model_id: entry.model_id,
+                reasoning_effort: entry.reasoning_effort,
+                context_window_tokens: entry.context_window_tokens,
+                max_output_tokens: entry.max_output_tokens,
+                anthropic_thinking_effort: entry.anthropic_thinking_effort,
+                thinking_budget_tokens: entry.thinking_budget_tokens,
+            })?;
 
             let identity = (
                 model_input.provider_id.clone(),
@@ -301,9 +314,9 @@ fn load_v0049_model_config(path: &Path) -> Result<Vec<ParsedLegacyEntry>> {
 }
 
 fn parse_legacy_entry(model: LegacyModel) -> Result<ParsedLegacyEntry> {
-    let (request_format, request_url_override) = legacy_request_configuration(&model.model_type, &model.base_url, &model.openai_endpoint)?;
-    let base_url = match &request_url_override
-    {
+    let (request_format, request_url_override) =
+        legacy_request_configuration(&model.model_type, &model.base_url, &model.openai_endpoint)?;
+    let base_url = match &request_url_override {
         Some(url) => legacy_base_url(url)?,
         None => normalize_request_url(&model.base_url)?,
     };
@@ -326,7 +339,9 @@ fn parse_legacy_entry(model: LegacyModel) -> Result<ParsedLegacyEntry> {
     };
     let max_output_tokens = match request_format {
         RequestFormat::Gemini => unreachable!("legacy formats predate Gemini"),
-        RequestFormat::OpenAiChat | RequestFormat::OpenAiResponses => positive(model.max_completion_tokens),
+        RequestFormat::OpenAiChat | RequestFormat::OpenAiResponses => {
+            positive(model.max_completion_tokens)
+        }
         RequestFormat::Anthropic => {
             positive(model.anthropic_max_tokens).or_else(|| positive(model.max_completion_tokens))
         }
@@ -384,17 +399,21 @@ fn provider_match_key(
     extra_params: &serde_json::Value,
 ) -> Result<ProviderMatchKey> {
     Ok(ProviderMatchKey {
-        model_type: if request_format == RequestFormat::Anthropic { "anthropic" } else { "openai" },
+        model_type: if request_format == RequestFormat::Anthropic {
+            "anthropic"
+        } else {
+            "openai"
+        },
         base_url: base_url.to_owned(),
         use_full_url,
         api_key: api_key.to_owned(),
-        openai_endpoint: match request_format
-        {
+        openai_endpoint: match request_format {
             RequestFormat::OpenAiChat => OPENAI_CHAT_ENDPOINT,
             RequestFormat::OpenAiResponses => OPENAI_RESPONSES_ENDPOINT,
             RequestFormat::Anthropic => "",
             RequestFormat::Gemini => unreachable!("legacy formats predate Gemini"),
-        }.to_owned(),
+        }
+        .to_owned(),
         custom_headers_enabled,
         custom_headers_json: serde_json::to_string(custom_headers)?,
         extra_params_enabled,
@@ -422,34 +441,53 @@ fn deterministic_provider_id(key: &ProviderMatchKey) -> String {
     hex::encode(&digest[..8])
 }
 
-fn legacy_request_configuration(model_type: &str, base_url: &str, openai_endpoint: &str) -> Result<(RequestFormat, Option<String>)>
-{
+fn legacy_request_configuration(
+    model_type: &str,
+    base_url: &str,
+    openai_endpoint: &str,
+) -> Result<(RequestFormat, Option<String>)> {
     let base_url = normalize_request_url(base_url)?;
-    match model_type.trim().to_ascii_lowercase().as_str()
-    {
-        "anthropic" => Ok((RequestFormat::Anthropic, url_path_ends_with(&base_url, "/messages").then_some(base_url))),
-        "openai" =>
-        {
+    match model_type.trim().to_ascii_lowercase().as_str() {
+        "anthropic" => Ok((
+            RequestFormat::Anthropic,
+            url_path_ends_with(&base_url, "/messages").then_some(base_url),
+        )),
+        "openai" => {
             let detected = openai_protocol_from_url(&base_url);
-            let configured = match openai_endpoint.trim()
-            {
+            let configured = match openai_endpoint.trim() {
                 "" | OPENAI_RESPONSES_ENDPOINT => RequestFormat::OpenAiResponses,
                 OPENAI_CHAT_ENDPOINT | "/custom" => RequestFormat::OpenAiChat,
-                value => return Err(Error::Config(format!("unsupported v0.0.49 OpenAI endpoint: {value}"))),
+                value => {
+                    return Err(Error::Config(format!(
+                        "unsupported v0.0.49 OpenAI endpoint: {value}"
+                    )))
+                }
             };
             let use_full_url = detected.is_some() || openai_endpoint.trim() == "/custom";
-            Ok((detected.unwrap_or(configured), use_full_url.then_some(base_url)))
+            Ok((
+                detected.unwrap_or(configured),
+                use_full_url.then_some(base_url),
+            ))
         }
-        value => Err(Error::Config(format!("unsupported v0.0.49 model type: {value}"))),
+        value => Err(Error::Config(format!(
+            "unsupported v0.0.49 model type: {value}"
+        ))),
     }
 }
 
-fn legacy_base_url(full_url: &str) -> Result<String>
-{
-    let url = reqwest::Url::parse(full_url).map_err(|error| Error::Config(format!("invalid legacy URL: {error}")))?;
+fn legacy_base_url(full_url: &str) -> Result<String> {
+    let url = reqwest::Url::parse(full_url)
+        .map_err(|error| Error::Config(format!("invalid legacy URL: {error}")))?;
     let path = url.path().trim_end_matches('/');
     let lower_path = path.to_ascii_lowercase();
-    let prefix = ["/chat/completions", "/responses", "/messages"].iter().find_map(|suffix| lower_path.strip_suffix(suffix).map(|prefix| &path[..prefix.len()])).unwrap_or_default();
+    let prefix = ["/chat/completions", "/responses", "/messages"]
+        .iter()
+        .find_map(|suffix| {
+            lower_path
+                .strip_suffix(suffix)
+                .map(|prefix| &path[..prefix.len()])
+        })
+        .unwrap_or_default();
     Ok(format!("{}{prefix}", &url[..url::Position::BeforePath]))
 }
 
@@ -505,17 +543,22 @@ fn optional_string(value: String) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests
-{
+mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn imported_models_keep_their_connection_groups_and_are_deduplicated()
-    {
+    async fn imported_models_keep_their_connection_groups_and_are_deduplicated() {
         let directory = tempfile::tempdir().unwrap();
-        let store = Store::connect(&format!("sqlite://{}", directory.path().join("import.db").display())).await.unwrap();
+        let store = Store::connect(&format!(
+            "sqlite://{}",
+            directory.path().join("import.db").display()
+        ))
+        .await
+        .unwrap();
         let config_path = directory.path().join("config.yaml");
-        std::fs::write(&config_path, r#"
+        std::fs::write(
+            &config_path,
+            r#"
 modelAdapters:
   - displayName: Shared name
     type: openai
@@ -530,18 +573,32 @@ modelAdapters:
     baseURL: https://example.com/v1/messages?route=2
     apiKey: test-key
     modelID: model-1
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let result = store.import_v0049_model_config(&config_path).await.unwrap();
         assert_eq!((result.imported, result.skipped), (2, 0));
         let models = store.models().await.unwrap();
         assert_ne!(models[0].provider_id, models[1].provider_id);
-        let responses = models.iter().find(|model| model.request_format == RequestFormat::OpenAiResponses).unwrap();
-        assert_eq!(responses.request_url().unwrap(), "https://example.com/v1/responses");
+        let responses = models
+            .iter()
+            .find(|model| model.request_format == RequestFormat::OpenAiResponses)
+            .unwrap();
+        assert_eq!(
+            responses.request_url().unwrap(),
+            "https://example.com/v1/responses"
+        );
         assert_eq!(responses.extra_params()["temperature"], 0.25);
-        let anthropic = models.iter().find(|model| model.request_format == RequestFormat::Anthropic).unwrap();
+        let anthropic = models
+            .iter()
+            .find(|model| model.request_format == RequestFormat::Anthropic)
+            .unwrap();
         assert_eq!(anthropic.base_url, "https://example.com/v1");
-        assert_eq!(anthropic.request_url().unwrap(), "https://example.com/v1/messages?route=2");
+        assert_eq!(
+            anthropic.request_url().unwrap(),
+            "https://example.com/v1/messages?route=2"
+        );
 
         let result = store.import_v0049_model_config(&config_path).await.unwrap();
         assert_eq!((result.imported, result.skipped), (0, 2));

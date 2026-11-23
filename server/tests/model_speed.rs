@@ -12,7 +12,7 @@ use axum::{
 use cursor_server::{
     control::{ControlService, ModelConnectivityResult},
     model::{
-        LlmCallSummary, ModelConfigInput, RequestFormat, ProviderConfigInput, SpeedStatus,
+        LlmCallSummary, ModelConfigInput, ProviderConfigInput, RequestFormat, SpeedStatus,
         SpeedUnavailableReason,
     },
     network::NetworkClients,

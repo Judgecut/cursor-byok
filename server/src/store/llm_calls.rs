@@ -435,7 +435,9 @@ impl Store {
         let snapshot = snapshot_from_call_row(&row, now)?;
         let pricing = read_pricing_settings(&mut *transaction).await?;
         let window = match supplier_key.as_deref() {
-            Some(supplier_key) => cache_reporting_window(&mut transaction, supplier_key, Some(call_id)).await?,
+            Some(supplier_key) => {
+                cache_reporting_window(&mut transaction, supplier_key, Some(call_id)).await?
+            }
             None => CacheReportingWindow::default(),
         };
         let estimation_hit_rate_bps = window
