@@ -31,7 +31,7 @@ import type {
   SupplierPricingView,
   TabSettings,
 } from "../shared/api";
-import { normalizeExchangeRate } from "../shared/utils/costFormat";
+import { CURRENCY_SYMBOLS, exchangeRateKey, normalizeExchangeRate, type DisplayCurrency } from "../shared/utils/costFormat";
 
 const API_ROOT = "/__byok-api__/api";
 const DEMO_NOW = Date.now();
@@ -303,6 +303,11 @@ let interfaceSettings: InterfaceSettings = {
   theme: "default-dark",
   currency: "USD",
   cny_rate: null,
+  eur_rate: null,
+  jpy_rate: null,
+  twd_rate: null,
+  try_rate: null,
+  krw_rate: null,
   overview_range_preset: "month",
   overview_chart_mode: "tokens",
   overview_chart_type: "bar",
@@ -1216,28 +1221,27 @@ function applyDemoInterfacePatch(
     }
     next.home_refresh_interval_seconds = patch.home_refresh_interval_seconds;
   }
-  if ("cny_rate" in patch) {
-    if (patch.cny_rate == null) {
-      next.cny_rate = null;
-    } else if (typeof patch.cny_rate === "string") {
-      const trimmed = patch.cny_rate.trim();
-      if (trimmed === "") {
-        next.cny_rate = null;
-      } else if (trimmed.length > 64) {
-        return { error: "CNY exchange rate is too long" };
-      } else {
-        const normalized = normalizeExchangeRate(trimmed);
-        if (!normalized) {
-          return { error: "CNY exchange rate must be greater than 0" };
-        }
-        next.cny_rate = normalized;
-      }
-    } else {
-      return { error: "invalid CNY exchange rate" };
+  for (const currency of Object.keys(CURRENCY_SYMBOLS) as DisplayCurrency[])
+  {
+    if (currency === "USD") continue;
+    const key = exchangeRateKey(currency);
+    if (!(key in patch)) continue;
+
+    const value = patch[key];
+    if (value != null && typeof value !== "string")
+    {
+      return { error: "invalid exchange rate" };
     }
+    const trimmed = value?.trim() ?? "";
+    const normalized = normalizeExchangeRate(trimmed);
+    if (trimmed.length > 64 || (trimmed && normalized === null))
+    {
+      return { error: "invalid exchange rate" };
+    }
+    next[key] = normalized;
   }
   if (patch.currency !== undefined) {
-    if (!["USD", "CNY"].includes(patch.currency)) {
+    if (!Object.hasOwn(CURRENCY_SYMBOLS, patch.currency)) {
       return { error: "invalid display currency" };
     }
     next.currency = patch.currency;

@@ -4,6 +4,7 @@ import { PageContent } from "../../shell/layout/PageContent";
 import { LegacyModelImport } from "../models/LegacyModelImport";
 import { AppLifecycleSettingsCard } from "./AppLifecycleSettingsCard";
 import { CommitSettingsCard } from "./CommitSettingsCard";
+import { CurrencySettingsCard } from "./CurrencySettingsCard";
 import { ExternalApiSettingsCard } from "./ExternalApiSettingsCard";
 import { ModelPricingCard } from "./ModelPricingCard";
 import { ProxySettingsCard } from "./ProxySettingsCard";
@@ -23,7 +24,6 @@ import {
   useAppStore,
 } from "../../shared/store/appStore";
 import { themeOptions, type ThemeId } from "../../shared/theme/theme";
-import { DEFAULT_CNY_RATE, normalizeExchangeRate } from "../../shared/utils/costFormat";
 import styles from "./SettingsPage.module.scss";
 
 function themeLabel(id: ThemeId): string {
@@ -33,7 +33,7 @@ function themeLabel(id: ThemeId): string {
 }
 
 export function SettingsPage() {
-  const { detailed, ports, theme, currency, cnyRate, homeRefreshIntervalSeconds } = useAppStore();
+  const { detailed, ports, theme, homeRefreshIntervalSeconds } = useAppStore();
   const { preference, locale } = useI18n();
   const message = useMessage();
   const [proxyPort, setProxyPort] = useState(String(ports.proxy_port));
@@ -52,15 +52,11 @@ export function SettingsPage() {
   const [tabDraft, setTabDraft] = useState<TabSettings>({ mode: "public", address: "" });
   const [editingTab, setEditingTab] = useState(false);
   const [savingTab, setSavingTab] = useState(false);
-  const [rateDraft, setRateDraft] = useState(cnyRate ?? "");
-  const [rateError, setRateError] = useState<string | null>(null);
-  const [savingRate, setSavingRate] = useState(false);
   const [refreshIntervalDraft, setRefreshIntervalDraft] = useState(String(homeRefreshIntervalSeconds));
   const [refreshIntervalError, setRefreshIntervalError] = useState<string | null>(null);
   const [savingRefreshInterval, setSavingRefreshInterval] = useState(false);
   const refreshIntervalInputId = useId();
   const refreshIntervalInputRef = useRef<HTMLInputElement | null>(null);
-  const rateInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     const report = (cause: unknown) => message(cause instanceof Error ? cause.message : String(cause));
     void api.statisticsStorage().then(setStorage).catch(report);
@@ -77,9 +73,6 @@ export function SettingsPage() {
     setProxyPort(String(ports.proxy_port));
     setServicePort(String(ports.service_port));
   }, [ports.proxy_port, ports.service_port]);
-  useEffect(() => {
-    setRateDraft(cnyRate ?? "");
-  }, [cnyRate]);
   useEffect(() => {
     setRefreshIntervalDraft(String(homeRefreshIntervalSeconds));
     setRefreshIntervalError(null);
@@ -179,48 +172,6 @@ export function SettingsPage() {
       message(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setSavingTab(false);
-    }
-  };
-  const clearCnyRate = async () => {
-    if (savingRate) return;
-    setSavingRate(true);
-    try {
-      const saved = await appStore.clearCnyRate();
-      if (!saved) {
-        return;
-      }
-      setRateDraft("");
-      setRateError(null);
-      message(t("已恢复默认汇率（1 USD = {rate} CNY）", { rate: DEFAULT_CNY_RATE }));
-    } finally {
-      setSavingRate(false);
-    }
-  };
-  const saveCnyRate = async () => {
-    if (savingRate) return;
-    const trimmed = rateDraft.trim();
-    if (!trimmed) {
-      await clearCnyRate();
-      return;
-    }
-    const normalized = normalizeExchangeRate(trimmed);
-    if (!normalized) {
-      setRateError(t("汇率必须是大于 0 的数字，例如 7.25"));
-      rateInputRef.current?.focus();
-      rateInputRef.current?.select();
-      return;
-    }
-    setSavingRate(true);
-    try {
-      const saved = await appStore.saveCnyRate(normalized);
-      if (!saved) {
-        return;
-      }
-      setRateDraft(saved);
-      setRateError(null);
-      message(t("汇率已保存（1 USD = {rate} CNY）", { rate: saved }));
-    } finally {
-      setSavingRate(false);
     }
   };
   const saveHomeRefreshInterval = async () => {
@@ -430,76 +381,7 @@ export function SettingsPage() {
           <small>{t("选择“跟随系统”时，系统深浅色切换后界面将同步更新，无需重启。")}</small>
         </div>
       </TitledCard>
-      <TitledCard title={t("货币显示")}>
-        <div className={styles.currencySection}>
-          <div className={styles.currencyRow}>
-            <div>
-              <strong>{t("显示币种")}</strong>
-              <small>{t("默认使用美元展示；未配置汇率时默认按 1 USD = {rate} CNY 折算为人民币。", { rate: DEFAULT_CNY_RATE })}</small>
-            </div>
-            <div className={styles.currencyActions} role="group" aria-label={t("显示币种")}>
-              <button
-                type="button"
-                className={currency === "USD" ? styles.selected : ""}
-                aria-pressed={currency === "USD"}
-                onClick={() => appStore.selectCurrency("USD")}
-              >
-                {t("美元 ($)")}
-              </button>
-              <button
-                type="button"
-                className={currency === "CNY" ? styles.selected : ""}
-                aria-pressed={currency === "CNY"}
-                onClick={() => appStore.selectCurrency("CNY")}
-              >
-                {t("人民币 (¥)")}
-              </button>
-            </div>
-          </div>
-          <div className={styles.currencyRateBlock}>
-            <div className={styles.currencyRateHeader}>
-              <strong>{t("人民币汇率")}</strong>
-              <small>
-                {cnyRate
-                  ? t("当前汇率：1 USD = {rate} CNY。仅用于界面显示折算，不影响数据库美元记录、定价输入与统计口径。", { rate: cnyRate })
-                  : t("未配置时默认使用 1 USD = {rate} CNY。仅用于界面显示折算，不影响数据库美元记录、定价输入与统计口径。", { rate: DEFAULT_CNY_RATE })}
-              </small>
-            </div>
-            <form
-              className={styles.currencyRateForm}
-              onSubmit={(event) => {
-                event.preventDefault();
-                void saveCnyRate();
-              }}
-            >
-              <span className={styles.ratePrefix}>1 USD =</span>
-              <div className={styles.rateInputWrap}>
-                <TextInput
-                  ref={rateInputRef}
-                  type="text"
-                  inputMode="decimal"
-                  value={rateDraft}
-                  aria-label={t("人民币汇率")}
-                  aria-invalid={rateError ? true : undefined}
-                  placeholder={DEFAULT_CNY_RATE}
-                  onChange={(event) => {
-                    setRateDraft(event.target.value);
-                    if (rateError) setRateError(null);
-                  }}
-                />
-              </div>
-              <span className={styles.rateSuffix}>CNY</span>
-              <Button variant="primary" size="small" type="submit" disabled={savingRate}>
-                {savingRate ? t("保存中…") : t("保存")}
-              </Button>
-              {cnyRate && (
-                <Button size="small" disabled={savingRate} onClick={() => void clearCnyRate()}>{t("恢复默认")}</Button>
-              )}
-            </form>
-            {rateError && <div className={styles.rateError} role="alert">{rateError}</div>}
-          </div>
-        </div>
-      </TitledCard>
+      <CurrencySettingsCard />
       <TitledCard title={t("存储管理")}>
         <div className={styles.storageRow}>
           <div>

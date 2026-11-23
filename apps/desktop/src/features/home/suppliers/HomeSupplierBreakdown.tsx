@@ -39,7 +39,7 @@ export function HomeSupplierBreakdown({
   plugins,
   overallTokenUsage,
   currency,
-  cnyRate,
+  exchangeRate,
   loading = false,
   error = null,
 }: {
@@ -47,7 +47,7 @@ export function HomeSupplierBreakdown({
   plugins: PluginDescriptor[];
   overallTokenUsage: number;
   currency: DisplayCurrency;
-  cnyRate: string | null;
+  exchangeRate: string | null;
   loading?: boolean;
   error?: string | null;
 }) {
@@ -220,15 +220,15 @@ export function HomeSupplierBreakdown({
               <td className={styles.monoNum} title={formatInteger(supplier.output_tokens)}>
                 {formatCompactInteger(supplier.output_tokens)}
               </td>
-              <td className={styles.monoNum} title={breakdownCostTitle(supplier, currency, cnyRate)}>
-                {renderBreakdownCostCell(supplier, currency, cnyRate)}
+              <td className={styles.monoNum} title={breakdownCostTitle(supplier, currency, exchangeRate)}>
+                {renderBreakdownCostCell(supplier, currency, exchangeRate)}
               </td>
               <td
                 className={styles.monoNum}
-                title={averageCostTitle(supplier.average_priced_cost, currency, cnyRate)}
+                title={averageCostTitle(supplier.average_priced_cost, currency, exchangeRate)}
               >
                 {supplier.average_priced_cost
-                  ? formatDisplayCost(supplier.average_priced_cost, currency, cnyRate)
+                  ? formatDisplayCost(supplier.average_priced_cost, currency, exchangeRate)
                   : "—"}
               </td>
             </tr>;

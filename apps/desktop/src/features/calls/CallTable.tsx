@@ -48,7 +48,7 @@ function cacheTokensTitle(tokens: number | null, call: LlmCall, kind: "read" | "
   return formatInteger(tokens);
 }
 
-function renderCost(call: LlmCall, currency: DisplayCurrency, cnyRate: string | null) {
+function renderCost(call: LlmCall, currency: DisplayCurrency, exchangeRate: string | null) {
   if (call.call_kind === "cursor_official") {
     return <span className={styles.costMuted}>{t("未知")}</span>;
   }
@@ -66,27 +66,27 @@ function renderCost(call: LlmCall, currency: DisplayCurrency, cnyRate: string | 
         ? t("历史估算")
         : null;
   return <span className={styles.costCell}>
-    <span className={styles.costAmount}>{formatDisplayCost(call.total_cost, currency, cnyRate)}</span>
+    <span className={styles.costAmount}>{formatDisplayCost(call.total_cost, currency, exchangeRate)}</span>
     {tag && <span className={styles.costTag}>{tag}</span>}
   </span>;
 }
 
-function costTitle(call: LlmCall, currency: DisplayCurrency, cnyRate: string | null): string | undefined {
+function costTitle(call: LlmCall, currency: DisplayCurrency, exchangeRate: string | null): string | undefined {
   if (call.call_kind === "cursor_official") return t("Cursor 官方通道无法估算费用");
   if (call.cost_status === "incomplete_usage") return t("调用用量字段不完整");
   if (call.cost_status !== "priced" || call.total_cost == null) return t("该供应商模型尚未配置定价");
   const readText = call.cost_basis === "assumed_cache" && call.cache_read_cost != null
-    ? `${formatDisplayCostExact(call.cache_read_cost, currency, cnyRate)} (${t("估算")})`
+    ? `${formatDisplayCostExact(call.cache_read_cost, currency, exchangeRate)} (${t("估算")})`
     : hasReportedUsage(call) && call.cache_read_tokens == null
       ? t("未上报")
-      : formatDisplayCostExact(call.cache_read_cost, currency, cnyRate);
+      : formatDisplayCostExact(call.cache_read_cost, currency, exchangeRate);
   const writeText = hasReportedUsage(call) && call.cache_write_tokens == null
     ? t("未上报")
-    : formatDisplayCostExact(call.cache_write_cost, currency, cnyRate);
+    : formatDisplayCostExact(call.cache_write_cost, currency, exchangeRate);
   const base = t("总费用：{total}（输入 {input} · 输出 {output} · 缓存读 {read} · 缓存写 {write}）", {
-    total: formatDisplayCostExact(call.total_cost, currency, cnyRate),
-    input: formatDisplayCostExact(call.input_cost, currency, cnyRate),
-    output: formatDisplayCostExact(call.output_cost, currency, cnyRate),
+    total: formatDisplayCostExact(call.total_cost, currency, exchangeRate),
+    input: formatDisplayCostExact(call.input_cost, currency, exchangeRate),
+    output: formatDisplayCostExact(call.output_cost, currency, exchangeRate),
     read: readText,
     write: writeText,
   });
@@ -98,7 +98,7 @@ function costTitle(call: LlmCall, currency: DisplayCurrency, cnyRate: string | n
       cached: formatInteger(call.estimated_cache_read_tokens),
     }));
   }
-  const note = formatConversionNote(currency, cnyRate);
+  const note = formatConversionNote(currency, exchangeRate);
   if (note) {
     lines.push(t("原美元金额：{cost}", { cost: formatUsdExact(call.total_cost) }), note);
   }
@@ -122,7 +122,7 @@ export function CallTable({
   loading?: boolean;
   emptyText?: ReactNode;
 }) {
-  const { currency, cnyRate } = useAppStore();
+  const { currency, exchangeRate } = useAppStore();
   const rowRef = useCallHighlights(calls, queryKey, ready);
   const columns: DataTableColumn<LlmCall>[] = [
     {
@@ -152,8 +152,8 @@ export function CallTable({
     {
       key: "estimated_cost",
       header: t("估算费用"),
-      render: (call) => renderCost(call, currency, cnyRate),
-      title: (call) => costTitle(call, currency, cnyRate),
+      render: (call) => renderCost(call, currency, exchangeRate),
+      title: (call) => costTitle(call, currency, exchangeRate),
     },
     {
       key: "reasoning_effort",

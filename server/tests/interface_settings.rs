@@ -77,6 +77,11 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
             "theme": "default-dark",
             "currency": "USD",
             "cny_rate": null,
+            "eur_rate": null,
+            "jpy_rate": null,
+            "twd_rate": null,
+            "try_rate": null,
+            "krw_rate": null,
             "overview_range_preset": "month",
             "overview_chart_mode": "tokens",
             "overview_chart_type": "bar",
@@ -104,7 +109,7 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
         router.clone(),
         "PUT",
         "/__byok-api__/api/settings/interface",
-        Some(json!({ "cny_rate": "0" })),
+        Some(json!({ "cny_rate": "0", "eur_rate": "0.93" })),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -123,12 +128,14 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
         router.clone(),
         "PUT",
         "/__byok-api__/api/settings/interface",
-        Some(json!({ "theme": "default-light", "cny_rate": "07.20" })),
+        Some(json!({ "theme": "default-light", "cny_rate": "07.20", "jpy_rate": "0150.00" })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(updated["theme"], "default-light");
     assert_eq!(updated["cny_rate"], "7.2");
+    assert_eq!(updated["eur_rate"], Value::Null);
+    assert_eq!(updated["jpy_rate"], "150");
 
     let (status, updated) = send(
         router.clone(),
@@ -136,7 +143,7 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
         "/__byok-api__/api/settings/interface",
         Some(json!({
             "locale": "en-US",
-            "currency": "CNY",
+            "currency": "JPY",
             "overview_range_preset": "week",
             "overview_chart_mode": "cost",
             "overview_chart_type": "line",
@@ -153,8 +160,13 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
         json!({
             "locale": "en-US",
             "theme": "default-light",
-            "currency": "CNY",
+            "currency": "JPY",
             "cny_rate": "7.2",
+            "eur_rate": null,
+            "jpy_rate": "150",
+            "twd_rate": null,
+            "try_rate": null,
+            "krw_rate": null,
             "overview_range_preset": "week",
             "overview_chart_mode": "cost",
             "overview_chart_type": "line",
@@ -178,7 +190,7 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(loaded, updated);
 
-    // Clearing the exchange rate keeps CNY selected (default rate applies) while preserving other preferences.
+    // Clearing CNY preserves the selected currency and its independent rate.
     let (status, cleared) = send(
         reopened_router,
         "PUT",
@@ -192,8 +204,13 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
         json!({
             "locale": "en-US",
             "theme": "default-light",
-            "currency": "CNY",
+            "currency": "JPY",
             "cny_rate": null,
+            "eur_rate": null,
+            "jpy_rate": "150",
+            "twd_rate": null,
+            "try_rate": null,
+            "krw_rate": null,
             "overview_range_preset": "week",
             "overview_chart_mode": "cost",
             "overview_chart_type": "line",

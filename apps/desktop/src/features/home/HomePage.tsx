@@ -10,6 +10,8 @@ import {
   type OverviewFilterSupplier,
 } from "../../shared/api";
 import { appStore, useAppStore } from "../../shared/store/appStore";
+import { CurrencySelect } from "../../shared/ui/CurrencySelect";
+import { formatConversionNote } from "../../shared/utils/costFormat";
 import controls from "../../shared/ui/Controls.module.scss";
 import { Icon } from "../../shared/ui/Icon";
 import { SupplierFilter } from "../../shared/ui/SupplierFilter";
@@ -37,7 +39,7 @@ export function HomePage() {
     busy,
     plugins,
     currency,
-    cnyRate,
+    exchangeRate,
     overviewRangePreset,
     overviewChartMode,
     overviewChartType,
@@ -752,7 +754,7 @@ export function HomePage() {
       content: <HomeMetrics
         data={effectiveOverviewError ? null : metrics}
         currency={currency}
-        cnyRate={cnyRate}
+        exchangeRate={exchangeRate}
         loading={rangeBusy && !hasMatchingOverview}
         error={effectiveOverviewError}
       />,
@@ -766,7 +768,7 @@ export function HomePage() {
         mode={overviewChartMode}
         chartType={overviewChartType}
         currency={currency}
-        cnyRate={cnyRate}
+        exchangeRate={exchangeRate}
         loading={!hasMatchingOverview && !effectiveOverviewError}
         error={effectiveOverviewError}
       />,
@@ -815,7 +817,7 @@ export function HomePage() {
         plugins={plugins}
         overallTokenUsage={filteredOverview?.metrics.token_usage ?? 0}
         currency={currency}
-        cnyRate={cnyRate}
+        exchangeRate={exchangeRate}
         overviewLoading={!hasMatchingOverview && !effectiveOverviewError}
         overviewError={effectiveOverviewError}
       />,
@@ -843,17 +845,8 @@ export function HomePage() {
         onChange={changeSuppliers}
       />
       <span className={styles.divider} aria-hidden="true" />
-      <div className={styles.segmentGroup} role="group" aria-label={t("显示币种")}>
-        <button
-          type="button"
-          aria-pressed={currency === "USD"}
-          onClick={() => appStore.selectCurrency("USD")}
-        >USD</button>
-        <button
-          type="button"
-          aria-pressed={currency === "CNY"}
-          onClick={() => appStore.selectCurrency("CNY")}
-        >CNY</button>
+      <div className={styles.currencyControl} title={formatConversionNote(currency, exchangeRate) ?? undefined}>
+        <CurrencySelect value={currency} onChange={appStore.selectCurrency} />
       </div>
       <div className={styles.segmentGroup} role="group" aria-label={t("趋势统计维度")}>
         <button

@@ -32,14 +32,14 @@ const {
 
 test("DEFAULT_CNY_RATE is 6.8 and resolveExchangeRate falls back to it only when unconfigured", () => {
   assert.equal(DEFAULT_CNY_RATE, "6.8");
-  assert.deepEqual({ ...resolveExchangeRate(null) }, { rate: "6.8", isDefault: true });
-  assert.deepEqual({ ...resolveExchangeRate(undefined) }, { rate: "6.8", isDefault: true });
-  assert.deepEqual({ ...resolveExchangeRate("") }, { rate: "6.8", isDefault: true });
-  assert.deepEqual({ ...resolveExchangeRate("0") }, { rate: "6.8", isDefault: true });
-  assert.deepEqual({ ...resolveExchangeRate("-7.2") }, { rate: "6.8", isDefault: true });
+  assert.deepEqual({ ...resolveExchangeRate("CNY", null) }, { rate: "6.8", isDefault: true });
+  assert.deepEqual({ ...resolveExchangeRate("CNY", undefined) }, { rate: "6.8", isDefault: true });
+  assert.deepEqual({ ...resolveExchangeRate("CNY", "") }, { rate: "6.8", isDefault: true });
+  assert.deepEqual({ ...resolveExchangeRate("CNY", "0") }, { rate: "6.8", isDefault: true });
+  assert.deepEqual({ ...resolveExchangeRate("CNY", "-7.2") }, { rate: "6.8", isDefault: true });
 
-  assert.deepEqual({ ...resolveExchangeRate("07.20") }, { rate: "7.2", isDefault: false });
-  assert.deepEqual({ ...resolveExchangeRate("6.8") }, { rate: "6.8", isDefault: false });
+  assert.deepEqual({ ...resolveExchangeRate("CNY", "07.20") }, { rate: "7.2", isDefault: false });
+  assert.deepEqual({ ...resolveExchangeRate("CNY", "6.8") }, { rate: "6.8", isDefault: false });
   assert.equal(normalizeExchangeRate("06.80"), "6.8");
 });
 
@@ -79,6 +79,25 @@ test("formatConversionNote distinguishes default rate vs configured rate", () =>
   assert.equal(formatConversionNote("CNY", null), "按默认汇率折算（1 USD = 6.8 CNY）");
   assert.equal(formatConversionNote("CNY", "7.20"), "按设置汇率折算（1 USD = 7.2 CNY）");
   assert.equal(formatConversionNote("CNY", "6.8"), "按设置汇率折算（1 USD = 6.8 CNY）");
+});
+
+test("additional currencies use their own symbol and fall back to USD before configuration", () =>
+{
+  for (const [currency, rate, symbol, amount] of [
+    ["EUR", "0.92", "€", "1.84"],
+    ["JPY", "150", "JP¥", "300.00"],
+    ["TWD", "32", "NT$", "64.00"],
+    ["TRY", "40", "₺", "80.00"],
+    ["KRW", "1400", "₩", "2,800.00"],
+  ])
+  {
+    assert.equal(formatDisplayCost("2", currency, rate), `${symbol}${amount}`);
+    assert.equal(formatDisplayCostExact("2", currency, rate), `${symbol}${amount}`);
+    assert.equal(formatAxisCost(Number(rate) * 2, currency), `${symbol}${amount}`);
+    assert.equal(formatDisplayCost("2", currency, null), "$2.00");
+    assert.equal(convertUsdToDisplayNumber("2", currency, null), 2);
+  }
+  assert.equal(formatConversionNote("EUR", null), "尚未配置 EUR 汇率，金额以美元显示。");
 });
 
 test("formatHitRatePercent converts basis points with fallback", () => {

@@ -123,8 +123,8 @@ function formatCacheDetailField(tokens: number | null, call: LlmCall): string | 
 }
 
 function CostBreakdownSection({ call }: { call: LlmCall }) {
-  const { currency, cnyRate } = useAppStore();
-  const conversionNote = formatConversionNote(currency, cnyRate);
+  const { currency, exchangeRate } = useAppStore();
+  const conversionNote = formatConversionNote(currency, exchangeRate);
   const status = costStatusBadge(call);
   const reportedUsage = hasReportedUsage(call);
   const priced = call.call_kind !== "cursor_official" && call.cost_status === "priced";
@@ -243,7 +243,7 @@ function CostBreakdownSection({ call }: { call: LlmCall }) {
             ? `${t("原美元金额：{cost}", { cost: formatUsdExact(call.total_cost) })}\n${conversionNote}`
             : undefined}
         >
-          {priced && call.total_cost != null ? formatDisplayCostExact(call.total_cost, currency, cnyRate) : status.label}
+          {priced && call.total_cost != null ? formatDisplayCostExact(call.total_cost, currency, exchangeRate) : status.label}
         </span>
       </div>
       <div className={styles.costGrid}>
@@ -254,7 +254,7 @@ function CostBreakdownSection({ call }: { call: LlmCall }) {
               ? `${t("原美元金额：{cost}", { cost: formatUsdExact(item.cost) })}\n${conversionNote}`
               : undefined}
           >
-            {priced && item.cost != null ? formatDisplayCostExact(item.cost, currency, cnyRate) : "—"}
+            {priced && item.cost != null ? formatDisplayCostExact(item.cost, currency, exchangeRate) : "—"}
           </strong>
           <small title={item.tokenTitle}>
             {item.tokenText} × {formatRatePerMillion(item.rate)}

@@ -210,12 +210,16 @@ pub enum InterfaceTheme {
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum DisplayCurrency {
     #[default]
-    #[serde(rename = "USD")]
     Usd,
-    #[serde(rename = "CNY")]
     Cny,
+    Eur,
+    Jpy,
+    Twd,
+    Try,
+    Krw,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
@@ -280,6 +284,16 @@ pub struct InterfaceSettings {
     #[serde(default)]
     pub cny_rate: Option<String>,
     #[serde(default)]
+    pub eur_rate: Option<String>,
+    #[serde(default)]
+    pub jpy_rate: Option<String>,
+    #[serde(default)]
+    pub twd_rate: Option<String>,
+    #[serde(default)]
+    pub try_rate: Option<String>,
+    #[serde(default)]
+    pub krw_rate: Option<String>,
+    #[serde(default)]
     pub overview_range_preset: OverviewRangePreset,
     #[serde(default)]
     pub overview_chart_mode: OverviewChartMode,
@@ -301,6 +315,11 @@ impl Default for InterfaceSettings {
             theme: InterfaceTheme::default(),
             currency: DisplayCurrency::default(),
             cny_rate: None,
+            eur_rate: None,
+            jpy_rate: None,
+            twd_rate: None,
+            try_rate: None,
+            krw_rate: None,
             overview_range_preset: OverviewRangePreset::default(),
             overview_chart_mode: OverviewChartMode::default(),
             overview_chart_type: OverviewChartType::default(),
@@ -323,6 +342,16 @@ pub struct InterfaceSettingsPatch {
     pub currency: Option<DisplayCurrency>,
     #[serde(default, deserialize_with = "deserialize_optional_nullable_string")]
     pub cny_rate: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable_string")]
+    pub eur_rate: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable_string")]
+    pub jpy_rate: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable_string")]
+    pub twd_rate: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable_string")]
+    pub try_rate: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable_string")]
+    pub krw_rate: Option<Option<String>>,
     #[serde(default)]
     pub overview_range_preset: Option<OverviewRangePreset>,
     #[serde(default)]
@@ -350,17 +379,17 @@ where
     Option::<String>::deserialize(deserializer).map(Some)
 }
 
-fn normalize_cny_rate(raw: &str) -> Result<Option<String>> {
+fn normalize_exchange_rate(raw: &str) -> Result<Option<String>> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return Ok(None);
     }
     if trimmed.len() > 64 {
-        return Err(crate::Error::Config("CNY exchange rate is too long".into()));
+        return Err(crate::Error::Config("exchange rate is too long".into()));
     }
     if trimmed.starts_with('-') {
         return Err(crate::Error::Config(
-            "CNY exchange rate must be greater than 0".into(),
+            "exchange rate must be greater than 0".into(),
         ));
     }
     let unsigned = trimmed.strip_prefix('+').unwrap_or(trimmed);
@@ -373,7 +402,7 @@ fn normalize_cny_rate(raw: &str) -> Result<Option<String>> {
         || !raw_frac.bytes().all(|byte| byte.is_ascii_digit())
     {
         return Err(crate::Error::Config(format!(
-            "invalid CNY exchange rate: {raw}"
+            "invalid exchange rate: {raw}"
         )));
     }
     let trimmed_int = raw_int.trim_start_matches('0');
@@ -385,7 +414,7 @@ fn normalize_cny_rate(raw: &str) -> Result<Option<String>> {
     let frac_part = raw_frac.trim_end_matches('0');
     if int_part == "0" && frac_part.is_empty() {
         return Err(crate::Error::Config(
-            "CNY exchange rate must be greater than 0".into(),
+            "exchange rate must be greater than 0".into(),
         ));
     }
     Ok(Some(if frac_part.is_empty() {
@@ -396,10 +425,10 @@ fn normalize_cny_rate(raw: &str) -> Result<Option<String>> {
 }
 
 fn normalize_loaded_interface_settings(mut settings: InterfaceSettings) -> InterfaceSettings {
-    settings.cny_rate = settings
-        .cny_rate
-        .as_deref()
-        .and_then(|rate| normalize_cny_rate(rate).ok().flatten());
+    for rate in [&mut settings.cny_rate, &mut settings.eur_rate, &mut settings.jpy_rate, &mut settings.twd_rate, &mut settings.try_rate, &mut settings.krw_rate]
+    {
+        *rate = rate.as_deref().and_then(|value| normalize_exchange_rate(value).ok().flatten());
+    }
     if settings.home_refresh_interval_seconds == 0 {
         settings.home_refresh_interval_seconds = DEFAULT_HOME_REFRESH_INTERVAL_SECONDS;
     }
@@ -749,11 +778,16 @@ impl Store {
             }
             settings.home_refresh_interval_seconds = interval;
         }
-        if let Some(rate_patch) = patch.cny_rate {
-            settings.cny_rate = match rate_patch {
-                None => None,
-                Some(raw) => normalize_cny_rate(&raw)?,
-            };
+        for (rate, change) in [(&mut settings.cny_rate, patch.cny_rate), (&mut settings.eur_rate, patch.eur_rate), (&mut settings.jpy_rate, patch.jpy_rate), (&mut settings.twd_rate, patch.twd_rate), (&mut settings.try_rate, patch.try_rate), (&mut settings.krw_rate, patch.krw_rate)]
+        {
+            if let Some(change) = change
+            {
+                *rate = match change
+                {
+                    None => None,
+                    Some(raw) => normalize_exchange_rate(&raw)?,
+                };
+            }
         }
         if let Some(currency) = patch.currency {
             settings.currency = currency;
@@ -973,6 +1007,11 @@ mod tests {
                 theme: InterfaceTheme::DefaultDark,
                 currency: DisplayCurrency::Usd,
                 cny_rate: None,
+                eur_rate: None,
+                jpy_rate: None,
+                twd_rate: None,
+                try_rate: None,
+                krw_rate: None,
                 overview_range_preset: OverviewRangePreset::Month,
                 overview_chart_mode: OverviewChartMode::Tokens,
                 overview_chart_type: OverviewChartType::Bar,

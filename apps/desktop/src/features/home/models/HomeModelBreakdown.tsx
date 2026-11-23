@@ -28,14 +28,14 @@ export function HomeModelBreakdown({
   models,
   overallTokenUsage,
   currency,
-  cnyRate,
+  exchangeRate,
   loading = false,
   error = null,
 }: {
   models: OverviewModelSummary[];
   overallTokenUsage: number;
   currency: DisplayCurrency;
-  cnyRate: string | null;
+  exchangeRate: string | null;
   loading?: boolean;
   error?: string | null;
 }) {
@@ -197,15 +197,15 @@ export function HomeModelBreakdown({
               <td className={styles.monoNum} title={formatInteger(model.output_tokens)}>
                 {formatCompactInteger(model.output_tokens)}
               </td>
-              <td className={styles.monoNum} title={breakdownCostTitle(model, currency, cnyRate)}>
-                {renderBreakdownCostCell(model, currency, cnyRate)}
+              <td className={styles.monoNum} title={breakdownCostTitle(model, currency, exchangeRate)}>
+                {renderBreakdownCostCell(model, currency, exchangeRate)}
               </td>
               <td
                 className={styles.monoNum}
-                title={averageCostTitle(model.average_priced_cost, currency, cnyRate)}
+                title={averageCostTitle(model.average_priced_cost, currency, exchangeRate)}
               >
                 {model.average_priced_cost
-                  ? formatDisplayCost(model.average_priced_cost, currency, cnyRate)
+                  ? formatDisplayCost(model.average_priced_cost, currency, exchangeRate)
                   : "—"}
               </td>
             </tr>;

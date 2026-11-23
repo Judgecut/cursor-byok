@@ -1,7 +1,7 @@
 import type { AdRuntime } from "../shell/ads/types";
 import type { CommitPromptLocale, Locale, LocalePreference } from "../i18n/runtime";
 import type { ThemeId } from "./theme/theme";
-import type { DisplayCurrency } from "./utils/costFormat";
+import type { DisplayCurrency, ExchangeRates } from "./utils/costFormat";
 
 export type ModelType = "openai" | "anthropic";
 
@@ -222,12 +222,11 @@ export type OverviewChartType = "bar" | "line";
 export type OverviewCalendarWindow = "year" | "month" | "week";
 export type OverviewCalendarChartType = "heatmap" | "bar" | "line";
 
-export interface InterfaceSettings {
+export interface InterfaceSettings extends ExchangeRates {
   sidebar_collapsed: boolean;
   locale: LocalePreference;
   theme: ThemeId;
   currency: DisplayCurrency;
-  cny_rate: string | null;
   overview_range_preset: OverviewRangePresetOption;
   overview_chart_mode: OverviewChartMode;
   overview_chart_type: OverviewChartType;
@@ -236,12 +235,11 @@ export interface InterfaceSettings {
   home_refresh_interval_seconds: number;
 }
 
-export interface InterfaceSettingsPatch {
+export interface InterfaceSettingsPatch extends Partial<ExchangeRates> {
   sidebar_collapsed?: boolean;
   locale?: LocalePreference;
   theme?: ThemeId;
   currency?: DisplayCurrency;
-  cny_rate?: string | null;
   overview_range_preset?: OverviewRangePresetOption;
   overview_chart_mode?: OverviewChartMode;
   overview_chart_type?: OverviewChartType;

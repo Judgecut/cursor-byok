@@ -239,9 +239,9 @@ export function breakdownCacheTitle(row: BreakdownRowBase): string {
 export function renderBreakdownCostCell(
   row: BreakdownRowBase,
   currency: DisplayCurrency,
-  cnyRate: string | null,
+  exchangeRate: string | null,
 ) {
-  const main = formatDisplayCost(row.total_cost, currency, cnyRate);
+  const main = formatDisplayCost(row.total_cost, currency, exchangeRate);
   if (row.assumed_cache_calls <= 0) return main;
   return <>
     <div>{main}</div>
@@ -256,19 +256,19 @@ export function renderBreakdownCostCell(
 export function breakdownCostTitle(
   row: BreakdownRowBase,
   currency: DisplayCurrency,
-  cnyRate: string | null,
+  exchangeRate: string | null,
 ): string {
   const lines = [
-    t("合计：{cost}", { cost: formatDisplayCostExact(row.total_cost, currency, cnyRate) }),
-    t("输入：{cost}", { cost: formatDisplayCostExact(row.input_cost, currency, cnyRate) }),
-    t("输出：{cost}", { cost: formatDisplayCostExact(row.output_cost, currency, cnyRate) }),
-    t("缓存读取：{cost}", { cost: formatDisplayCostExact(row.cache_read_cost, currency, cnyRate) }),
-    t("缓存写入：{cost}", { cost: formatDisplayCostExact(row.cache_write_cost, currency, cnyRate) }),
+    t("合计：{cost}", { cost: formatDisplayCostExact(row.total_cost, currency, exchangeRate) }),
+    t("输入：{cost}", { cost: formatDisplayCostExact(row.input_cost, currency, exchangeRate) }),
+    t("输出：{cost}", { cost: formatDisplayCostExact(row.output_cost, currency, exchangeRate) }),
+    t("缓存读取：{cost}", { cost: formatDisplayCostExact(row.cache_read_cost, currency, exchangeRate) }),
+    t("缓存写入：{cost}", { cost: formatDisplayCostExact(row.cache_write_cost, currency, exchangeRate) }),
   ];
   if (row.assumed_cache_calls > 0) {
     lines.push(t("其中 {count} 次未上报缓存明细，按默认命中率估算费用 {cost}（缓存读取约 {tokens} Token）", {
       count: formatInteger(row.assumed_cache_calls),
-      cost: formatDisplayCostExact(row.assumed_cache_cost, currency, cnyRate),
+      cost: formatDisplayCostExact(row.assumed_cache_cost, currency, exchangeRate),
       tokens: formatInteger(row.estimated_cache_read_tokens),
     }));
   } else if (row.unreported_cache_calls > 0) {
@@ -276,7 +276,7 @@ export function breakdownCostTitle(
       count: formatInteger(row.unreported_cache_calls),
     }));
   }
-  const note = formatConversionNote(currency, cnyRate);
+  const note = formatConversionNote(currency, exchangeRate);
   if (note) {
     lines.push(
       t("原美元金额：{cost}", { cost: formatUsdExact(row.total_cost) }),
@@ -289,11 +289,11 @@ export function breakdownCostTitle(
 export function averageCostTitle(
   usdCost: string | null,
   currency: DisplayCurrency,
-  cnyRate: string | null,
+  exchangeRate: string | null,
 ): string | undefined {
   if (!usdCost) return undefined;
-  const note = formatConversionNote(currency, cnyRate);
-  const exact = formatDisplayCostExact(usdCost, currency, cnyRate);
+  const note = formatConversionNote(currency, exchangeRate);
+  const exact = formatDisplayCostExact(usdCost, currency, exchangeRate);
   return note
     ? `${exact}\n${t("原美元金额：{cost}", { cost: formatUsdExact(usdCost) })}\n${note}`
     : exact;

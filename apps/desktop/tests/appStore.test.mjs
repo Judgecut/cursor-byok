@@ -11,6 +11,11 @@ const defaults = {
   theme: "default-dark",
   currency: "USD",
   cny_rate: null,
+  eur_rate: null,
+  jpy_rate: null,
+  twd_rate: null,
+  try_rate: null,
+  krw_rate: null,
   overview_range_preset: "month",
   overview_chart_mode: "tokens",
   overview_chart_type: "bar",
@@ -82,13 +87,7 @@ async function setup()
       },
     },
     "../utils/costFormat": {
-      normalizeExchangeRate: (value) =>
-      {
-        const trimmed = typeof value === "string" ? value.trim() : "";
-        if (!trimmed || !/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(trimmed)) return null;
-        const parsed = Number(trimmed);
-        return Number.isFinite(parsed) && parsed > 0 ? String(parsed) : null;
-      },
+      exchangeRateKey: (currency) => `${currency.toLowerCase()}_rate`,
     },
   };
   const context = createContext({ Error, t: (source) => source });
@@ -248,39 +247,38 @@ test("refresh applies external changes after saves have completed", async () =>
   assert.equal(app.locale(), "pt-BR");
 });
 
-test("selectCurrency allows CNY before a custom rate is configured and clearCnyRate keeps CNY", async () =>
+test("switches currencies using their own persisted rates and rolls back failed writes", async () =>
 {
   const app = await setup();
   app.store.selectCurrency("CNY");
   await setImmediate();
   assert.equal(app.store.getSnapshot().currency, "CNY");
-  assert.equal(app.store.getSnapshot().cnyRate, null);
+  assert.equal(app.store.getSnapshot().exchangeRate, null);
   assert.deepEqual({ ...app.writes[0].patch }, { currency: "CNY" });
-  app.writes[0].resolve({ ...defaults, currency: "CNY", cny_rate: null });
+  app.writes[0].resolve({ ...app.saved(), currency: "CNY" });
   await setImmediate();
-  assert.equal(app.store.getSnapshot().currency, "CNY");
-  assert.equal(app.store.getSnapshot().cnyRate, null);
 
-  assert.equal(await app.store.saveCnyRate("0"), null);
-  assert.equal(await app.store.saveCnyRate("-7.2"), null);
-  assert.equal(app.writes.length, 1);
-
-  const savePromise = app.store.saveCnyRate("07.20");
+  const saveCny = app.store.saveExchangeRate("CNY", "7.2");
   await setImmediate();
   assert.deepEqual({ ...app.writes[1].patch }, { cny_rate: "7.2" });
   app.writes[1].resolve({ ...app.saved(), cny_rate: "7.2" });
-  assert.equal(await savePromise, "7.2");
-  assert.equal(app.store.getSnapshot().cnyRate, "7.2");
+  await saveCny;
+  assert.equal(app.store.getSnapshot().exchangeRate, "7.2");
 
-  const clearPromise = app.store.clearCnyRate();
+  const saveJpy = app.store.saveExchangeRate("JPY", "150");
   await setImmediate();
-  assert.deepEqual({ ...app.writes[2].patch }, { cny_rate: null });
-  app.writes[2].resolve({ ...app.saved(), cny_rate: null });
-  const cleared = await clearPromise;
-  assert.equal(cleared?.currency, "CNY");
-  assert.equal(cleared?.cny_rate, null);
+  assert.deepEqual({ ...app.writes[2].patch }, { jpy_rate: "150" });
+  app.writes[2].resolve({ ...app.saved(), jpy_rate: "150" });
+  await saveJpy;
+  assert.equal(app.store.getSnapshot().exchangeRate, "7.2");
+
+  app.store.selectCurrency("JPY");
+  assert.equal(app.store.getSnapshot().exchangeRate, "150");
+  await setImmediate();
+  app.writes[3].reject(new Error("save failed"));
+  await setImmediate();
   assert.equal(app.store.getSnapshot().currency, "CNY");
-  assert.equal(app.store.getSnapshot().cnyRate, null);
+  assert.equal(app.store.getSnapshot().exchangeRate, "7.2");
 });
 
 test("reorderProviders optimistically regroups models, fetches sequentially, and rolls back on failure", async () => {

@@ -57,6 +57,53 @@ test("saves settings, reads them after reload, and applies translated modules", 
   await expect(page.getByRole("textbox", { name: "主页自动刷新间隔（秒）", exact: true })).toHaveValue("45");
 });
 
+test("stores each display currency rate independently and shares selection with the overview", async ({ page, management }) =>
+{
+  await page.goto("#/settings");
+  const currency = page.getByRole("button", { name: "Display currency", exact: true });
+  const choose = async (code: string) =>
+  {
+    await currency.click();
+    await page.getByRole("option", { name: new RegExp(`^${code} ·`) }).click();
+  };
+
+  await currency.click();
+  for (const code of ["USD", "CNY", "EUR", "JPY", "TWD", "TRY", "KRW"])
+  {
+    await expect(page.getByRole("option", { name: new RegExp(`^${code} ·`) })).toBeAttached();
+  }
+  await currency.press("Escape");
+
+  await choose("EUR");
+  const euroRate = page.getByRole("textbox", { name: "EUR exchange rate" });
+  await euroRate.fill("0");
+  await euroRate.press("Enter");
+  await expect(euroRate).toHaveAttribute("aria-invalid", "true");
+  await euroRate.fill("0.9200");
+  await euroRate.press("Enter");
+  await expect(euroRate).toHaveValue("0.92");
+  await expect.poll(() => management.settings.eur_rate).toBe("0.92");
+
+  await choose("JPY");
+  const yenRate = page.getByRole("textbox", { name: "JPY exchange rate" });
+  await expect(yenRate).toHaveValue("");
+  await yenRate.fill("150");
+  await yenRate.press("Enter");
+  await expect.poll(() => management.settings.jpy_rate).toBe("150");
+  await page.reload();
+  await expect(yenRate).toHaveValue("150");
+
+  await page.goto("#/");
+  await expect(currency).toHaveText(/JPY/);
+  await choose("EUR");
+  await expect.poll(() => management.settings.currency).toBe("EUR");
+  await page.goto("#/settings");
+  await expect(euroRate).toHaveValue("0.92");
+  await page.getByRole("button", { name: "Clear exchange rate" }).click();
+  await expect(euroRate).toHaveValue("");
+  expect(management.settings.jpy_rate).toBe("150");
+});
+
 test("collapses the sidebar at minimum window size and remembers the choice with save rollback", async ({ page, management }) =>
 {
   await page.setViewportSize({ width: 820, height: 558 });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { stripTypeScriptTypes } from "node:module";
 import { test } from "node:test";
-import { createContext, SourceTextModule, SyntheticModule } from "node:vm";
+import { createContext, SourceTextModule } from "node:vm";
 
 function translate(source, params) {
   if (!params) return source;
@@ -86,11 +86,10 @@ test("demo api evaluates and pools generation speed with hidden reasoning deduct
     window: {},
   });
   const demoModule = new SourceTextModule(appendedSource, { context: demoContext });
-  await demoModule.link((specifier) => {
+  await demoModule.link(async (specifier) => {
     assert.equal(specifier, "../shared/utils/costFormat");
-    return new SyntheticModule(["normalizeExchangeRate"], function () {
-      this.setExport("normalizeExchangeRate", () => null);
-    }, { context: demoContext });
+    const source = stripTypeScriptTypes(await readFile(new URL("../src/shared/utils/costFormat.ts", import.meta.url), "utf8"));
+    return new SourceTextModule(source, { context: demoContext });
   });
   await demoModule.evaluate();
   const { __evaluatePerformance: evaluatePerformance, __mockAggregate: mockAggregate } = demoModule.namespace;

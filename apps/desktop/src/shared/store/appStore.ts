@@ -30,7 +30,7 @@ import {
   type SupplierPricingView,
 } from "../api";
 import { applyTheme, type ThemeId } from "../theme/theme";
-import { normalizeExchangeRate, type DisplayCurrency } from "../utils/costFormat";
+import { exchangeRateKey, type DisplayCurrency, type ForeignCurrency } from "../utils/costFormat";
 import type { CustomRange } from "../utils/timeRange";
 
 export type {
@@ -51,6 +51,11 @@ const DEFAULT_INTERFACE_SETTINGS: InterfaceSettings = {
   theme: "default-dark",
   currency: "USD",
   cny_rate: null,
+  eur_rate: null,
+  jpy_rate: null,
+  twd_rate: null,
+  try_rate: null,
+  krw_rate: null,
   overview_range_preset: "month",
   overview_chart_mode: "tokens",
   overview_chart_type: "bar",
@@ -92,7 +97,7 @@ export type AppSnapshot = {
   error: string | null;
   theme: ThemeId;
   currency: DisplayCurrency;
-  cnyRate: string | null;
+  exchangeRate: string | null;
   overviewRangePreset: OverviewRangePresetOption;
   overviewChartMode: OverviewChartMode;
   overviewChartType: OverviewChartType;
@@ -171,7 +176,7 @@ let snapshot: AppSnapshot = {
   error: null,
   theme: DEFAULT_INTERFACE_SETTINGS.theme,
   currency: DEFAULT_INTERFACE_SETTINGS.currency,
-  cnyRate: DEFAULT_INTERFACE_SETTINGS.cny_rate,
+  exchangeRate: null,
   overviewRangePreset: DEFAULT_INTERFACE_SETTINGS.overview_range_preset,
   overviewChartMode: DEFAULT_INTERFACE_SETTINGS.overview_chart_mode,
   overviewChartType: DEFAULT_INTERFACE_SETTINGS.overview_chart_type,
@@ -206,7 +211,7 @@ function applyInterfaceSettings(
     sidebarCollapsed: next.sidebar_collapsed,
     theme: next.theme,
     currency: next.currency,
-    cnyRate: next.cny_rate,
+    exchangeRate: next.currency === "USD" ? null : next[exchangeRateKey(next.currency)],
     overviewRangePreset: next.overview_range_preset,
     overviewChartMode: next.overview_chart_mode,
     overviewChartType: next.overview_chart_type,
@@ -247,8 +252,11 @@ async function persistInterfacePatch(
     if (patch.locale !== undefined && getLocalePreference() !== patch.locale) {
       applyLocalePreference(patch.locale);
     }
-    if (patch.currency !== undefined) optimisticPatch.currency = patch.currency;
-    if (patch.cny_rate !== undefined) optimisticPatch.cnyRate = patch.cny_rate;
+    if (patch.currency !== undefined)
+    {
+      optimisticPatch.currency = patch.currency;
+      optimisticPatch.exchangeRate = patch.currency === "USD" ? null : persistedInterface[exchangeRateKey(patch.currency)];
+    }
     if (patch.overview_range_preset !== undefined) {
       optimisticPatch.overviewRangePreset = patch.overview_range_preset;
     }
@@ -719,16 +727,9 @@ export const appStore = {
     }
     void persistInterfacePatch({ currency }, { optimistic: true });
   },
-  async saveCnyRate(rawRate: string): Promise<string | null> {
-    const normalized = normalizeExchangeRate(rawRate);
-    if (!normalized) {
-      return null;
-    }
-    const saved = await persistInterfacePatch({ cny_rate: normalized }, { optimistic: false });
-    return saved?.cny_rate ?? null;
-  },
-  async clearCnyRate(): Promise<InterfaceSettings | null> {
-    return persistInterfacePatch({ cny_rate: null }, { optimistic: false });
+  saveExchangeRate(currency: ForeignCurrency, rate: string | null)
+  {
+    return persistInterfacePatch({ [exchangeRateKey(currency)]: rate }, { optimistic: false });
   },
   selectOverviewRangePreset(overviewRangePreset: OverviewRangePresetOption) {
     if (

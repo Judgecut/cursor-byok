@@ -79,13 +79,13 @@ function InfoTooltip({ content }: { content: string }) {
 export function HomeMetrics({
   data,
   currency,
-  cnyRate,
+  exchangeRate,
   loading = false,
   error = null,
 }: {
   data: HomeMetricsData | null;
   currency: DisplayCurrency;
-  cnyRate: string | null;
+  exchangeRate: string | null;
   loading?: boolean;
   error?: string | null;
 }) {
@@ -128,7 +128,7 @@ export function HomeMetrics({
     && data.cacheWriteTokens === 0;
   const successfulCallRate = calculateRate(data.successfulCalls, data.llmCalls);
   const cacheCost = addUsdStrings(data.cacheReadCost, data.cacheWriteCost);
-  const conversionNote = formatConversionNote(currency, cnyRate);
+  const conversionNote = formatConversionNote(currency, exchangeRate);
 
   const cacheHitPrimary = allUsageUnreported ? t("未上报") : formatRate(defaultCacheHitRate);
   const cacheHitSecondary = allUsageUnreported
@@ -216,22 +216,22 @@ export function HomeMetrics({
   const costTooltipLines = [
     t("基于每条调用冻结的价格快照累计；未定价或用量不完整的调用不计入总金额。"),
     "",
-    t("普通输入：{cost}", { cost: formatDisplayCostExact(data.inputCost, currency, cnyRate) }),
-    t("模型输出：{cost}", { cost: formatDisplayCostExact(data.outputCost, currency, cnyRate) }),
-    t("缓存读取：{cost}", { cost: formatDisplayCostExact(data.cacheReadCost, currency, cnyRate) }),
-    t("缓存写入：{cost}", { cost: formatDisplayCostExact(data.cacheWriteCost, currency, cnyRate) }),
+    t("普通输入：{cost}", { cost: formatDisplayCostExact(data.inputCost, currency, exchangeRate) }),
+    t("模型输出：{cost}", { cost: formatDisplayCostExact(data.outputCost, currency, exchangeRate) }),
+    t("缓存读取：{cost}", { cost: formatDisplayCostExact(data.cacheReadCost, currency, exchangeRate) }),
+    t("缓存写入：{cost}", { cost: formatDisplayCostExact(data.cacheWriteCost, currency, exchangeRate) }),
     "",
     t("已计费调用：{count}", { count: formatMetricValue(data.pricedCalls) }),
   ];
   if (data.assumedCacheCalls > 0) {
     costTooltipLines.push(t("其中 {count} 次未上报缓存明细，按默认缓存命中率估算费用 {cost}（估算缓存读取约 {tokens} Token）", {
       count: formatMetricValue(data.assumedCacheCalls),
-      cost: formatDisplayCostExact(data.assumedCacheCost, currency, cnyRate),
+      cost: formatDisplayCostExact(data.assumedCacheCost, currency, exchangeRate),
       tokens: formatMetricValue(data.estimatedCacheReadTokens),
     }));
   }
   if (data.averagePricedCost) {
-    costTooltipLines.push(t("单次平均费用：{cost}", { cost: formatDisplayCostExact(data.averagePricedCost, currency, cnyRate) }));
+    costTooltipLines.push(t("单次平均费用：{cost}", { cost: formatDisplayCostExact(data.averagePricedCost, currency, exchangeRate) }));
   }
   if (data.unpricedCalls > 0) {
     costTooltipLines.push(t("未定价调用：{count}（请前往 设置 -> 模型定价 配置单价）", { count: formatMetricValue(data.unpricedCalls) }));
@@ -239,7 +239,7 @@ export function HomeMetrics({
   if (data.incompleteUsageCalls > 0) {
     costTooltipLines.push(t("用量不完整调用：{count}", { count: formatMetricValue(data.incompleteUsageCalls) }));
   }
-  costTooltipLines.push("", t("合计：{cost}", { cost: formatDisplayCostExact(data.totalCost, currency, cnyRate) }));
+  costTooltipLines.push("", t("合计：{cost}", { cost: formatDisplayCostExact(data.totalCost, currency, exchangeRate) }));
   if (conversionNote) {
     costTooltipLines.push(
       t("原美元金额：{cost}", { cost: formatUsdExact(data.totalCost) }),
@@ -254,12 +254,12 @@ export function HomeMetrics({
       : data.assumedCacheCalls > 0
         ? t("含 {count} 次按缓存估算（{cost}）", {
             count: formatCompactInteger(data.assumedCacheCalls),
-            cost: formatDisplayCost(data.assumedCacheCost, currency, cnyRate),
+            cost: formatDisplayCost(data.assumedCacheCost, currency, exchangeRate),
           })
-        : t("缓存读写 {cost}", { cost: formatDisplayCost(cacheCost, currency, cnyRate) });
+        : t("缓存读写 {cost}", { cost: formatDisplayCost(cacheCost, currency, exchangeRate) });
 
   const costValueTitle = conversionNote
-    ? `${formatDisplayCostExact(data.totalCost, currency, cnyRate)}\n${t("原美元金额：{cost}", { cost: formatUsdExact(data.totalCost) })}\n${conversionNote}`
+    ? `${formatDisplayCostExact(data.totalCost, currency, exchangeRate)}\n${t("原美元金额：{cost}", { cost: formatUsdExact(data.totalCost) })}\n${conversionNote}`
     : formatUsdExact(data.totalCost);
 
   return <section className={styles.root} aria-label={t("调用统计")}>
@@ -304,7 +304,7 @@ export function HomeMetrics({
     <article className={styles.metric}>
       <div className={styles.label}>{t("估算费用")}<InfoTooltip content={costTooltipLines.join("\n")} /></div>
       <div className={styles.body}>
-        <div className={styles.value} title={costValueTitle}>{formatDisplayCost(data.totalCost, currency, cnyRate)}</div>
+        <div className={styles.value} title={costValueTitle}>{formatDisplayCost(data.totalCost, currency, exchangeRate)}</div>
         <div className={styles.secondary} title={costSecondary}>{costSecondary}</div>
       </div>
     </article>

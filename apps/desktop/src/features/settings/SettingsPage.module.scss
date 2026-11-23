@@ -198,27 +198,8 @@
 }
 
 .currencyActions {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-
-  button {
-    min-height: 30px;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0 11px;
-    color: var(--vscode-foreground);
-    background: var(--vscode-input-background);
-    border: 1px solid var(--vscode-input-border);
-    border-radius: 5px;
-    cursor: pointer;
-
-    &:hover {
-      background: var(--vscode-list-hoverBackground);
-    }
-  }
+  width: 180px;
+  flex: 0 0 auto;
 }
 
 .currencyRateBlock {
@@ -327,8 +308,7 @@
   }
 }
 
-.themeActions .selected,
-.currencyActions .selected {
+.themeActions .selected {
   border-color: var(--vscode-focusBorder);
   background: color-mix(in srgb, var(--vscode-focusBorder) 14%, var(--vscode-input-background));
 }

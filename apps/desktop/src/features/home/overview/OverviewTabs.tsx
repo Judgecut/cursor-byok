@@ -33,7 +33,7 @@ export function OverviewTabs({
   plugins,
   overallTokenUsage,
   currency,
-  cnyRate,
+  exchangeRate,
   overviewLoading,
   overviewError,
 }: {
@@ -55,7 +55,7 @@ export function OverviewTabs({
   plugins: PluginDescriptor[];
   overallTokenUsage: number;
   currency: DisplayCurrency;
-  cnyRate: string | null;
+  exchangeRate: string | null;
   overviewLoading: boolean;
   overviewError: string | null;
 }) {
@@ -85,7 +85,7 @@ export function OverviewTabs({
         plugins={plugins}
         overallTokenUsage={overallTokenUsage}
         currency={currency}
-        cnyRate={cnyRate}
+        exchangeRate={exchangeRate}
         loading={overviewLoading}
         error={overviewError}
       />,
@@ -98,7 +98,7 @@ export function OverviewTabs({
         models={models}
         overallTokenUsage={overallTokenUsage}
         currency={currency}
-        cnyRate={cnyRate}
+        exchangeRate={exchangeRate}
         loading={overviewLoading}
         error={overviewError}
       />,

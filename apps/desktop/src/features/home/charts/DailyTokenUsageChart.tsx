@@ -3,11 +3,13 @@ import { useMemo, useState } from "react";
 import type { TokenUsageGranularity } from "../../../shared/api";
 import type { OverviewChartMode, OverviewChartType } from "../../../shared/store/appStore";
 import {
+  CURRENCY_SYMBOLS,
   convertUsdToDisplayNumber,
   formatAxisCost,
   formatConversionNote,
   formatDisplayCost,
   formatUsdExact,
+  resolveExchangeRate,
   type DisplayCurrency,
 } from "../../../shared/utils/costFormat";
 import { formatCompactInteger } from "../../../shared/utils/numberFormat";
@@ -92,7 +94,7 @@ export function DailyTokenUsageChart({
   mode,
   chartType,
   currency,
-  cnyRate,
+  exchangeRate,
   loading = false,
   error = null,
 }: {
@@ -101,18 +103,18 @@ export function DailyTokenUsageChart({
   mode: OverviewChartMode;
   chartType: OverviewChartType;
   currency: DisplayCurrency;
-  cnyRate: string | null;
+  exchangeRate: string | null;
   loading?: boolean;
   error?: string | null;
 }) {
   const [hovered, setHovered] = useState(false);
-  const conversionNote = mode === "cost" ? formatConversionNote(currency, cnyRate) : null;
+  const conversionNote = mode === "cost" ? formatConversionNote(currency, exchangeRate) : null;
 
   const totals = useMemo(
     () => data.map((day) => (mode === "tokens"
       ? totalTokens(day)
-      : convertUsdToDisplayNumber(day.totalCost, currency, cnyRate))),
-    [cnyRate, currency, data, mode],
+      : convertUsdToDisplayNumber(day.totalCost, currency, exchangeRate))),
+    [exchangeRate, currency, data, mode],
   );
   const maximumTotal = totals.reduce((maximum, total) => Math.max(maximum, total), 0);
   const axisMaximum = mode === "tokens"
@@ -123,11 +125,10 @@ export function DailyTokenUsageChart({
     ? 0
     : nonZeroTotals.reduce((sum, total) => sum + total, 0) / nonZeroTotals.length;
 
+  const displayCurrency = resolveExchangeRate(currency, exchangeRate) ? currency : "USD";
   const unitLabel = mode === "tokens"
     ? t("单位：Token")
-    : currency === "CNY"
-      ? t("单位：CNY (¥)")
-      : t("单位：USD ($)");
+    : t("单位：{currency} ({symbol})", { currency: displayCurrency, symbol: CURRENCY_SYMBOLS[displayCurrency] });
 
   const option = useMemo<EChartsCoreOption>(() => {
     const commonAxisPointer = chartType === "line"
@@ -172,7 +173,7 @@ export function DailyTokenUsageChart({
         stack: "usage",
         data: data.map((day) => mode === "tokens"
           ? day.inputTokens
-          : convertUsdToDisplayNumber(day.inputCost, currency, cnyRate)),
+          : convertUsdToDisplayNumber(day.inputCost, currency, exchangeRate)),
         barMaxWidth: 18,
         itemStyle: { color: seriesColors.input },
         ...seriesFocus,
@@ -183,7 +184,7 @@ export function DailyTokenUsageChart({
         stack: "usage",
         data: data.map((day) => mode === "tokens"
           ? day.cacheReadTokens
-          : convertUsdToDisplayNumber(day.cacheReadCost, currency, cnyRate)),
+          : convertUsdToDisplayNumber(day.cacheReadCost, currency, exchangeRate)),
         barMaxWidth: 18,
         itemStyle: { color: seriesColors.cacheRead },
         ...seriesFocus,
@@ -194,7 +195,7 @@ export function DailyTokenUsageChart({
         stack: "usage",
         data: data.map((day) => mode === "tokens"
           ? day.cacheWriteTokens
-          : convertUsdToDisplayNumber(day.cacheWriteCost, currency, cnyRate)),
+          : convertUsdToDisplayNumber(day.cacheWriteCost, currency, exchangeRate)),
         barMaxWidth: 18,
         itemStyle: { color: seriesColors.cacheWrite },
         ...seriesFocus,
@@ -205,7 +206,7 @@ export function DailyTokenUsageChart({
         stack: "usage",
         data: data.map((day) => mode === "tokens"
           ? day.outputTokens
-          : convertUsdToDisplayNumber(day.outputCost, currency, cnyRate)),
+          : convertUsdToDisplayNumber(day.outputCost, currency, exchangeRate)),
         barMaxWidth: 18,
         barGap: "-100%",
         itemStyle: { color: seriesColors.output, borderRadius: [2, 2, 0, 0] },
@@ -279,11 +280,11 @@ export function DailyTokenUsageChart({
           }
           const lines = [
             formatTooltipTime(day.bucketStartMs, granularity),
-            `${t("总费用")}：${formatDisplayCost(day.totalCost, currency, cnyRate)}`,
-            `${colorMark(seriesColors.input)}${t("输入（非缓存）")}：${formatDisplayCost(day.inputCost, currency, cnyRate)}`,
-            `${colorMark(seriesColors.cacheRead)}${t("缓存输入")}：${formatDisplayCost(day.cacheReadCost, currency, cnyRate)}`,
-            `${colorMark(seriesColors.cacheWrite)}${t("缓存写入")}：${formatDisplayCost(day.cacheWriteCost, currency, cnyRate)}`,
-            `${colorMark(seriesColors.output)}${t("模型输出")}：${formatDisplayCost(day.outputCost, currency, cnyRate)}`,
+            `${t("总费用")}：${formatDisplayCost(day.totalCost, currency, exchangeRate)}`,
+            `${colorMark(seriesColors.input)}${t("输入（非缓存）")}：${formatDisplayCost(day.inputCost, currency, exchangeRate)}`,
+            `${colorMark(seriesColors.cacheRead)}${t("缓存输入")}：${formatDisplayCost(day.cacheReadCost, currency, exchangeRate)}`,
+            `${colorMark(seriesColors.cacheWrite)}${t("缓存写入")}：${formatDisplayCost(day.cacheWriteCost, currency, exchangeRate)}`,
+            `${colorMark(seriesColors.output)}${t("模型输出")}：${formatDisplayCost(day.outputCost, currency, exchangeRate)}`,
           ];
           if (conversionNote) {
             lines.push(
@@ -292,7 +293,7 @@ export function DailyTokenUsageChart({
             );
           }
           if (day.assumedCacheCalls > 0) {
-            lines.push(`${t("按缓存估算调用")}：${formatCompactInteger(day.assumedCacheCalls)}（${formatDisplayCost(day.assumedCacheCost, currency, cnyRate)}）`);
+            lines.push(`${t("按缓存估算调用")}：${formatCompactInteger(day.assumedCacheCalls)}（${formatDisplayCost(day.assumedCacheCost, currency, exchangeRate)}）`);
           }
           if (day.unpricedCalls > 0) {
             lines.push(`${t("未定价调用")}：${formatCompactInteger(day.unpricedCalls)}`);
@@ -335,12 +336,12 @@ export function DailyTokenUsageChart({
           fontFamily: "HFKos",
           formatter: (value: number) => mode === "tokens"
             ? formatCompactInteger(value)
-            : formatAxisCost(value, currency),
+            : formatAxisCost(value, displayCurrency),
         },
       },
       series: chartType === "line" ? lineSeries : barSeries,
     };
-  }, [averageLevel, axisMaximum, chartType, cnyRate, conversionNote, currency, data, granularity, hovered, mode, totals]);
+  }, [averageLevel, axisMaximum, chartType, exchangeRate, conversionNote, currency, data, displayCurrency, granularity, hovered, mode, totals]);
 
   return <div className={styles.container}>
     <div className={styles.metaBar}>
