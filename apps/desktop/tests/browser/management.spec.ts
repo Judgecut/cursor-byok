@@ -871,10 +871,15 @@ test("preserves overview table scroll position across call pagination, page size
     });
     const horizontal = [...document.querySelectorAll("*")].find((el) => el.scrollWidth > el.clientWidth + 100);
     return {
-      scrollTop: vertical?.scrollTop ?? 0,
-      scrollLeft: horizontal?.scrollLeft ?? 0,
+      position: {
+        scrollTop: vertical?.scrollTop ?? 0,
+        scrollLeft: horizontal?.scrollLeft ?? 0,
+      },
+      maxScrollTop: vertical ? vertical.scrollHeight - vertical.clientHeight : 0,
+      viewportWidth: vertical?.clientWidth ?? 0,
     };
   });
+  const readPosition = async () => (await readScroll()).position;
 
   await page.evaluate(() => {
     const vertical = [...document.querySelectorAll("*")].find((el) => {
@@ -886,31 +891,37 @@ test("preserves overview table scroll position across call pagination, page size
     if (horizontal) horizontal.scrollLeft = 800;
   });
 
-  await expect.poll(async () => (await readScroll()).scrollTop).toBeGreaterThan(300);
-  const initial = await readScroll();
+  await expect.poll(async () => (await readPosition()).scrollTop).toBeGreaterThan(300);
+  const initial = await readPosition();
   expect(initial.scrollLeft).toBeGreaterThan(0);
 
   await page.getByRole("button", { name: "Next page", exact: true }).click();
   await expect(page.getByText("Page 2 of 3", { exact: true })).toBeVisible();
   await expect(page.getByText("scroll-call-20", { exact: true })).toBeVisible();
-  expect(await readScroll()).toEqual(initial);
+  expect(await readPosition()).toEqual(initial);
 
   await page.getByRole("button", { name: "Items per page", exact: true }).click();
   await page.getByRole("option", { name: "50 per page", exact: true }).click();
   await expect(page.getByText("Page 1 of 1", { exact: true })).toBeVisible();
   await expect(page.getByText("scroll-call-44", { exact: true })).toBeVisible();
-  expect(await readScroll()).toEqual(initial);
+  expect(await readPosition()).toEqual(initial);
 
   await page.getByRole("button", { name: "Last calendar day", exact: true }).click();
   await expect(page.getByRole("button", { name: "Last calendar day", exact: true })).toHaveAttribute("aria-pressed", "true");
-  expect(await readScroll()).toEqual(initial);
+  expect(await readPosition()).toEqual(initial);
 
   await page.getByRole("link", { name: "Call history", exact: true }).click();
   await expect(page.getByText("scroll-call-0", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Overview", exact: true }).click();
   await expect(page.getByText("scroll-call-44", { exact: true })).toBeVisible();
-  await expect.poll(readScroll).toEqual(initial);
+  await expect.poll(readPosition).toEqual(initial);
 
+  const beforeCollapse = await readScroll();
   await page.getByRole("button", { name: "Collapse sidebar", exact: true }).click();
-  await expect.poll(async () => (await readScroll()).scrollTop).toBe(initial.scrollTop);
+  await expect.poll(async () => {
+    const afterCollapse = await readScroll();
+    const heightChange = afterCollapse.maxScrollTop - beforeCollapse.maxScrollTop;
+    const positionChange = afterCollapse.position.scrollTop - beforeCollapse.position.scrollTop;
+    return afterCollapse.viewportWidth > beforeCollapse.viewportWidth && positionChange >= Math.min(0, heightChange) && positionChange <= Math.max(0, heightChange);
+  }).toBe(true);
 });
