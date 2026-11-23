@@ -282,6 +282,16 @@ export function formatConversionNote(currency: DisplayCurrency, exchangeRate: Di
   return t("按同步汇率折算（1 USD = {rate} {currency}，参考日期 {date}）", { rate, currency, date: exchangeRate.referenceDate });
 }
 
+export function formatExchangeRateHint(rate: string | null | undefined): string | null
+{
+  if (!rate)
+  {
+    return null;
+  }
+  const parsed = Number(rate);
+  return Number.isFinite(parsed) ? parsed.toFixed(2) : null;
+}
+
 export function formatRatePerMillion(value: string | null | undefined): string {
   if (value == null) return "—";
   const parts = normalizeDecimalParts(value);

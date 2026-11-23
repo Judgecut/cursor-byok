@@ -184,37 +184,34 @@ export function allCacheUsageUnreported(row: BreakdownRowBase): boolean {
     && row.unreported_cache_calls + row.incomplete_usage_calls >= row.llm_calls;
 }
 
-export function renderBreakdownCacheCell(row: BreakdownRowBase) {
-  if (allCacheUsageUnreported(row)) {
-    return <span className={styles.subValue}>{t("未上报")}</span>;
-  }
-  const counts = `${formatCompactInteger(row.cache_read_tokens)} / ${formatCompactInteger(row.cache_write_tokens)}`;
-  if (row.unreported_cache_calls <= 0) {
-    return counts;
-  }
-  return <>
-    <div>{counts}</div>
-    <div className={styles.subValue}>
-      {t("含 {count} 次未上报", { count: formatCompactInteger(row.unreported_cache_calls) })}
-    </div>
-  </>;
+export function cacheHitRateText(row: BreakdownRowBase): string {
+  if (allCacheUsageUnreported(row)) return "—";
+  const total = row.cache_read_tokens + row.input_tokens;
+  if (total <= 0) return "—";
+  return `${((row.cache_read_tokens / total) * 100).toFixed(1)}%`;
 }
 
 export function breakdownCacheTitle(row: BreakdownRowBase): string {
-  if (allCacheUsageUnreported(row)) {
-    const base = t("已上报用量的 {count} 次调用均未提供缓存读写字段", {
-      count: formatInteger(row.unreported_cache_calls),
-    });
-    return row.assumed_cache_calls > 0
-      ? `${base}\n${t("计费已对 {count} 次调用按默认命中率估算缓存读取（约 {tokens} Token）", {
-          count: formatInteger(row.assumed_cache_calls),
-          tokens: formatInteger(row.estimated_cache_read_tokens),
-        })}`
-      : base;
-  }
   const lines = [
-    `${formatInteger(row.cache_read_tokens)} / ${formatInteger(row.cache_write_tokens)}`,
+    t("缓存命中率：{rate}", { rate: cacheHitRateText(row) }),
+    t("公式：缓存读取 /（缓存读取 + 非缓存输入）"),
   ];
+  if (allCacheUsageUnreported(row)) {
+    lines.push(t("已上报用量的 {count} 次调用均未提供缓存读写字段", {
+      count: formatInteger(row.unreported_cache_calls),
+    }));
+    if (row.assumed_cache_calls > 0) {
+      lines.push(t("计费已对 {count} 次调用按默认命中率估算缓存读取（约 {tokens} Token）", {
+        count: formatInteger(row.assumed_cache_calls),
+        tokens: formatInteger(row.estimated_cache_read_tokens),
+      }));
+    }
+    return lines.join("\n");
+  }
+  lines.push(
+    t("缓存读取：{tokens}", { tokens: formatInteger(row.cache_read_tokens) }),
+    t("缓存写入：{tokens}", { tokens: formatInteger(row.cache_write_tokens) }),
+  );
   if (
     row.cache_read_tokens === 0
     && row.cache_write_tokens === 0

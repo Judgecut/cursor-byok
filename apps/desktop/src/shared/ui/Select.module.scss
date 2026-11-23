@@ -36,6 +36,13 @@
     white-space: nowrap;
   }
 }
+.hint {
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-2xs;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .dropdownIcon {
   transition: transform 160ms ease;
 }

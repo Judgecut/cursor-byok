@@ -3,7 +3,6 @@ import { useI18n } from "../../i18n/store";
 import { appStore, useAppStore, useCurrencyDisplay } from "../../shared/store/appStore";
 import { Button } from "../../shared/ui/Button";
 import { CurrencySelect } from "../../shared/ui/CurrencySelect";
-import { ExchangeRateAttribution } from "../../shared/ui/ExchangeRateAttribution";
 import { TextInput } from "../../shared/ui/FormControls";
 import { TitledCard } from "../../shared/ui/TitledCard";
 import { useMessage } from "../../shared/ui/message";
@@ -96,7 +95,6 @@ export function CurrencySettingsCard()
           </Button>
         </div>}
         {synced && (autoSyncEnabled || exchangeRate?.source === synced.source) && exchangeRateSync?.last_synced_at_ms != null && <small className={styles.currencySyncStatus}>
-          <ExchangeRateAttribution source={synced.source} />
           {t("汇率数据日期 {date} · 最近同步 {time}", { date: new Date(synced.published_at_ms).toISOString().slice(0, 10), time: new Date(exchangeRateSync.last_synced_at_ms).toLocaleString(locale) })}
         </small>}
         {autoSyncEnabled && exchangeRateSync?.last_error && <small role="status" title={exchangeRateSync.last_error}>{t("汇率同步失败，继续使用已有汇率。")}</small>}

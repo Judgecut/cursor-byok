@@ -1,6 +1,5 @@
 import type { CallDetail, CallPerformance, LlmCall } from "../../shared/api";
 import { useCurrencyDisplay } from "../../shared/store/appStore";
-import { ExchangeRateAttribution } from "../../shared/ui/ExchangeRateAttribution";
 import { JsonEditor } from "../../shared/ui/JsonEditor";
 import { Tabs, type TabItem } from "../../shared/ui/Tabs";
 import {
@@ -270,7 +269,6 @@ function CostBreakdownSection({ call }: { call: LlmCall }) {
           })}
         </div>
       )}
-      {priced && <ExchangeRateAttribution source={exchangeRate?.source} />}
       {basisNote && <div className={styles.costNote}>{basisNote}</div>}
       {note && <div className={styles.costNote}>{note}</div>}
     </div>

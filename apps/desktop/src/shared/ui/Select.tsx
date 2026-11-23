@@ -9,7 +9,7 @@ import styles from "./Select.module.scss";
 
 export type SelectOption = { value: string; label: string; icon?: IconProps["icon"]; iconSrc?: string };
 
-export function Select({ value, options, disabled, ariaLabel, onChange }: { value: string; options: SelectOption[]; disabled?: boolean; ariaLabel: string; onChange: (value: string) => void }) {
+export function Select({ value, options, disabled, ariaLabel, triggerLabel, hint, onChange }: { value: string; options: SelectOption[]; disabled?: boolean; ariaLabel: string; triggerLabel?: string; hint?: string | null; onChange: (value: string) => void }) {
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const listApi = useRef<VirtualListApi | null>(null);
@@ -48,7 +48,7 @@ export function Select({ value, options, disabled, ariaLabel, onChange }: { valu
       if (event.key === "ArrowUp") { event.preventDefault(); move(-1); }
       if (event.key === "Enter" && open) { event.preventDefault(); choose(options[active]); }
       if (event.key === "Escape") setOpen(false);
-    }}><span className={styles.optionContent}>{(selected?.icon || selected?.iconSrc) && <Icon icon={selected.icon} src={selected.iconSrc} />}<span>{selected?.label ?? value}</span></span><Icon icon={chevronDownIcon} size="1.1em" className={[styles.dropdownIcon, open && styles.dropdownIconOpen].filter(Boolean).join(" ")} /></button>
+    }}><span className={styles.optionContent}>{(selected?.icon || selected?.iconSrc) && <Icon icon={selected.icon} src={selected.iconSrc} />}<span>{triggerLabel ?? selected?.label ?? value}</span></span>{hint && <span className={styles.hint}>{hint}</span>}<Icon icon={chevronDownIcon} size="1.1em" className={[styles.dropdownIcon, open && styles.dropdownIconOpen].filter(Boolean).join(" ")} /></button>
     {open && createPortal(<div id={menuId} ref={menu} className={styles.menu} role="listbox" style={{ left: position.left, top: position.top, width: position.width }}>
       <VirtualList items={options} itemKey="value" estimatedItemHeight={30} onReady={(api) => { listApi.current = api; api.scrollToIndex(active); }} style={{ height: Math.min(options.length * 30, Math.max(30, position.maxHeight - 8)) }}>
         {(option, index) => <button type="button" role="option" aria-selected={option.value === value} data-active={index === active || undefined} onMouseEnter={() => setActive(index)} onClick={() => choose(option)}><span className={styles.optionContent}>{(option.icon || option.iconSrc) && <Icon icon={option.icon} src={option.iconSrc} />}<span>{option.label}</span></span></button>}

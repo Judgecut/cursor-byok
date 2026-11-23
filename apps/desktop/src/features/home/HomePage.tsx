@@ -11,14 +11,13 @@ import {
 } from "../../shared/api";
 import { appStore, useAppStore, useCurrencyDisplay } from "../../shared/store/appStore";
 import { CurrencySelect } from "../../shared/ui/CurrencySelect";
-import { ExchangeRateAttribution } from "../../shared/ui/ExchangeRateAttribution";
-import { formatConversionNote } from "../../shared/utils/costFormat";
 import controls from "../../shared/ui/Controls.module.scss";
 import { Icon } from "../../shared/ui/Icon";
 import { SupplierFilter } from "../../shared/ui/SupplierFilter";
 import { TooltipTrigger } from "../../shared/ui/TooltipTrigger";
 import { refreshIcon } from "../../shared/ui/icons";
 import { useMessage } from "../../shared/ui/message";
+import { formatConversionNote } from "../../shared/utils/costFormat";
 import { buildModelFilterOptions, buildSupplierFilterOptions } from "../../shared/utils/supplierOptions";
 import { resolveTimeRange, type CustomRange, type OverviewRangePreset, type QuickPreset, type TimeRange } from "../../shared/utils/timeRange";
 import { PageActions } from "../../shell/PageActions";
@@ -846,9 +845,8 @@ export function HomePage() {
       />
       <span className={styles.divider} aria-hidden="true" />
       <div className={styles.currencyControl} title={formatConversionNote(currency, exchangeRate) ?? undefined}>
-        <CurrencySelect value={currency} onChange={appStore.selectCurrency} />
+        <CurrencySelect value={currency} codeOnly rate={exchangeRate?.rate} onChange={appStore.selectCurrency} />
       </div>
-      <ExchangeRateAttribution source={exchangeRate?.source} />
       <div className={styles.segmentGroup} role="group" aria-label={t("趋势统计维度")}>
         <button
           type="button"

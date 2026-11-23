@@ -10,9 +10,9 @@ import {
   averageCostTitle,
   breakdownCacheTitle,
   breakdownCostTitle,
+  cacheHitRateText,
   nextBreakdownSort,
   PricingSourceBadges,
-  renderBreakdownCacheCell,
   renderBreakdownCostCell,
   sortBreakdownRows,
   sortIndicator,
@@ -119,8 +119,9 @@ export function HomeModelBreakdown({
               </button>
             </th>
             <th>{t("输入")}</th>
-            <th>{t("缓存读 / 写")}</th>
+            <th>{t("缓存命中率")}</th>
             <th>{t("输出")}</th>
+            <th>{t("单次均值")}</th>
             <th aria-sort={ariaSortValue(sort, "total_cost")}>
               <button
                 type="button"
@@ -132,7 +133,6 @@ export function HomeModelBreakdown({
                 <span className={styles.sortMarker}>{sortIndicator(sort, "total_cost")}</span>
               </button>
             </th>
-            <th>{t("单次均值")}</th>
           </tr>
         </thead>
         <tbody>
@@ -192,13 +192,10 @@ export function HomeModelBreakdown({
                 {formatCompactInteger(model.input_tokens)}
               </td>
               <td className={styles.monoNum} title={breakdownCacheTitle(model)}>
-                {renderBreakdownCacheCell(model)}
+                {cacheHitRateText(model)}
               </td>
               <td className={styles.monoNum} title={formatInteger(model.output_tokens)}>
                 {formatCompactInteger(model.output_tokens)}
-              </td>
-              <td className={styles.monoNum} title={breakdownCostTitle(model, currency, exchangeRate)}>
-                {renderBreakdownCostCell(model, currency, exchangeRate)}
               </td>
               <td
                 className={styles.monoNum}
@@ -207,6 +204,9 @@ export function HomeModelBreakdown({
                 {model.average_priced_cost
                   ? formatDisplayCost(model.average_priced_cost, currency, exchangeRate)
                   : "—"}
+              </td>
+              <td className={styles.monoNum} title={breakdownCostTitle(model, currency, exchangeRate)}>
+                {renderBreakdownCostCell(model, currency, exchangeRate)}
               </td>
             </tr>;
           })}

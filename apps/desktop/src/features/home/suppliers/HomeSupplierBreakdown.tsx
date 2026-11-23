@@ -14,9 +14,9 @@ import {
   averageCostTitle,
   breakdownCacheTitle,
   breakdownCostTitle,
+  cacheHitRateText,
   nextBreakdownSort,
   PricingSourceBadges,
-  renderBreakdownCacheCell,
   renderBreakdownCostCell,
   sortBreakdownRows,
   sortIndicator,
@@ -133,8 +133,9 @@ export function HomeSupplierBreakdown({
               </button>
             </th>
             <th>{t("输入")}</th>
-            <th>{t("缓存读 / 写")}</th>
+            <th>{t("缓存命中率")}</th>
             <th>{t("输出")}</th>
+            <th>{t("单次均值")}</th>
             <th aria-sort={ariaSortValue(sort, "total_cost")}>
               <button
                 type="button"
@@ -146,7 +147,6 @@ export function HomeSupplierBreakdown({
                 <span className={styles.sortMarker}>{sortIndicator(sort, "total_cost")}</span>
               </button>
             </th>
-            <th>{t("单次均值")}</th>
           </tr>
         </thead>
         <tbody>
@@ -215,13 +215,10 @@ export function HomeSupplierBreakdown({
                 {formatCompactInteger(supplier.input_tokens)}
               </td>
               <td className={styles.monoNum} title={breakdownCacheTitle(supplier)}>
-                {renderBreakdownCacheCell(supplier)}
+                {cacheHitRateText(supplier)}
               </td>
               <td className={styles.monoNum} title={formatInteger(supplier.output_tokens)}>
                 {formatCompactInteger(supplier.output_tokens)}
-              </td>
-              <td className={styles.monoNum} title={breakdownCostTitle(supplier, currency, exchangeRate)}>
-                {renderBreakdownCostCell(supplier, currency, exchangeRate)}
               </td>
               <td
                 className={styles.monoNum}
@@ -230,6 +227,9 @@ export function HomeSupplierBreakdown({
                 {supplier.average_priced_cost
                   ? formatDisplayCost(supplier.average_priced_cost, currency, exchangeRate)
                   : "—"}
+              </td>
+              <td className={styles.monoNum} title={breakdownCostTitle(supplier, currency, exchangeRate)}>
+                {renderBreakdownCostCell(supplier, currency, exchangeRate)}
               </td>
             </tr>;
           })}

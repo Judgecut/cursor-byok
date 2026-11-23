@@ -106,6 +106,20 @@ function costTitle(call: LlmCall, currency: DisplayCurrency, exchangeRate: Displ
   return lines.join("\n");
 }
 
+function statusDotTitle(call: LlmCall): string
+{
+  const parts = [t("状态 {status} · HTTP {http}", { status: call.status, http: call.http_status ?? "-" })];
+  if (call.finish_reason) {
+    parts.push(t("结束原因：{reason}", { reason: call.finish_reason }));
+  }
+  if (call.error_message) {
+    parts.push(t("错误：{error}", { error: call.error_message }));
+  } else if (call.error_kind) {
+    parts.push(t("错误：{error}", { error: call.error_kind }));
+  }
+  return parts.join(" · ");
+}
+
 export function CallTable({
   calls,
   queryKey,
@@ -130,19 +144,27 @@ export function CallTable({
       key: "status",
       header: t("状态"),
       render: (call) => (
-        <span
-          className={[styles.status, styles[call.status]]
-            .filter(Boolean)
-            .join(" ")}
-        >
-          {call.status}
-        </span>
+        <TooltipTrigger label={statusDotTitle(call)}>
+          <span className={styles.statusDot} data-status={call.status} role="img" aria-label={call.status} />
+        </TooltipTrigger>
       ),
+    },
+    {
+      key: "call_index",
+      header: "Call Index",
+      render: (call) => call.provider_call_index,
+    },
+    {
+      key: "display_name",
+      header: t("显示名称"),
+      render: (call) => call.display_name,
+      title: (call) => call.display_name,
     },
     {
       key: "created_at",
       header: t("时间"),
-      render: (call) => new Date(call.created_at_ms).toLocaleString(),
+      render: (call) => new Date(call.created_at_ms).toLocaleTimeString(),
+      title: (call) => new Date(call.created_at_ms).toLocaleString(),
     },
     {
       key: "model_id",
@@ -276,17 +298,6 @@ export function CallTable({
       header: "Conversation ID",
       render: (call) => call.conversation_id,
       title: (call) => call.conversation_id,
-    },
-    {
-      key: "call_index",
-      header: "Call Index",
-      render: (call) => call.provider_call_index,
-    },
-    {
-      key: "display_name",
-      header: t("显示名称"),
-      render: (call) => call.display_name,
-      title: (call) => call.display_name,
     },
     {
       key: "actions",

@@ -12,16 +12,54 @@
   box-shadow: inset 0 0 0 9999px color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) calc(var(--call-update-strength) * 32%), transparent);
 }
 
-.status {
-  padding: 3px 7px;
-  color: var(--vscode-descriptionForeground);
-  background: var(--vscode-input-background);
-  border-radius: 99px;
-  font-size: type.$font-size-xs;
+.statusDot
+{
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: var(--vscode-descriptionForeground);
+
+  &[data-status="completed"]
+  {
+    background: #56b870;
+  }
+
+  &[data-status="error"],
+  &[data-status="failed"]
+  {
+    background: var(--vscode-errorForeground, #f48771);
+  }
+
+  &[data-status="running"]
+  {
+    background: var(--vscode-textLink-foreground, #49b0ff);
+    animation: statusPulse 1.2s ease-in-out infinite;
+  }
 }
 
-.completed { color: #56b870; }
-.failed { color: var(--vscode-errorForeground, #f48771); }
+@keyframes statusPulse
+{
+  0%,
+  100%
+  {
+    opacity: 1;
+  }
+
+  50%
+  {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce)
+{
+  .statusDot[data-status="running"]
+  {
+    animation: none;
+  }
+}
 
 .costCell {
   display: inline-flex;

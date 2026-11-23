@@ -1,3 +1,4 @@
+import type { OverviewModelSummary } from "../../src/shared/api";
 import { test, expect } from "./fixtures";
 
 test("creates a provider and model through the real forms and reloads them", async ({ page, management }) =>
@@ -138,11 +139,10 @@ test("switches between synced and saved exchange rates across overview and call 
   expect(management.settings.eur_rate).toBeNull();
   await page.goto("#/");
   await expect(page.getByText("€1.90", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("link", { name: "Rates by Exchange Rate API" })).toHaveAttribute("href", "https://www.exchangerate-api.com");
+  await expect(page.getByRole("button", { name: "Display currency", exact: true })).toContainText("0.95");
   await detail.bringToFront();
   await detail.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(detail.getByText("€1.90", { exact: true })).toBeVisible();
-  await expect(detail.getByRole("link", { name: "Rates by Exchange Rate API" })).toBeVisible();
 
   await page.bringToFront();
   await page.goto("#/settings");
@@ -166,7 +166,7 @@ test("switches between synced and saved exchange rates across overview and call 
   await expect(rate).toHaveValue("0.5");
   await page.goto("#/");
   await expect(page.getByText("€1.00", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("link", { name: "Rates by Exchange Rate API" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Display currency", exact: true })).toContainText("0.50");
   await detail.bringToFront();
   await detail.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(detail.getByText("€1.00", { exact: true })).toBeVisible();
@@ -262,6 +262,41 @@ test("collapses the sidebar at minimum window size and remembers the choice with
   await expect(expand).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByRole("status").getByText("Sidebar preference could not be saved.")).toBeVisible();
   expect(management.settings.sidebar_collapsed).toBe(true);
+});
+
+test("leads with status, call index, and display name, shows time of day, and explains status dots in a tooltip", async ({ page, management }) =>
+{
+  const base = management.call.call;
+  const records = [
+    { ...base, call_id: "completed-call", provider_call_index: 3, display_name: "Success sample", status: "completed", http_status: 200, finish_reason: "stop", created_at_ms: Date.UTC(2026, 10, 23, 9, 12, 34) },
+    { ...base, call_id: "failed-call", provider_call_index: 2, display_name: "Failure sample", status: "error", http_status: 502, finish_reason: null, error_kind: "upstream_error", error_message: "upstream returned 502", created_at_ms: Date.UTC(2026, 10, 23, 9, 11, 34) },
+    { ...base, call_id: "running-call", provider_call_index: 1, display_name: "Running sample", status: "running", http_status: null, finish_reason: null, created_at_ms: Date.UTC(2026, 10, 23, 9, 10, 34) },
+  ];
+  await page.route("**/__byok-api__/api/llm-calls?*", (route) => route.fulfill({ json: { items: records, total: records.length } }));
+  await page.goto("#/calls");
+
+  const headers = await page.getByRole("columnheader").allTextContents();
+  expect(headers.slice(0, 4)).toEqual(["Status", "Call Index", "Display name", "Time"]);
+
+  const rows = page.locator("tbody tr");
+  const timeCell = rows.nth(0).getByRole("cell").nth(3);
+  await expect(timeCell).toHaveText(/^\d{1,2}:\d{2}:\d{2}[\s\u202f]?[AP]M$/i);
+  expect(await timeCell.getAttribute("title")).toContain("11/23/2026");
+
+  const completedDot = rows.nth(0).locator("span[data-status]");
+  const failedDot = rows.nth(1).locator("span[data-status]");
+  const runningDot = rows.nth(2).locator("span[data-status]");
+  await expect(completedDot).toHaveAttribute("data-status", "completed");
+  await expect(failedDot).toHaveAttribute("data-status", "error");
+  await expect(runningDot).toHaveAttribute("data-status", "running");
+  const animation = async (locator: typeof completedDot) => locator.evaluate((element) => getComputedStyle(element).animationName);
+  expect(await animation(completedDot)).toBe("none");
+  expect(await animation(failedDot)).toBe("none");
+  expect(await animation(runningDot)).not.toBe("none");
+  await failedDot.hover();
+  const tooltip = page.getByRole("tooltip");
+  await expect(tooltip).toContainText("HTTP 502");
+  await expect(tooltip).toContainText("upstream returned 502");
 });
 
 test("opens call details using the URL sent to the desktop boundary", async ({ page, context, management }) =>
@@ -563,6 +598,50 @@ test("separates unreported cache from explicit zero and displays assumed cache c
   await page.goto("#/calls/explicit-zero-call");
   await expect(page.getByRole("region", { name: "Cost breakdown", exact: true }).getByText("Reported usage", { exact: true })).toBeVisible();
   await expect(page.getByText("0 (explicit zero)", { exact: true }).first()).toBeVisible();
+});
+
+test("shows cache hit rate and orders average cost before estimated cost in the model breakdown", async ({ page, management }) =>
+{
+  const base: Omit<OverviewModelSummary, "model_id"> = {
+    supplier_count: 1,
+    pricing_sources: ["catalog"],
+    llm_calls: 4,
+    successful_calls: 4,
+    failed_calls: 0,
+    token_usage: 400_000,
+    prompt_tokens: 300_000,
+    input_tokens: 100_000,
+    cache_read_tokens: 200_000,
+    cache_write_tokens: 0,
+    output_tokens: 100_000,
+    total_cost: "0.5",
+    input_cost: "0.1",
+    output_cost: "0.4",
+    cache_read_cost: "0",
+    cache_write_cost: "0",
+    average_priced_cost: "0.125",
+    priced_calls: 4,
+    unpriced_calls: 0,
+    incomplete_usage_calls: 0,
+    unreported_cache_calls: 0,
+    assumed_cache_calls: 0,
+    assumed_cache_cost: "0",
+    estimated_cache_read_tokens: 0,
+    speed: { average_tokens_per_second: 100, output_tokens: 100_000, generation_ms: 1_000_000, samples: 4, first_output_median_ms: 100 },
+  };
+  management.overview.models = [
+    { ...base, model_id: "reported-model" },
+    { ...base, model_id: "unreported-model", cache_read_tokens: 0, unreported_cache_calls: 4 },
+  ];
+  await page.goto("#/");
+  await page.getByRole("tab", { name: /^Model/ }).click();
+
+  const table = page.getByRole("table", { name: "Statistics by model", exact: true });
+  const headers = (await table.getByRole("columnheader").allTextContents()).slice(-5)
+    .map((text) => text.replace(/[↕↑↓]/g, "").trim());
+  expect(headers).toEqual(["Input", "Cache hit rate", "Output", "Avg / call", "Estimated cost"]);
+  await expect(table.getByRole("row", { name: /^reported-model/ }).getByRole("cell").nth(7)).toHaveText("66.7%");
+  await expect(table.getByRole("row", { name: /^unreported-model/ }).getByRole("cell").nth(7)).toHaveText("—");
 });
 
 test("preserves overview table scroll position across call pagination, page size changes, filter changes, and route switches", async ({ page }) => {
