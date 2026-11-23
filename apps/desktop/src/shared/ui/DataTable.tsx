@@ -26,7 +26,6 @@ export function DataTable<T>({
   rowKey,
   rowClassName,
   rowRef,
-  minWidth,
   emptyText = t("暂无数据"),
   loading = false,
   loadingText = t("加载中…"),
@@ -37,7 +36,6 @@ export function DataTable<T>({
   rowKey: (row: T) => string | number;
   rowClassName?: (row: T) => string;
   rowRef?: (row: T) => RefCallback<HTMLTableRowElement>;
-  minWidth?: number | string;
   emptyText?: ReactNode;
   loading?: boolean;
   loadingText?: ReactNode;
@@ -89,9 +87,9 @@ export function DataTable<T>({
         className={[styles.viewport, showEmpty ? styles.emptyViewport : ""].filter(Boolean).join(" ")}
         viewportClassName={styles.tableViewport}
         contentClassName={styles.tableContent}
-        scrollbarInsetTop="33px"
+        scrollbarInsetTop="var(--data-table-header-height)"
       >
-        <table className={styles.table} style={{ minWidth }}>
+        <table className={styles.table}>
           <thead>
             <tr>
               {columns.map((column) => <th key={column.key} className={columnClass(column)}>{column.header}</th>)}

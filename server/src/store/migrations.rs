@@ -1062,20 +1062,21 @@ mod tests {
         assert_eq!(updated, 1);
 
         let after_backfill = store.llm_call("v13-omitted").await.unwrap().unwrap();
-        assert_eq!(after_backfill.cost_basis.as_deref(), Some("assumed_cache"));
-        assert_eq!(after_backfill.assumed_cache_hit_rate_bps, Some(9_000));
-        assert_eq!(after_backfill.estimated_cache_read_tokens, Some(900_000));
+        assert_eq!(after_backfill.cost_basis.as_deref(), Some("reported"));
+        assert_eq!(after_backfill.assumed_cache_hit_rate_bps, None);
+        assert_eq!(after_backfill.estimated_cache_read_tokens, None);
         assert_eq!(after_backfill.cache_read_tokens, None);
         assert_eq!(after_backfill.cache_write_tokens, None);
-        assert_eq!(after_backfill.billed_input_tokens, Some(100_000));
+        // Without supplier history the omitted cache fields bill at full input price.
+        assert_eq!(after_backfill.billed_input_tokens, Some(1_000_000));
         assert_eq!(
             after_backfill.unit_input_per_million.as_deref(),
             Some("1.5")
         );
-        assert_eq!(after_backfill.input_cost.as_deref(), Some("0.15"));
-        assert_eq!(after_backfill.cache_read_cost.as_deref(), Some("0.0675"));
+        assert_eq!(after_backfill.input_cost.as_deref(), Some("1.5"));
+        assert_eq!(after_backfill.cache_read_cost.as_deref(), Some("0"));
         assert_eq!(after_backfill.output_cost.as_deref(), Some("0.75"));
-        assert_eq!(after_backfill.total_cost.as_deref(), Some("0.9675"));
+        assert_eq!(after_backfill.total_cost.as_deref(), Some("2.25"));
         assert!(!after_backfill.cost_backfilled);
 
         let second_pass = crate::pricing::backfill::run_backfill_once(&store, &token)

@@ -1,14 +1,17 @@
 //! Persists provider call payloads, timing, frozen pricing snapshots, and usage costs.
 use std::{collections::HashMap, str::FromStr};
 
-use sqlx::Row;
+use sqlx::{Row, SqliteConnection};
 
 use crate::{
     model::{
         evaluate as evaluate_performance, CallOrigin, LlmCallRequest, LlmCallResponseChunk,
         LlmCallSummary, NewLlmCall, ProviderType, SpeedSample, Usage,
     },
-    pricing::{calculate_cost, canonical_supplier_identity, format_nano_usd, CostBasis},
+    pricing::{
+        calculate_cost, canonical_supplier_identity, format_nano_usd, CacheReportingWindow,
+        CostBasis, ASSUMED_CACHE_EVIDENCE_WINDOW_CALLS, ASSUMED_CACHE_MIN_INPUT_TOKENS,
+    },
     Result,
 };
 
@@ -111,6 +114,45 @@ impl BufferedLlmChunk {
             byte_count,
         }
     }
+}
+
+/// Counts estimation-eligible calls and cache reports for one supplier identity
+/// over its most recent window, so a single missing report never triggers an
+/// estimate on a supplier that does report cache details.
+async fn cache_reporting_window(
+    conn: &mut SqliteConnection,
+    supplier_key: &str,
+    exclude_call_id: Option<&str>,
+) -> Result<CacheReportingWindow> {
+    let row = sqlx::query(
+        "SELECT
+            COUNT(*) AS calls,
+            COALESCE(SUM(cache_read_tokens IS NOT NULL OR cache_write_tokens IS NOT NULL), 0) AS cache_reported_calls
+         FROM (
+            SELECT cache_read_tokens, cache_write_tokens
+            FROM llm_calls
+            WHERE supplier_key = ?
+              AND call_id IS NOT ?
+              AND call_origin = 'run'
+              AND input_tokens IS NOT NULL
+              AND input_tokens + CASE WHEN request_type = 'anthropic'
+                    THEN COALESCE(cache_read_tokens, 0) + COALESCE(cache_write_tokens, 0)
+                    ELSE 0
+                  END >= ?
+            ORDER BY created_at_ms DESC, rowid DESC
+            LIMIT ?
+         )",
+    )
+    .bind(supplier_key)
+    .bind(exclude_call_id)
+    .bind(ASSUMED_CACHE_MIN_INPUT_TOKENS as i64)
+    .bind(ASSUMED_CACHE_EVIDENCE_WINDOW_CALLS)
+    .fetch_one(conn)
+    .await?;
+    Ok(CacheReportingWindow {
+        calls: row.try_get("calls")?,
+        cache_reported_calls: row.try_get("cache_reported_calls")?,
+    })
 }
 
 impl Store {
@@ -363,6 +405,7 @@ impl Store {
         let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let frozen = sqlx::query(
             "SELECT
+                supplier_key,
                 request_type,
                 call_origin,
                 pricing_source,
@@ -383,6 +426,7 @@ impl Store {
         let Some(row) = frozen else {
             return Ok(());
         };
+        let supplier_key: Option<String> = row.try_get("supplier_key")?;
         let request_type_raw: String = row.try_get("request_type")?;
         let request_type =
             ProviderType::from_str(&request_type_raw).unwrap_or(ProviderType::OpenAiChat);
@@ -390,7 +434,20 @@ impl Store {
         let call_origin = CallOrigin::parse(&call_origin_raw);
         let snapshot = snapshot_from_call_row(&row, now)?;
         let pricing = read_pricing_settings(&mut *transaction).await?;
-        let calculated = calculate_cost(request_type, call_origin, &usage, &snapshot, pricing.assumed_cache_hit_rate_bps)?;
+        let window = match supplier_key.as_deref() {
+            Some(supplier_key) => cache_reporting_window(&mut transaction, supplier_key, Some(call_id)).await?,
+            None => CacheReportingWindow::default(),
+        };
+        let estimation_hit_rate_bps = window
+            .justifies_estimation()
+            .then_some(pricing.assumed_cache_hit_rate_bps);
+        let calculated = calculate_cost(
+            request_type,
+            call_origin,
+            &usage,
+            &snapshot,
+            estimation_hit_rate_bps,
+        )?;
 
         sqlx::query(
             "UPDATE llm_calls SET
@@ -436,6 +493,16 @@ impl Store {
         .await?;
         transaction.commit().await?;
         Ok(())
+    }
+
+    /// Recent cache-reporting evidence for one supplier identity, used when
+    /// historical calls are priced outside the live usage write path.
+    pub(crate) async fn supplier_cache_reporting(
+        &self,
+        supplier_key: &str,
+    ) -> Result<CacheReportingWindow> {
+        let mut conn = self.pool.acquire().await?;
+        cache_reporting_window(&mut conn, supplier_key, None).await
     }
 
     pub async fn finish_llm_call(&self, call_id: &str, finish: CallFinish<'_>) -> Result<()> {
@@ -817,6 +884,145 @@ fn summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<LlmCallSummary> {
 mod tests {
     use super::*;
     use crate::model::{CallOrigin, ProviderType};
+    use crate::pricing::ASSUMED_CACHE_MIN_SAMPLE_CALLS;
+
+    const EVIDENCE_ENDPOINT: &str = "https://gateway.example.com/v1";
+    const EVIDENCE_MODEL: &str = "gemini-2.5-pro";
+
+    async fn record_evidence_call(
+        store: &Store,
+        call_id: &str,
+        origin: CallOrigin,
+        input_tokens: u64,
+        cache_read_tokens: Option<u64>,
+        cache_write_tokens: Option<u64>,
+    ) {
+        store
+            .start_llm_call(&NewLlmCall {
+                call_id: call_id.into(),
+                run_id: format!("run-{call_id}"),
+                conversation_id: "conversation".into(),
+                provider_call_index: 0,
+                model_hash: format!("mh-{call_id}"),
+                provider_type: ProviderType::OpenAiChat,
+                provider_url: EVIDENCE_ENDPOINT.into(),
+                request_type: ProviderType::OpenAiChat,
+                request_url: EVIDENCE_ENDPOINT.into(),
+                model_id: EVIDENCE_MODEL.into(),
+                display_name: "Gemini-2.5-Pro".into(),
+                reasoning_effort: None,
+                fast: false,
+                message_count: 1,
+                tool_count: 0,
+                detailed: false,
+                origin,
+                streaming: true,
+            })
+            .await
+            .unwrap();
+        store
+            .record_llm_usage(
+                call_id,
+                Usage {
+                    input_tokens: Some(input_tokens),
+                    output_tokens: Some(1),
+                    cache_read_tokens,
+                    cache_write_tokens,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn cache_reporting_window_counts_only_large_run_calls_of_one_supplier() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::connect(&format!(
+            "sqlite://{}",
+            directory.path().join("test.db").display()
+        ))
+        .await
+        .unwrap();
+        let supplier_key = canonical_supplier_identity(
+            ProviderType::OpenAiChat,
+            EVIDENCE_ENDPOINT,
+            EVIDENCE_ENDPOINT,
+            EVIDENCE_MODEL,
+        )
+        .supplier_key;
+
+        for index in 0..ASSUMED_CACHE_MIN_SAMPLE_CALLS {
+            record_evidence_call(
+                &store,
+                &format!("large-{index}"),
+                CallOrigin::Run,
+                ASSUMED_CACHE_MIN_INPUT_TOKENS + 1,
+                None,
+                None,
+            )
+            .await;
+        }
+        // Short inputs and connectivity tests are never estimation candidates,
+        // so they must not dilute the evidence sample.
+        record_evidence_call(
+            &store,
+            "short",
+            CallOrigin::Run,
+            ASSUMED_CACHE_MIN_INPUT_TOKENS - 1,
+            None,
+            None,
+        )
+        .await;
+        record_evidence_call(
+            &store,
+            "model-test",
+            CallOrigin::ModelTest,
+            4_096,
+            None,
+            None,
+        )
+        .await;
+
+        let window = store.supplier_cache_reporting(&supplier_key).await.unwrap();
+        assert_eq!(window.calls, ASSUMED_CACHE_MIN_SAMPLE_CALLS);
+        assert_eq!(window.cache_reported_calls, 0);
+        assert!(window.justifies_estimation());
+
+        // An explicit zero is reported data and disables the estimate.
+        record_evidence_call(&store, "reported", CallOrigin::Run, 4_096, Some(0), None).await;
+        let window = store.supplier_cache_reporting(&supplier_key).await.unwrap();
+        assert_eq!(window.calls, ASSUMED_CACHE_MIN_SAMPLE_CALLS + 1);
+        assert_eq!(window.cache_reported_calls, 1);
+        assert!(!window.justifies_estimation());
+
+        // Anthropic reports input_tokens separately from its cached input.
+        sqlx::query("UPDATE llm_calls SET request_type = 'anthropic', input_tokens = 100, cache_read_tokens = 4096 WHERE call_id = 'reported'")
+            .execute(store.pool())
+            .await
+            .unwrap();
+        let window = store.supplier_cache_reporting(&supplier_key).await.unwrap();
+        assert_eq!(window.calls, ASSUMED_CACHE_MIN_SAMPLE_CALLS + 1);
+        assert_eq!(window.cache_reported_calls, 1);
+        assert!(!window.justifies_estimation());
+
+        // The window only inspects recent calls, so a stale report rolls out.
+        for index in 0..ASSUMED_CACHE_EVIDENCE_WINDOW_CALLS {
+            record_evidence_call(
+                &store,
+                &format!("later-{index}"),
+                CallOrigin::Run,
+                ASSUMED_CACHE_MIN_INPUT_TOKENS + 1,
+                None,
+                None,
+            )
+            .await;
+        }
+        let window = store.supplier_cache_reporting(&supplier_key).await.unwrap();
+        assert_eq!(window.calls, ASSUMED_CACHE_EVIDENCE_WINDOW_CALLS);
+        assert_eq!(window.cache_reported_calls, 0);
+        assert!(window.justifies_estimation());
+    }
 
     /// 插件模型不在 model_configs 中,调用记录必须照常落库并可按其稳定供应商键筛选。
     #[tokio::test]

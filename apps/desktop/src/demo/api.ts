@@ -42,6 +42,11 @@ const DAY_MS = 24 * HOUR_MS;
 const MAX_RANGE_BUCKETS = 60;
 const MIN_SPEED_GENERATION_MS = 200;
 const DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS = 9_000;
+// Demo fiction: this supplier has a long settled history where it never reports
+// cache details, so its newest calls are the only ones the estimator covers.
+const DEMO_CACHE_HISTORY_CALLS = 36;
+const DEMO_CACHE_HISTORY_MIN_SAMPLES = 20;
+const DEMO_CACHE_OMITTING_MODEL_ID = "deepseek-chat";
 
 const demoRequestPaths = {
   "openai-chat": "/v1/chat/completions",
@@ -68,6 +73,9 @@ let models: Model[] = [
   createModel({ hash: "mock-mistral-large", order: 15, name: "Mistral Large", type: "openai", url: "https://api.mistral.ai", modelId: "mistral-large-latest", endpoint: "/v1/chat/completions" }),
   createModel({ hash: "mock-mistral-small", order: 16, name: "Mistral Small", type: "openai", url: "https://api.mistral.ai", modelId: "mistral-small-latest", endpoint: "/v1/chat/completions" }),
 ];
+
+const cacheOmittedModelIndex = models.findIndex((model) => model.model_id === DEMO_CACHE_OMITTING_MODEL_ID);
+const reportingModels = models.filter((_, index) => index !== cacheOmittedModelIndex);
 
 let providers: Provider[] = [...new Map(models.map((model) => [
   model.provider_id,
@@ -147,19 +155,30 @@ function timestampForCall(index: number): number {
 }
 
 const calls: LlmCall[] = Array.from({ length: 84 }, (_, index) => {
-  const model = models[index % models.length];
+  // Newest entries belong to the cache-omitting supplier; older entries spread
+  // over suppliers that report cache details, which never justify estimation.
+  const model = index < DEMO_CACHE_HISTORY_CALLS
+    ? models[cacheOmittedModelIndex]
+    : reportingModels[(index - DEMO_CACHE_HISTORY_CALLS) % reportingModels.length];
   const failed = index % 17 === 7;
   const catalog = DEMO_CATALOG.find((item) => item.model_id === model.model_id);
   const rawInput = 1_200 + (index % 11) * 340;
   const outputTokens = failed ? 0 : 760 + (index % 9) * 135;
-  const cacheOmitted = index % 12 === 1;
+  const cacheOmitted = index < DEMO_CACHE_HISTORY_CALLS || index % 12 === 1;
+  const olderCacheOmittedCalls = index < DEMO_CACHE_HISTORY_CALLS
+    ? DEMO_CACHE_HISTORY_CALLS - 1 - index
+    : 0;
   const cacheReadTokens = cacheOmitted ? null : index % 13 === 0 ? 0 : 95_000 + (index % 7) * 12_500;
   const cacheWriteTokens = cacheOmitted ? null : index % 3 === 0 ? 480 + (index % 5) * 90 : 0;
   const pricingSource: PricingSource = catalog ? (index % 9 === 0 ? "custom" : "catalog") : "unpriced";
   const costStatus = catalog ? "priced" : "unpriced";
   const hasCacheReadDiscount = catalog != null
     && Number(catalog.rates.cache_read_per_million) < Number(catalog.rates.input_per_million);
-  const assumedCache = catalog != null && cacheOmitted && rawInput >= 1_024 && hasCacheReadDiscount;
+  const assumedCache = catalog != null
+    && cacheOmitted
+    && rawInput >= 1_024
+    && hasCacheReadDiscount
+    && olderCacheOmittedCalls >= DEMO_CACHE_HISTORY_MIN_SAMPLES;
   const assumedHitRateBps = assumedCache ? DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS : null;
   const estimatedCacheReadTokens = assumedHitRateBps === null ? null : Math.round(rawInput * assumedHitRateBps / 10_000);
   const billedInput = estimatedCacheReadTokens != null ? rawInput - estimatedCacheReadTokens : rawInput;

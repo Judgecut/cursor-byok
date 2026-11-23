@@ -305,6 +305,55 @@ test("collapses the sidebar at minimum window size and remembers the choice with
   expect(management.settings.sidebar_collapsed).toBe(true);
 });
 
+test("shows approximate speed when generation speed is unavailable", async ({ page, management }) =>
+{
+  const base = management.call.call;
+  const records = [
+    { ...base, call_id: "generation-speed", display_name: "Generation sample", performance: { ...base.performance, speed_status: "estimated" } },
+    { ...base, call_id: "overall-speed", display_name: "Short tool output", performance: { ...base.performance, tokens_per_second: null, speed_status: "unavailable", reason: "short_generation", overall_tokens_per_second: 35, generation_ms: 4 } },
+    { ...base, call_id: "no-speed", status: "error", display_name: "Failed sample", performance: { ...base.performance, tokens_per_second: null, speed_status: "unavailable", reason: "not_completed", overall_tokens_per_second: null, overall_reason: "not_completed", generation_ms: null } },
+  ];
+  await page.route("**/__byok-api__/api/llm-calls?*", (route) => route.fulfill({ json: { items: records, total: records.length } }));
+  await page.goto("#/calls");
+  const header = page.getByRole("columnheader", { name: "Speed (tok/s)", exact: true });
+  const speedIndex = await header.evaluate((cell: HTMLTableCellElement) => cell.cellIndex);
+  const speedCell = (name: string) => page.getByRole("row", { name }).getByRole("cell").nth(speedIndex);
+  await expect(speedCell("Generation sample")).toHaveText("≈100");
+  await expect(speedCell("Short tool output")).toHaveText("≈35");
+  await expect(speedCell("Short tool output")).toHaveAttribute("title", /4ms/);
+  await expect(speedCell("Failed sample")).toHaveText("—");
+});
+
+test("keeps the call table compact in call history and overview", async ({ page, management }) =>
+{
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const records = Array.from({ length: 24 }, (_, index) => ({ ...management.call.call, call_id: `smoke-call-${index}` }));
+  await page.route("**/__byok-api__/api/llm-calls?*", (route) => route.fulfill({ json: { items: records, total: records.length } }));
+  const table = page.getByRole("table").filter({ has: page.getByRole("columnheader", { name: "Speed (tok/s)", exact: true }) });
+  const dimensions = async () =>
+  {
+    await expect(table.locator("tbody tr").first()).toBeVisible();
+    return table.evaluate((element: HTMLTableElement) =>
+    {
+      const header = element.tHead!.rows[0];
+      const row = element.tBodies[0].rows[0];
+      const viewport = element.parentElement!.parentElement!;
+      return { headerFont: getComputedStyle(header.cells[0]).fontSize, rowFont: getComputedStyle(row.cells[0]).fontSize, headerHeight: header.getBoundingClientRect().height, rowHeight: row.getBoundingClientRect().height, tableWidth: element.scrollWidth, visibleRows: Math.floor((viewport.clientHeight - header.getBoundingClientRect().height) / row.getBoundingClientRect().height) };
+    });
+  };
+
+  await page.goto("#/calls");
+  const history = await dimensions();
+  expect(history).toMatchObject({ headerFont: "12px", rowFont: "12px", headerHeight: 28, rowHeight: 30, visibleRows: expect.any(Number) });
+  expect(history.visibleRows).toBeGreaterThanOrEqual(20);
+  expect(history.tableWidth).toBeLessThan(3600);
+
+  await page.goto("#/");
+  await page.getByRole("tab", { name: /^Calls/ }).click();
+  const overview = await dimensions();
+  expect(overview).toMatchObject({ headerFont: history.headerFont, rowFont: history.rowFont, headerHeight: history.headerHeight, rowHeight: history.rowHeight });
+});
+
 test("leads with status, call index, and display name, shows time of day, and explains status dots in a tooltip", async ({ page, management }) =>
 {
   const base = management.call.call;

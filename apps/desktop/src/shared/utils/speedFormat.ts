@@ -23,9 +23,13 @@ export function formatFirstOutput(value: number | null): string {
   return `${(value / 1000).toFixed(1)}s`;
 }
 
-/** Formats a generation window in seconds with one decimal, or an em dash. */
+/** Shows milliseconds for sub-second generation windows. */
 export function formatGeneration(value: number | null): string {
   if (value == null || !Number.isFinite(value) || value < 0) return "—";
+  if (value < 1000)
+  {
+    return `${value}ms`;
+  }
   return `${(value / 1000).toFixed(1)}s`;
 }
 

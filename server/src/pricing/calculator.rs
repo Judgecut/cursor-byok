@@ -10,6 +10,10 @@ use super::decimal::DecimalPerMillion;
 
 pub const DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS: i64 = 9_000;
 pub const ASSUMED_CACHE_MIN_INPUT_TOKENS: u64 = 1_024;
+/// Number of recent estimation-eligible calls inspected for supplier evidence.
+pub const ASSUMED_CACHE_EVIDENCE_WINDOW_CALLS: i64 = 30;
+/// Minimum sampled calls before missing cache details may be estimated at all.
+pub const ASSUMED_CACHE_MIN_SAMPLE_CALLS: i64 = 20;
 const BPS_DENOMINATOR: u128 = 10_000;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -131,6 +135,23 @@ impl CostBasis {
     }
 }
 
+/// Cache-reporting evidence for one supplier identity over its recent calls.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CacheReportingWindow {
+    /// Estimation-eligible calls (Run origin, >=1024 input) inside the window.
+    pub calls: i64,
+    /// How many of those reported at least one cache field.
+    pub cache_reported_calls: i64,
+}
+
+impl CacheReportingWindow {
+    /// Missing cache details are estimated only when a large recent sample shows
+    /// the supplier never reports them; any single report means real data wins.
+    pub fn justifies_estimation(&self) -> bool {
+        self.calls >= ASSUMED_CACHE_MIN_SAMPLE_CALLS && self.cache_reported_calls == 0
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BilledTokens {
     pub non_cached_input: u64,
@@ -218,12 +239,17 @@ fn assumed_cache_split(raw_input: u64, hit_rate_bps: i64) -> u64 {
     ((scaled + (BPS_DENOMINATOR / 2)) / BPS_DENOMINATOR) as u64
 }
 
+/// Prices one call from its reported usage and frozen rates.
+///
+/// `estimation_hit_rate_bps` is the configured hit rate when the supplier's
+/// recent calls never report cache details, and `None` when real missing
+/// reporting has to be billed at the plain input price.
 pub fn calculate_cost(
     request_type: ProviderType,
     call_origin: CallOrigin,
     usage: &Usage,
     snapshot: &PricingSnapshot,
-    hit_rate_bps: i64,
+    estimation_hit_rate_bps: Option<i64>,
 ) -> Result<CalculatedCost> {
     let Some(raw_input) = usage.input_tokens else {
         return Ok(CalculatedCost::without_amounts(
@@ -251,23 +277,30 @@ pub fn calculate_cost(
         ));
     }
 
+    let hit_rate_bps = if should_assume_cache(call_origin, raw_input, usage, snapshot)? {
+        estimation_hit_rate_bps
+    } else {
+        None
+    };
+
     let (cost_basis, assumed_cache_hit_rate_bps, estimated_cache_read_tokens, billed) =
-        if should_assume_cache(call_origin, raw_input, usage, snapshot)? {
-            let estimated_cache_read = assumed_cache_split(raw_input, hit_rate_bps);
-            let non_cached_input = raw_input.saturating_sub(estimated_cache_read);
-            (
-                CostBasis::AssumedCache,
-                Some(hit_rate_bps),
-                Some(estimated_cache_read),
-                BilledTokens {
-                    non_cached_input,
-                    output,
-                    cache_read: estimated_cache_read,
-                    cache_write: 0,
-                },
-            )
-        } else {
-            (CostBasis::Reported, None, None, reported_billed)
+        match hit_rate_bps {
+            Some(hit_rate_bps) => {
+                let estimated_cache_read = assumed_cache_split(raw_input, hit_rate_bps);
+                let non_cached_input = raw_input.saturating_sub(estimated_cache_read);
+                (
+                    CostBasis::AssumedCache,
+                    Some(hit_rate_bps),
+                    Some(estimated_cache_read),
+                    BilledTokens {
+                        non_cached_input,
+                        output,
+                        cache_read: estimated_cache_read,
+                        cache_write: 0,
+                    },
+                )
+            }
+            None => (CostBasis::Reported, None, None, reported_billed),
         };
 
     let input_cost =
@@ -353,7 +386,7 @@ mod tests {
             ProviderType::Plugin,
         ] {
             let cost =
-                calculate_cost(protocol, CallOrigin::Run, &usage, &priced_snapshot(), DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS).unwrap();
+                calculate_cost(protocol, CallOrigin::Run, &usage, &priced_snapshot(), Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS)).unwrap();
             assert_eq!(cost.status, CostStatus::Priced);
             assert_eq!(cost.cost_basis, Some(CostBasis::Reported));
             assert_eq!(cost.assumed_cache_hit_rate_bps, None);
@@ -383,7 +416,7 @@ mod tests {
             CallOrigin::Run,
             &usage,
             &priced_snapshot(),
-            DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS,
+            Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS),
         )
         .unwrap();
         assert_eq!(cost.status, CostStatus::Priced);
@@ -409,7 +442,7 @@ mod tests {
                 CallOrigin::Run,
                 &partial,
                 &priced_snapshot(),
-                DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS,
+                Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS),
             )
             .unwrap()
             .status,
@@ -439,7 +472,7 @@ mod tests {
             CallOrigin::Run,
             &no_cache_usage,
             &missing_cache_price,
-            DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS,
+            Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS),
         )
         .unwrap();
         assert_eq!(no_cache_cost.status, CostStatus::Priced);
@@ -457,7 +490,7 @@ mod tests {
                 CallOrigin::Run,
                 &cached_usage,
                 &missing_cache_price,
-                DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS,
+                Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS),
             )
             .unwrap()
             .status,
@@ -486,13 +519,13 @@ mod tests {
             ..Usage::default()
         };
         let cost =
-            calculate_cost(ProviderType::OpenAiChat, CallOrigin::Run, &usage, &free, DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS).unwrap();
+            calculate_cost(ProviderType::OpenAiChat, CallOrigin::Run, &usage, &free, Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS)).unwrap();
         assert_eq!(cost.status, CostStatus::Priced);
         assert_eq!(cost.total_cost_nano, Some(0));
     }
 
     #[test]
-    fn unreported_cache_on_long_run_assumes_ninety_percent_hit_rate_while_explicit_zero_does_not() {
+    fn unreported_cache_on_long_run_uses_evidence_hit_rate_while_explicit_zero_does_not() {
         let gemini = PricingSnapshot {
             source: PricingSource::Catalog,
             provider_id: Some("google".into()),
@@ -506,7 +539,7 @@ mod tests {
             },
         };
 
-        // Omitted cache_read & cache_write on a >=1024 Run call -> 90% assumed cache hit
+        // Omitted cache_read & cache_write on a >=1024 Run call with supplier evidence -> 90% assumed cache hit
         let unreported = Usage {
             input_tokens: Some(179_726),
             output_tokens: Some(798),
@@ -518,7 +551,7 @@ mod tests {
             ProviderType::OpenAiResponses,
         ] {
             let estimated =
-                calculate_cost(protocol, CallOrigin::Run, &unreported, &gemini, DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS).unwrap();
+                calculate_cost(protocol, CallOrigin::Run, &unreported, &gemini, Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS)).unwrap();
             assert_eq!(estimated.status, CostStatus::Priced);
             assert_eq!(estimated.cost_basis, Some(CostBasis::AssumedCache));
             assert_eq!(estimated.assumed_cache_hit_rate_bps, Some(9_000));
@@ -550,7 +583,7 @@ mod tests {
             CallOrigin::Run,
             &explicit_zero,
             &gemini,
-            DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS,
+            Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS),
         )
         .unwrap();
         assert_eq!(exact_zero.cost_basis, Some(CostBasis::Reported));
@@ -569,7 +602,7 @@ mod tests {
             CallOrigin::Run,
             &cache_create_only,
             &priced_snapshot(),
-            DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS,
+            Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS),
         )
         .unwrap();
         assert_eq!(turn0.cost_basis, Some(CostBasis::Reported));
@@ -581,7 +614,7 @@ mod tests {
             CallOrigin::ModelTest,
             &unreported,
             &gemini,
-            DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS,
+            Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS),
         )
         .unwrap();
         assert_eq!(test_cost.cost_basis, Some(CostBasis::Reported));
@@ -595,9 +628,76 @@ mod tests {
             CallOrigin::Run,
             &short_usage,
             &gemini,
-            DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS,
+            Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS),
         )
         .unwrap();
         assert_eq!(short_cost.cost_basis, Some(CostBasis::Reported));
+    }
+
+    #[test]
+    fn a_large_recent_window_without_any_cache_report_justifies_estimation() {
+        let mut window = CacheReportingWindow::default();
+        assert!(!window.justifies_estimation());
+
+        window.calls = ASSUMED_CACHE_MIN_SAMPLE_CALLS - 1;
+        assert!(!window.justifies_estimation());
+
+        window.calls = ASSUMED_CACHE_MIN_SAMPLE_CALLS;
+        assert!(window.justifies_estimation());
+
+        window.calls = ASSUMED_CACHE_EVIDENCE_WINDOW_CALLS;
+        assert!(window.justifies_estimation());
+
+        // One reported cache detail (even an explicit zero) is real data and wins.
+        window.cache_reported_calls = 1;
+        assert!(!window.justifies_estimation());
+    }
+
+    #[test]
+    fn missing_supplier_evidence_bills_unreported_cache_at_the_full_input_price() {
+        let unreported = Usage {
+            input_tokens: Some(179_726),
+            output_tokens: Some(798),
+            ..Usage::default()
+        };
+        let plain = calculate_cost(
+            ProviderType::OpenAiChat,
+            CallOrigin::Run,
+            &unreported,
+            &priced_snapshot(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(plain.status, CostStatus::Priced);
+        assert_eq!(plain.cost_basis, Some(CostBasis::Reported));
+        assert_eq!(plain.assumed_cache_hit_rate_bps, None);
+        assert_eq!(plain.estimated_cache_read_tokens, None);
+        assert_eq!(
+            plain.billed_tokens,
+            Some(BilledTokens {
+                non_cached_input: 179_726,
+                output: 798,
+                cache_read: 0,
+                cache_write: 0,
+            })
+        );
+        // 179_726 * $2/M = $0.359452, output 798 * $10/M = $0.00798
+        assert_eq!(plain.input_cost_nano, Some(359_452_000));
+        assert_eq!(plain.output_cost_nano, Some(7_980_000));
+        assert_eq!(plain.cache_read_cost_nano, Some(0));
+        assert_eq!(plain.cache_write_cost_nano, Some(0));
+        assert_eq!(plain.total_cost_nano, Some(367_432_000));
+
+        // The same call is discounted only once the supplier evidence allows it.
+        let estimated = calculate_cost(
+            ProviderType::OpenAiChat,
+            CallOrigin::Run,
+            &unreported,
+            &priced_snapshot(),
+            Some(DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS),
+        )
+        .unwrap();
+        assert_eq!(estimated.cost_basis, Some(CostBasis::AssumedCache));
+        assert_eq!(estimated.assumed_cache_hit_rate_bps, Some(9_000));
     }
 }

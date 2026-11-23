@@ -205,7 +205,7 @@ function CostBreakdownSection({ call }: { call: LlmCall }) {
         cached: formatInteger(call.estimated_cache_read_tokens ?? 0),
       })
     : priced && reportedUsage && call.cache_read_tokens == null && call.cache_write_tokens == null
-      ? t("估算说明：上游未上报缓存明细，本次未应用默认缓存命中率估算，仅按已上报字段计费。")
+      ? t("估算说明：上游未上报缓存明细，但该接口和模型近期调用未达到估算条件（例如样本不足、出现过缓存上报或该次调用不满足条件），本次按输入单价与已上报字段计费。")
       : null;
 
   const note = call.call_kind === "cursor_official"

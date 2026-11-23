@@ -318,7 +318,7 @@ export function ModelPricingCard() {
         <div className={styles.cacheRateRow}>
           <div className={styles.syncText}>
             <label htmlFor={cacheRateInputId}><strong>{t("缓存估算比例（%）")}</strong></label>
-            <span id={cacheRateDescriptionId} className={styles.syncMeta}>{t("调用未上报缓存用量且符合估算条件时，按此比例估算缓存读取。已计价的记录保留原比例。")}</span>
+            <span id={cacheRateDescriptionId} className={styles.syncMeta}>{t("仅当该接口和模型近期大量调用均未上报缓存明细、达到估算样本要求时，才按此比例估算缓存读取；否则按输入单价计费。已计价的记录保留原比例。")}</span>
           </div>
           <form className={styles.cacheRateForm} onSubmit={(event) =>
           {

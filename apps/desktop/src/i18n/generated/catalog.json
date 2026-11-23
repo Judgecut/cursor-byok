@@ -316,7 +316,7 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 194,
+          "line": 201,
           "column": 15
         },
         {
@@ -540,12 +540,12 @@
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 237,
+          "line": 244,
           "column": 72
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 270,
+          "line": 277,
           "column": 51
         }
       ]
@@ -586,7 +586,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 85,
+          "line": 89,
           "column": 7
         }
       ]
@@ -632,7 +632,7 @@
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 259,
+          "line": 266,
           "column": 15
         }
       ]
@@ -1247,7 +1247,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 45,
+          "line": 49,
           "column": 14
         }
       ]
@@ -2069,7 +2069,7 @@
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 269,
+          "line": 276,
           "column": 15
         }
       ]
@@ -2325,6 +2325,18 @@
           "file": "features/home/metrics/HomeMetrics.tsx",
           "line": 134,
           "column": 48
+        }
+      ]
+    },
+    "343d0de765d2fac7": {
+      "source": "仅当该接口和模型近期大量调用均未上报缓存明细、达到估算样本要求时，才按此比例估算缓存读取；否则按输入单价计费。已计价的记录保留原比例。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ModelPricingCard.tsx",
+          "line": 321,
+          "column": 76
         }
       ]
     },
@@ -2955,7 +2967,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 39,
+          "line": 43,
           "column": 14
         }
       ]
@@ -3299,7 +3311,7 @@
         },
         {
           "file": "shared/ui/DataTable.tsx",
-          "line": 32,
+          "line": 31,
           "column": 17
         }
       ]
@@ -3326,7 +3338,7 @@
         },
         {
           "file": "shared/ui/DataTable.tsx",
-          "line": 30,
+          "line": 29,
           "column": 15
         }
       ]
@@ -3986,7 +3998,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 55,
+          "line": 59,
           "column": 14
         }
       ]
@@ -4680,7 +4692,7 @@
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 264,
+          "line": 271,
           "column": 15
         }
       ]
@@ -4692,7 +4704,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 108,
+          "line": 112,
           "column": 14
         }
       ]
@@ -4823,11 +4835,6 @@
           "column": 6
         },
         {
-          "file": "features/calls/CallTable.tsx",
-          "line": 188,
-          "column": 15
-        },
-        {
           "file": "features/home/metrics/HomeMetrics.tsx",
           "line": 103,
           "column": 7
@@ -4918,7 +4925,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 43,
+          "line": 47,
           "column": 14
         }
       ]
@@ -5033,7 +5040,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 35,
+          "line": 39,
           "column": 14
         }
       ]
@@ -5432,7 +5439,7 @@
         },
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 74,
+          "line": 78,
           "column": 5
         }
       ]
@@ -5518,6 +5525,18 @@
           "file": "features/models/LegacyModelImport.tsx",
           "line": 85,
           "column": 41
+        }
+      ]
+    },
+    "7ea7cddf0ce54c6f": {
+      "source": "估算说明：上游未上报缓存明细，但该接口和模型近期调用未达到估算条件（例如样本不足、出现过缓存上报或该次调用不满足条件），本次按输入单价与已上报字段计费。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallDetails.tsx",
+          "line": 208,
+          "column": 9
         }
       ]
     },
@@ -5658,7 +5677,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 80,
+          "line": 84,
           "column": 16
         }
       ]
@@ -5908,7 +5927,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 41,
+          "line": 45,
           "column": 14
         }
       ]
@@ -5985,12 +6004,12 @@
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 243,
+          "line": 250,
           "column": 48
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 249,
+          "line": 256,
           "column": 44
         }
       ]
@@ -6052,7 +6071,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 77,
+          "line": 81,
           "column": 5
         }
       ]
@@ -6207,7 +6226,7 @@
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 241,
+          "line": 248,
           "column": 15
         }
       ]
@@ -6310,12 +6329,12 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 91,
+          "line": 95,
           "column": 16
         },
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 111,
+          "line": 115,
           "column": 16
         }
       ]
@@ -6507,7 +6526,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 114,
+          "line": 118,
           "column": 5
         }
       ]
@@ -6687,7 +6706,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 47,
+          "line": 51,
           "column": 14
         }
       ]
@@ -7236,7 +7255,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 121,
+          "line": 125,
           "column": 5
         }
       ]
@@ -7440,12 +7459,12 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 307,
+          "line": 314,
           "column": 32
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 310,
+          "line": 317,
           "column": 25
         },
         {
@@ -7527,7 +7546,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 51,
+          "line": 55,
           "column": 14
         }
       ]
@@ -7609,18 +7628,6 @@
         }
       ]
     },
-    "ab92902cedead13e": {
-      "source": "调用未上报缓存用量且符合估算条件时，按此比例估算缓存读取。已计价的记录保留原比例。",
-      "kind": "text",
-      "placeholders": [],
-      "refs": [
-        {
-          "file": "features/settings/ModelPricingCard.tsx",
-          "line": 321,
-          "column": 76
-        }
-      ]
-    },
     "abb1cebfcd09c102": {
       "source": "同步汇率中…",
       "kind": "text",
@@ -7630,6 +7637,18 @@
           "file": "features/settings/CurrencySettingsCard.tsx",
           "line": 94,
           "column": 70
+        }
+      ]
+    },
+    "abe86f3bffe2bd81": {
+      "source": "速度（tok/s）",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallTable.tsx",
+          "line": 188,
+          "column": 15
         }
       ]
     },
@@ -8059,12 +8078,12 @@
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 237,
+          "line": 244,
           "column": 63
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 270,
+          "line": 277,
           "column": 42
         }
       ]
@@ -8076,7 +8095,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 100,
+          "line": 104,
           "column": 16
         }
       ]
@@ -8235,7 +8254,7 @@
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 247,
+          "line": 254,
           "column": 15
         }
       ]
@@ -8522,7 +8541,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 63,
+          "line": 67,
           "column": 16
         }
       ]
@@ -8634,12 +8653,12 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 68,
+          "line": 72,
           "column": 7
         },
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 103,
+          "line": 107,
           "column": 7
         }
       ]
@@ -8704,18 +8723,6 @@
           "file": "features/calls/CallDetails.tsx",
           "line": 349,
           "column": 51
-        }
-      ]
-    },
-    "c3d4b96001050294": {
-      "source": "估算说明：上游未上报缓存明细，本次未应用默认缓存命中率估算，仅按已上报字段计费。",
-      "kind": "text",
-      "placeholders": [],
-      "refs": [
-        {
-          "file": "features/calls/CallDetails.tsx",
-          "line": 208,
-          "column": 9
         }
       ]
     },
@@ -9784,7 +9791,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 49,
+          "line": 53,
           "column": 14
         }
       ]
@@ -10381,7 +10388,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 53,
+          "line": 57,
           "column": 14
         }
       ]
@@ -10393,7 +10400,7 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 304,
+          "line": 311,
           "column": 15
         },
         {
@@ -10701,7 +10708,7 @@
       "refs": [
         {
           "file": "shared/utils/speedFormat.ts",
-          "line": 37,
+          "line": 41,
           "column": 14
         }
       ]

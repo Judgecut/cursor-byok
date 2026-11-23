@@ -185,9 +185,16 @@ export function CallTable({
     },
     {
       key: "speed",
-      header: t("生成速度（tok/s）"),
+      header: t("速度（tok/s）"),
       title: (call) => generationSpeedTooltip(call.performance),
-      render: (call) => formatSpeed(call.performance.tokens_per_second, call.performance.speed_status),
+      render: ({ performance }) =>
+      {
+        if (performance.tokens_per_second == null && performance.overall_tokens_per_second != null)
+        {
+          return <span className={styles.speedFallback}>{formatSpeed(performance.overall_tokens_per_second, "estimated")}</span>;
+        }
+        return formatSpeed(performance.tokens_per_second, performance.speed_status);
+      },
     },
     {
       key: "first_output",
@@ -322,7 +329,6 @@ export function CallTable({
     rowKey={(call) => call.call_id}
     rowClassName={() => styles.updateRow}
     rowRef={rowRef}
-    minWidth={4340}
     serverPagination={serverPagination}
     loading={loading}
     emptyText={emptyText}

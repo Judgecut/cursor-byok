@@ -660,7 +660,7 @@ mod tests {
             crate::model::CallOrigin::Run,
             &usage,
             &resolved.snapshot,
-            crate::pricing::DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS,
+            Some(crate::pricing::DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS),
         )
         .unwrap();
         assert_eq!(cost.status, crate::pricing::CostStatus::Priced);

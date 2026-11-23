@@ -2037,7 +2037,7 @@ async fn overview_and_calls_api_apply_supplier_and_time_filters_before_paginatio
 }
 
 #[tokio::test]
-async fn unreported_cache_distinguishes_zero_and_uses_assumed_hit_rate_end_to_end() {
+async fn unreported_cache_estimation_requires_supplier_evidence_end_to_end() {
     let (router, store, _pricing, _dir) =
         setup_control_with_catalog("http://127.0.0.1:1/unused").await;
     let endpoint = "https://gateway.example.com/v1";
@@ -2071,6 +2071,61 @@ async fn unreported_cache_distinguishes_zero_and_uses_assumed_hit_rate_end_to_en
         )
         .await
         .unwrap();
+
+    // A settled history of large Run calls that never report cache details is
+    // what allows the configured hit rate to be applied at all.
+    for index in 0..20_u64 {
+        let call_id = format!("g4-history-{index}");
+        store
+            .start_llm_call(&NewLlmCall {
+                call_id: call_id.clone(),
+                run_id: format!("run-{call_id}"),
+                conversation_id: "conv-history".into(),
+                provider_call_index: 0,
+                model_hash: format!("mh-{call_id}"),
+                provider_type: ProviderType::OpenAiChat,
+                provider_url: endpoint.into(),
+                request_type: ProviderType::OpenAiChat,
+                request_url: endpoint.into(),
+                model_id: "gemini-2.5-pro".into(),
+                display_name: "Gemini-2.5-Pro".into(),
+                reasoning_effort: None,
+                fast: false,
+                message_count: 1,
+                tool_count: 0,
+                detailed: false,
+                origin: CallOrigin::Run,
+                streaming: true,
+            })
+            .await
+            .unwrap();
+        store
+            .record_llm_usage(
+                &call_id,
+                Usage {
+                    input_tokens: Some(2_048),
+                    output_tokens: Some(1),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        store
+            .finish_llm_call(
+                &call_id,
+                CallFinish {
+                    status: "completed",
+                    finish_reason: Some("stop"),
+                    elapsed_ms: 50,
+                    generation_ms: None,
+                    generation_output_events: None,
+                    error_kind: None,
+                    error_message: None,
+                },
+            )
+            .await
+            .unwrap();
+    }
 
     for (call_id, protocol, origin, usage) in [
         (
@@ -2213,25 +2268,25 @@ async fn unreported_cache_distinguishes_zero_and_uses_assumed_hit_rate_end_to_en
     let (status, overview) = send(router, "GET", "/__byok-api__/api/overview", None).await;
     assert_eq!(status, StatusCode::OK);
     let metrics = &overview["metrics"];
-    assert_eq!(metrics["llm_calls"], 4);
-    assert_eq!(metrics["input_tokens"], 2_010_500);
+    assert_eq!(metrics["llm_calls"], 24);
+    assert_eq!(metrics["input_tokens"], 2_051_460);
     assert_eq!(metrics["reported_cache_input_tokens"], 1_000_000);
     assert_eq!(metrics["cache_read_tokens"], 0);
     assert_eq!(metrics["cache_write_tokens"], 0);
-    assert_eq!(metrics["unreported_cache_calls"], 3);
+    assert_eq!(metrics["unreported_cache_calls"], 23);
     assert_eq!(metrics["assumed_cache_calls"], 1);
     assert_eq!(metrics["assumed_cache_cost"], "1.1776875");
     assert_eq!(metrics["estimated_cache_read_tokens"], 752_500);
-    assert_eq!(metrics["total_cost"], "3.4441875");
+    assert_eq!(metrics["total_cost"], "3.5057775");
 
     let model = &overview["models"][0];
-    assert_eq!(model["unreported_cache_calls"], 3);
+    assert_eq!(model["unreported_cache_calls"], 23);
     assert_eq!(model["assumed_cache_calls"], 1);
     assert_eq!(model["assumed_cache_cost"], "1.1776875");
     assert_eq!(model["estimated_cache_read_tokens"], 752_500);
 
     let supplier = &overview["suppliers"][0];
-    assert_eq!(supplier["unreported_cache_calls"], 3);
+    assert_eq!(supplier["unreported_cache_calls"], 23);
     assert_eq!(supplier["assumed_cache_calls"], 1);
     assert_eq!(supplier["assumed_cache_cost"], "1.1776875");
     assert_eq!(supplier["estimated_cache_read_tokens"], 752_500);
@@ -2242,8 +2297,152 @@ async fn unreported_cache_distinguishes_zero_and_uses_assumed_hit_rate_end_to_en
         .iter()
         .find(|b| b["priced_calls"].as_i64().unwrap_or(0) > 0)
         .unwrap();
-    assert_eq!(active_bucket["unreported_cache_calls"], 3);
+    assert_eq!(active_bucket["unreported_cache_calls"], 23);
     assert_eq!(active_bucket["assumed_cache_calls"], 1);
     assert_eq!(active_bucket["assumed_cache_cost"], "1.1776875");
     assert_eq!(active_bucket["estimated_cache_read_tokens"], 752_500);
+}
+
+#[tokio::test]
+async fn unreported_cache_with_any_recent_cache_report_bills_the_full_input_price() {
+    let (_router, store, _pricing, _dir) =
+        setup_control_with_catalog("http://127.0.0.1:1/unused").await;
+    let endpoint = "https://gateway.example.com/v1";
+    store
+        .save_supplier_pricing_config(
+            &SaveSupplierPricingInput {
+                source_kind: SourceKind::Builtin,
+                endpoint_key: endpoint.into(),
+                model_id: "gemini-2.5-pro".into(),
+                binding_mode: BindingMode::Auto,
+                catalog_provider_id: None,
+                catalog_model_id: None,
+                custom_rates: PricingRates {
+                    input_per_million: Some("1.5".into()),
+                    output_per_million: Some("7.5".into()),
+                    cache_read_per_million: Some("0.075".into()),
+                    cache_write_per_million: Some("0.375".into()),
+                },
+            },
+            &[],
+        )
+        .await
+        .unwrap();
+
+    // One explicit cache report inside the recent window is real data, so a
+    // later omission is treated as genuinely uncached instead of estimated.
+    for index in 0..20_u64 {
+        let call_id = format!("g4-reporting-{index}");
+        store
+            .start_llm_call(&NewLlmCall {
+                call_id: call_id.clone(),
+                run_id: format!("run-{call_id}"),
+                conversation_id: "conv-reporting".into(),
+                provider_call_index: 0,
+                model_hash: format!("mh-{call_id}"),
+                provider_type: ProviderType::OpenAiChat,
+                provider_url: endpoint.into(),
+                request_type: ProviderType::OpenAiChat,
+                request_url: endpoint.into(),
+                model_id: "gemini-2.5-pro".into(),
+                display_name: "Gemini-2.5-Pro".into(),
+                reasoning_effort: None,
+                fast: false,
+                message_count: 1,
+                tool_count: 0,
+                detailed: false,
+                origin: CallOrigin::Run,
+                streaming: true,
+            })
+            .await
+            .unwrap();
+        store
+            .record_llm_usage(
+                &call_id,
+                Usage {
+                    input_tokens: Some(2_048),
+                    output_tokens: Some(1),
+                    cache_read_tokens: (index == 0).then_some(0),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        store
+            .finish_llm_call(
+                &call_id,
+                CallFinish {
+                    status: "completed",
+                    finish_reason: Some("stop"),
+                    elapsed_ms: 50,
+                    generation_ms: None,
+                    generation_output_events: None,
+                    error_kind: None,
+                    error_message: None,
+                },
+            )
+            .await
+            .unwrap();
+    }
+
+    let target = "g4-accountable";
+    store
+        .start_llm_call(&NewLlmCall {
+            call_id: target.into(),
+            run_id: "run-accountable".into(),
+            conversation_id: "conv-reporting".into(),
+            provider_call_index: 0,
+            model_hash: "mh-accountable".into(),
+            provider_type: ProviderType::Anthropic,
+            provider_url: endpoint.into(),
+            request_type: ProviderType::Anthropic,
+            request_url: endpoint.into(),
+            model_id: "gemini-2.5-pro".into(),
+            display_name: "Gemini-2.5-Pro".into(),
+            reasoning_effort: None,
+            fast: false,
+            message_count: 1,
+            tool_count: 0,
+            detailed: false,
+            origin: CallOrigin::Run,
+            streaming: true,
+        })
+        .await
+        .unwrap();
+    store
+        .record_llm_usage(
+            target,
+            Usage {
+                input_tokens: Some(1_000_000),
+                output_tokens: Some(100_000),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    store
+        .finish_llm_call(
+            target,
+            CallFinish {
+                status: "completed",
+                finish_reason: Some("stop"),
+                elapsed_ms: 50,
+                generation_ms: None,
+                generation_output_events: None,
+                error_kind: None,
+                error_message: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    let call = store.llm_call(target).await.unwrap().unwrap();
+    assert_eq!(call.cost_basis.as_deref(), Some("reported"));
+    assert_eq!(call.assumed_cache_hit_rate_bps, None);
+    assert_eq!(call.estimated_cache_read_tokens, None);
+    assert_eq!(call.billed_input_tokens, Some(1_000_000));
+    assert_eq!(call.input_cost.as_deref(), Some("1.5"));
+    assert_eq!(call.cache_read_cost.as_deref(), Some("0"));
+    assert_eq!(call.output_cost.as_deref(), Some("0.75"));
+    assert_eq!(call.total_cost.as_deref(), Some("2.25"));
 }

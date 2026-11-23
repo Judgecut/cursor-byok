@@ -71,7 +71,8 @@
   font-family: var(--oa-number-font);
 }
 
-.costMuted {
+.costMuted,
+.speedFallback {
   color: var(--vscode-descriptionForeground);
 }
 
