@@ -344,7 +344,7 @@ test("keeps the call table compact in call history and overview", async ({ page,
 
   await page.goto("#/calls");
   const history = await dimensions();
-  expect(history).toMatchObject({ headerFont: "12px", rowFont: "12px", headerHeight: 28, rowHeight: 30, visibleRows: expect.any(Number) });
+  expect(history).toMatchObject({ headerFont: "12px", rowFont: "12px", headerHeight: 30, rowHeight: 32, visibleRows: expect.any(Number) });
   expect(history.visibleRows).toBeGreaterThanOrEqual(20);
   expect(history.tableWidth).toBeLessThan(3600);
 
@@ -354,7 +354,7 @@ test("keeps the call table compact in call history and overview", async ({ page,
   expect(overview).toMatchObject({ headerFont: history.headerFont, rowFont: history.rowFont, headerHeight: history.headerHeight, rowHeight: history.rowHeight });
 });
 
-test("leads with status, call index, and display name, shows time of day, and explains status dots in a tooltip", async ({ page, management }) =>
+test("leads with status, call index and time, and explains status dots in a tooltip", async ({ page, management }) =>
 {
   const base = management.call.call;
   const records = [
@@ -366,10 +366,10 @@ test("leads with status, call index, and display name, shows time of day, and ex
   await page.goto("#/calls");
 
   const headers = await page.getByRole("columnheader").allTextContents();
-  expect(headers.slice(0, 4)).toEqual(["Status", "Call Index", "Display name", "Time"]);
+  expect(headers.slice(0, 4)).toEqual(["Status", "Call Index", "Time", "Display name"]);
 
   const rows = page.locator("tbody tr");
-  const timeCell = rows.nth(0).getByRole("cell").nth(3);
+  const timeCell = rows.nth(0).getByRole("cell").nth(2);
   await expect(timeCell).toHaveText(/^\d{1,2}:\d{2}:\d{2}[\s\u202f]?[AP]M$/i);
   expect(await timeCell.getAttribute("title")).toContain("11/23/2026");
 
