@@ -4,7 +4,7 @@ import type { OverviewSupplierBreakdown, PluginDescriptor } from "../../../share
 import { Card } from "../../../shared/ui/Card";
 import { Icon } from "../../../shared/ui/Icon";
 import { claudeIcon, flatColorOrganizationIcon, openAiIcon } from "../../../shared/ui/icons";
-import { formatDisplayCost, type DisplayCurrency } from "../../../shared/utils/costFormat";
+import { formatDisplayCost, type DisplayCurrency, type DisplayExchangeRate } from "../../../shared/utils/costFormat";
 import { formatCompactInteger, formatInteger } from "../../../shared/utils/numberFormat";
 import { aggregateTooltip, formatFirstOutput, formatSpeed } from "../../../shared/utils/speedFormat";
 import { buildPluginLabelMap } from "../../../shared/utils/supplierOptions";
@@ -47,7 +47,7 @@ export function HomeSupplierBreakdown({
   plugins: PluginDescriptor[];
   overallTokenUsage: number;
   currency: DisplayCurrency;
-  exchangeRate: string | null;
+  exchangeRate: DisplayExchangeRate | null;
   loading?: boolean;
   error?: string | null;
 }) {

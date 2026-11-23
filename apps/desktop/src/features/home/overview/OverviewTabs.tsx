@@ -7,7 +7,7 @@ import type {
 import controls from "../../../shared/ui/Controls.module.scss";
 import { Tabs, type TabItem } from "../../../shared/ui/Tabs";
 import type { ServerPagination } from "../../../shared/ui/DataTable";
-import type { DisplayCurrency } from "../../../shared/utils/costFormat";
+import type { DisplayCurrency, DisplayExchangeRate } from "../../../shared/utils/costFormat";
 import { CallTable } from "../../calls/CallTable";
 import { HomeModelBreakdown } from "../models/HomeModelBreakdown";
 import { HomeSupplierBreakdown } from "../suppliers/HomeSupplierBreakdown";
@@ -55,7 +55,7 @@ export function OverviewTabs({
   plugins: PluginDescriptor[];
   overallTokenUsage: number;
   currency: DisplayCurrency;
-  exchangeRate: string | null;
+  exchangeRate: DisplayExchangeRate | null;
   overviewLoading: boolean;
   overviewError: string | null;
 }) {

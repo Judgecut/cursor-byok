@@ -1,7 +1,7 @@
 //! Persists application settings.
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::Result;
+use crate::{exchange_rates::ExchangeRateSyncMeta, Result};
 
 use super::{now_ms, Store};
 
@@ -14,6 +14,7 @@ const COMMIT_SETTINGS_KEY: &str = "commit_settings";
 const CURSOR_TAKEOVER_ENABLED_KEY: &str = "cursor_takeover_enabled";
 const EXTERNAL_API_SETTINGS_KEY: &str = "external_api";
 const INTERFACE_SETTINGS_KEY: &str = "interface_settings";
+const EXCHANGE_RATE_SYNC_KEY: &str = "exchange_rate_sync";
 
 pub const DEFAULT_HOME_REFRESH_INTERVAL_SECONDS: u64 = 30;
 
@@ -379,7 +380,7 @@ where
     Option::<String>::deserialize(deserializer).map(Some)
 }
 
-fn normalize_exchange_rate(raw: &str) -> Result<Option<String>> {
+pub(crate) fn normalize_exchange_rate(raw: &str) -> Result<Option<String>> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return Ok(None);
@@ -739,6 +740,27 @@ impl Store {
         read_interface_settings(&self.pool).await
     }
 
+    pub(crate) async fn exchange_rate_sync_meta(&self) -> Result<ExchangeRateSyncMeta>
+    {
+        read_exchange_rate_sync_meta(&self.pool).await
+    }
+
+    pub(crate) async fn update_exchange_rate_sync_meta(&self, change: impl FnOnce(&mut ExchangeRateSyncMeta) + Send) -> Result<()>
+    {
+        let _write = self.writes.lock().await;
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let mut meta = read_exchange_rate_sync_meta(&mut *transaction).await?;
+        change(&mut meta);
+        sqlx::query("INSERT INTO service_settings(setting_key, value_json, updated_at_ms) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET value_json = excluded.value_json, updated_at_ms = excluded.updated_at_ms")
+            .bind(EXCHANGE_RATE_SYNC_KEY)
+            .bind(serde_json::to_string(&meta)?)
+            .bind(now_ms())
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
     pub async fn update_interface_settings(
         &self,
         patch: InterfaceSettingsPatch,
@@ -802,6 +824,19 @@ impl Store {
         .execute(&self.pool)
         .await?;
         Ok(settings)
+    }
+}
+
+async fn read_exchange_rate_sync_meta<'e>(executor: impl sqlx::SqliteExecutor<'e>) -> Result<ExchangeRateSyncMeta>
+{
+    let stored: Option<String> = sqlx::query_scalar("SELECT value_json FROM service_settings WHERE setting_key = ?")
+        .bind(EXCHANGE_RATE_SYNC_KEY)
+        .fetch_optional(executor)
+        .await?;
+    match stored
+    {
+        Some(value) => Ok(serde_json::from_str(&value)?),
+        None => Ok(ExchangeRateSyncMeta::default()),
     }
 }
 

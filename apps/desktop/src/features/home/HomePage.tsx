@@ -9,8 +9,9 @@ import {
   type OverviewFilterModel,
   type OverviewFilterSupplier,
 } from "../../shared/api";
-import { appStore, useAppStore } from "../../shared/store/appStore";
+import { appStore, useAppStore, useCurrencyDisplay } from "../../shared/store/appStore";
 import { CurrencySelect } from "../../shared/ui/CurrencySelect";
+import { ExchangeRateAttribution } from "../../shared/ui/ExchangeRateAttribution";
 import { formatConversionNote } from "../../shared/utils/costFormat";
 import controls from "../../shared/ui/Controls.module.scss";
 import { Icon } from "../../shared/ui/Icon";
@@ -38,8 +39,6 @@ export function HomePage() {
     overview,
     busy,
     plugins,
-    currency,
-    exchangeRate,
     overviewRangePreset,
     overviewChartMode,
     overviewChartType,
@@ -48,6 +47,7 @@ export function HomePage() {
     homeRefreshIntervalSeconds,
     refreshTick,
   } = useAppStore();
+  const { currency, exchangeRate } = useCurrencyDisplay();
   const { locale } = useI18n();
   const location = useLocation();
   const navigate = useNavigate();
@@ -848,6 +848,7 @@ export function HomePage() {
       <div className={styles.currencyControl} title={formatConversionNote(currency, exchangeRate) ?? undefined}>
         <CurrencySelect value={currency} onChange={appStore.selectCurrency} />
       </div>
+      <ExchangeRateAttribution source={exchangeRate?.source} />
       <div className={styles.segmentGroup} role="group" aria-label={t("趋势统计维度")}>
         <button
           type="button"

@@ -11,12 +11,34 @@ import { CursorSettingsPage } from "./features/models/CursorSettingsPage";
 import { HomePage } from "./features/home/HomePage";
 import { PluginManagementPage } from "./features/plugins/PluginManagementPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
-import { useAppStore } from "./shared/store/appStore";
+import { appStore, useAppStore } from "./shared/store/appStore";
 import { updateStore } from "./shared/store/updateStore";
 
 const AUTO_UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 
 export function App() {
+  useEffect(() =>
+  {
+    const refreshVisible = () =>
+    {
+      if (document.visibilityState === "visible")
+      {
+        void appStore.loadExchangeRateSync();
+        void appStore.hydrateInterfaceSettings(false);
+      }
+    };
+    void appStore.loadExchangeRateSync();
+    const timer = window.setInterval(refreshVisible, 30_000);
+    window.addEventListener("focus", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () =>
+    {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
+  }, []);
+
   return (
     <TooltipProvider>
       <HashRouter>

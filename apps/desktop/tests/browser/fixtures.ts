@@ -1,11 +1,15 @@
 import { test as base, expect } from "@playwright/test";
-import type { CallDetail, InterfaceSettings, Model, ModelInput, Overview, PricingSettings, Provider, ProviderInput } from "../../src/shared/api";
+import type { CallDetail, ExchangeRateSyncState, InterfaceSettings, Model, ModelInput, Overview, PricingSettings, Provider, ProviderInput } from "../../src/shared/api";
 
 type ManagementState = {
   providers: Provider[];
   models: Model[];
   settings: InterfaceSettings;
   pricingSettings: PricingSettings;
+  exchangeRateSync: ExchangeRateSyncState;
+  nextExchangeRateSnapshot: ExchangeRateSyncState["snapshot"];
+  overview: Overview;
+  call: CallDetail;
   writes: Array<{ path: string; body: unknown }>;
   openedUrls: string[];
 };
@@ -39,6 +43,10 @@ export const test = base.extend<{ management: ManagementState }>({
       models: [],
       settings,
       pricingSettings: { assumed_cache_hit_rate_bps: 9_000 },
+      exchangeRateSync: { auto_sync_enabled: true, snapshot: null, last_attempted_at_ms: null, last_synced_at_ms: null, last_error: null, syncing: false },
+      nextExchangeRateSnapshot: null,
+      overview: structuredClone(overview),
+      call: structuredClone(call),
       writes: [],
       openedUrls: [],
     };
@@ -82,6 +90,29 @@ export const test = base.extend<{ management: ManagementState }>({
         Object.assign(state.settings, body);
         response = state.settings;
       }
+      else if (path === "/settings/exchange-rates")
+      {
+        const sync = state.exchangeRateSync;
+        if (method === "PUT")
+        {
+          sync.auto_sync_enabled = body.auto_sync_enabled;
+        }
+        if (method === "POST")
+        {
+          sync.last_attempted_at_ms = Date.now();
+          if (state.nextExchangeRateSnapshot)
+          {
+            sync.snapshot = structuredClone(state.nextExchangeRateSnapshot);
+            sync.last_synced_at_ms = sync.last_attempted_at_ms;
+            sync.last_error = null;
+          }
+          else
+          {
+            sync.last_error = "Test feeds unavailable";
+          }
+        }
+        response = sync;
+      }
       else if (path === "/settings/commit" && method === "PUT")
       {
         response = { ...body, default_prompt: "Write a commit message." };
@@ -102,9 +133,9 @@ export const test = base.extend<{ management: ManagementState }>({
         const responses: Record<string, unknown> = {
           "/providers": state.providers,
           "/models": state.models,
-          "/overview": overview,
-          "/llm-calls": { items: [call.call], total: 1 },
-          "/llm-calls/smoke-call": call,
+          "/overview": state.overview,
+          "/llm-calls": { items: [state.call.call], total: 1 },
+          "/llm-calls/smoke-call": state.call,
           "/settings/interface": state.settings,
           "/settings/observability": { detailed: false },
           "/settings/ports": { proxy_port: 0, service_port: 0 },

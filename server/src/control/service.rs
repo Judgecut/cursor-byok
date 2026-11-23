@@ -18,6 +18,7 @@ use super::ads::{
 };
 
 use crate::{
+    exchange_rates::ExchangeRateService,
     local_app::CursorHarness,
     model::{
         evaluate as evaluate_performance, CallOrigin, ContentPart, CursorRunTraceArtifact,
@@ -47,6 +48,7 @@ pub struct ControlService {
     plugin_runtime: PluginRuntime,
     plugins: PluginRegistry,
     pricing: PricingService,
+    exchange_rates: ExchangeRateService,
     clients: crate::network::NetworkClients,
     app_version: String,
     model_tests: Arc<Mutex<BTreeMap<String, CancellationToken>>>,
@@ -159,6 +161,7 @@ impl ControlService {
         app_version: String,
     ) -> Result<Self> {
         let pricing = PricingService::new(store.clone(), clients.clone());
+        let exchange_rates = ExchangeRateService::new(store.clone(), clients.clone());
         Ok(Self {
             cursor_harness: CursorHarness::new(store.clone())?,
             store,
@@ -166,6 +169,7 @@ impl ControlService {
             plugin_runtime,
             plugins,
             pricing,
+            exchange_rates,
             clients,
             app_version,
             model_tests: Arc::new(Mutex::new(BTreeMap::new())),
@@ -179,6 +183,11 @@ impl ControlService {
 
     pub fn pricing(&self) -> &PricingService {
         &self.pricing
+    }
+
+    pub fn exchange_rates(&self) -> &ExchangeRateService
+    {
+        &self.exchange_rates
     }
 
     pub fn cursor_harness(&self) -> &CursorHarness {

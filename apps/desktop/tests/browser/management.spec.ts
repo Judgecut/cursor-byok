@@ -76,6 +76,8 @@ test("stores each display currency rate independently and shares selection with 
 
   await choose("EUR");
   const euroRate = page.getByRole("textbox", { name: "EUR exchange rate" });
+  await expect(euroRate).toHaveAttribute("placeholder", "0.9099");
+  await expect(page.getByText(/0\.9099 EUR.*2026-11-20/)).toBeVisible();
   await euroRate.fill("0");
   await euroRate.press("Enter");
   await expect(euroRate).toHaveAttribute("aria-invalid", "true");
@@ -87,6 +89,7 @@ test("stores each display currency rate independently and shares selection with 
   await choose("JPY");
   const yenRate = page.getByRole("textbox", { name: "JPY exchange rate" });
   await expect(yenRate).toHaveValue("");
+  await expect(yenRate).toHaveAttribute("placeholder", "158.64");
   await yenRate.fill("150");
   await yenRate.press("Enter");
   await expect.poll(() => management.settings.jpy_rate).toBe("150");
@@ -99,9 +102,67 @@ test("stores each display currency rate independently and shares selection with 
   await expect.poll(() => management.settings.currency).toBe("EUR");
   await page.goto("#/settings");
   await expect(euroRate).toHaveValue("0.92");
-  await page.getByRole("button", { name: "Clear exchange rate" }).click();
+  await page.getByRole("button", { name: "Restore default", exact: true }).click();
   await expect(euroRate).toHaveValue("");
+  await expect(page.getByText(/0\.9099 EUR.*2026-11-20/)).toBeVisible();
   expect(management.settings.jpy_rate).toBe("150");
+});
+
+test("synchronizes display rates across overview and call details, preserving manual overrides", async ({ page, management }) =>
+{
+  management.settings.currency = "EUR";
+  management.overview.metrics.total_cost = "2";
+  management.overview.metrics.priced_calls = 1;
+  management.call.call.cost_status = "priced";
+  management.call.call.total_cost = "2";
+  const detail = await page.context().newPage();
+  await page.goto("#/settings");
+  await detail.goto("#/calls/smoke-call");
+  await expect(detail.getByText("€1.8198", { exact: true })).toBeVisible();
+
+  const toggle = page.getByRole("checkbox", { name: /Automatically sync exchange rates/ });
+  await expect(toggle).toBeChecked();
+  await expect(toggle).toBeEnabled();
+  await toggle.press("Space");
+  await expect.poll(() => management.exchangeRateSync.auto_sync_enabled).toBe(false);
+
+  const sync = page.getByRole("button", { name: "Sync exchange rates now" });
+  await sync.click();
+  await expect(page.getByText("Exchange rate sync failed. Existing rates are still in use.")).toBeVisible();
+  const rate = page.getByRole("textbox", { name: "EUR exchange rate" });
+  await expect(rate).toHaveAttribute("placeholder", "0.9099");
+
+  management.nextExchangeRateSnapshot = { source: "exchange_rate_api", published_at_ms: Date.UTC(2026, 10, 23), rates: { EUR: "0.95", CNY: "6.7", JPY: "158", TWD: "33", TRY: "50", KRW: "1340" } };
+  await sync.click();
+  await expect(rate).toHaveAttribute("placeholder", "0.95");
+  await page.goto("#/");
+  await expect(page.getByText("€1.90", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Rates by Exchange Rate API" })).toHaveAttribute("href", "https://www.exchangerate-api.com");
+  await detail.bringToFront();
+  await detail.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(detail.getByText("€1.90", { exact: true })).toBeVisible();
+  await expect(detail.getByRole("link", { name: "Rates by Exchange Rate API" })).toBeVisible();
+
+  await page.bringToFront();
+  await page.goto("#/settings");
+  await rate.fill("0.5");
+  await rate.press("Enter");
+  await expect.poll(() => management.settings.eur_rate).toBe("0.5");
+  management.nextExchangeRateSnapshot.rates.EUR = "0.96";
+  await sync.click();
+  await expect(rate).toHaveAttribute("placeholder", "0.96");
+  await expect(rate).toHaveValue("0.5");
+  await page.goto("#/");
+  await expect(page.getByText("€1.00", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Rates by Exchange Rate API" })).toHaveCount(0);
+  await detail.bringToFront();
+  await detail.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(detail.getByText("€1.00", { exact: true })).toBeVisible();
+  await page.bringToFront();
+  await page.goto("#/settings");
+  await page.getByRole("button", { name: "Restore default", exact: true }).click();
+  await expect(page.getByText(/Converted at the synced rate.*0\.96 EUR/)).toBeVisible();
+  await detail.close();
 });
 
 test("collapses the sidebar at minimum window size and remembers the choice with save rollback", async ({ page, management }) =>

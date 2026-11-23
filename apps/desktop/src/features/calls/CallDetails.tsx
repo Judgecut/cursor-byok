@@ -1,5 +1,6 @@
 import type { CallDetail, CallPerformance, LlmCall } from "../../shared/api";
-import { useAppStore } from "../../shared/store/appStore";
+import { useCurrencyDisplay } from "../../shared/store/appStore";
+import { ExchangeRateAttribution } from "../../shared/ui/ExchangeRateAttribution";
 import { JsonEditor } from "../../shared/ui/JsonEditor";
 import { Tabs, type TabItem } from "../../shared/ui/Tabs";
 import {
@@ -123,7 +124,7 @@ function formatCacheDetailField(tokens: number | null, call: LlmCall): string | 
 }
 
 function CostBreakdownSection({ call }: { call: LlmCall }) {
-  const { currency, exchangeRate } = useAppStore();
+  const { currency, exchangeRate } = useCurrencyDisplay();
   const conversionNote = formatConversionNote(currency, exchangeRate);
   const status = costStatusBadge(call);
   const reportedUsage = hasReportedUsage(call);
@@ -269,6 +270,7 @@ function CostBreakdownSection({ call }: { call: LlmCall }) {
           })}
         </div>
       )}
+      {priced && <ExchangeRateAttribution source={exchangeRate?.source} />}
       {basisNote && <div className={styles.costNote}>{basisNote}</div>}
       {note && <div className={styles.costNote}>{note}</div>}
     </div>

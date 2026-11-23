@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { OverviewModelSummary } from "../../../shared/api";
 import { Card } from "../../../shared/ui/Card";
-import { formatDisplayCost, type DisplayCurrency } from "../../../shared/utils/costFormat";
+import { formatDisplayCost, type DisplayCurrency, type DisplayExchangeRate } from "../../../shared/utils/costFormat";
 import { formatCompactInteger, formatInteger } from "../../../shared/utils/numberFormat";
 import { aggregateTooltip, formatFirstOutput, formatSpeed } from "../../../shared/utils/speedFormat";
 import { ScrollableContent } from "../../../shared/virtual/ScrollableContent";
@@ -35,7 +35,7 @@ export function HomeModelBreakdown({
   models: OverviewModelSummary[];
   overallTokenUsage: number;
   currency: DisplayCurrency;
-  exchangeRate: string | null;
+  exchangeRate: DisplayExchangeRate | null;
   loading?: boolean;
   error?: string | null;
 }) {

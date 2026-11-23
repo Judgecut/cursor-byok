@@ -1,7 +1,7 @@
 import type { AdRuntime } from "../shell/ads/types";
 import type { CommitPromptLocale, Locale, LocalePreference } from "../i18n/runtime";
 import type { ThemeId } from "./theme/theme";
-import type { DisplayCurrency, ExchangeRates } from "./utils/costFormat";
+import type { DisplayCurrency, ExchangeRates, ExchangeRateSnapshot } from "./utils/costFormat";
 
 export type ModelType = "openai" | "anthropic";
 
@@ -246,6 +246,16 @@ export interface InterfaceSettingsPatch extends Partial<ExchangeRates> {
   overview_calendar_window?: OverviewCalendarWindow;
   overview_calendar_chart_type?: OverviewCalendarChartType;
   home_refresh_interval_seconds?: number;
+}
+
+export interface ExchangeRateSyncState
+{
+  auto_sync_enabled: boolean;
+  snapshot: ExchangeRateSnapshot | null;
+  last_attempted_at_ms: number | null;
+  last_synced_at_ms: number | null;
+  last_error: string | null;
+  syncing: boolean;
 }
 
 export type PricingSource = "custom" | "catalog" | "unpriced";
@@ -918,6 +928,9 @@ export const api = {
   setCommitSettings: (settings: CommitSettings) => request<CommitSettingsView>("/settings/commit", { method: "PUT", body: JSON.stringify(settings) }),
   interfaceSettings: () => request<InterfaceSettings>("/settings/interface"),
   updateInterfaceSettings: (patch: InterfaceSettingsPatch) => request<InterfaceSettings>("/settings/interface", { method: "PUT", body: JSON.stringify(patch) }),
+  exchangeRateSyncStatus: () => request<ExchangeRateSyncState>("/settings/exchange-rates"),
+  setExchangeRateAutoSync: (enabled: boolean) => request<ExchangeRateSyncState>("/settings/exchange-rates", { method: "PUT", body: JSON.stringify({ auto_sync_enabled: enabled }) }),
+  syncExchangeRates: () => request<ExchangeRateSyncState>("/settings/exchange-rates", { method: "POST" }),
   pricingCatalog: (filter?: { query?: string; providerId?: string; limit?: number; offset?: number }) => {
     const params = new URLSearchParams();
     if (filter?.query) params.set("query", filter.query);

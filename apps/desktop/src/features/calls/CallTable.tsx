@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { LlmCall } from "../../shared/api";
-import { useAppStore } from "../../shared/store/appStore";
+import { useCurrencyDisplay } from "../../shared/store/appStore";
 import controls from "../../shared/ui/Controls.module.scss";
 import { DataTable, type DataTableColumn, type ServerPagination } from "../../shared/ui/DataTable";
 import { Icon } from "../../shared/ui/Icon";
@@ -13,6 +13,7 @@ import {
   formatHitRatePercent,
   formatUsdExact,
   type DisplayCurrency,
+  type DisplayExchangeRate,
 } from "../../shared/utils/costFormat";
 import { formatCompactInteger, formatInteger } from "../../shared/utils/numberFormat";
 import { formatFirstOutput, formatSpeed, generationSpeedTooltip } from "../../shared/utils/speedFormat";
@@ -48,7 +49,7 @@ function cacheTokensTitle(tokens: number | null, call: LlmCall, kind: "read" | "
   return formatInteger(tokens);
 }
 
-function renderCost(call: LlmCall, currency: DisplayCurrency, exchangeRate: string | null) {
+function renderCost(call: LlmCall, currency: DisplayCurrency, exchangeRate: DisplayExchangeRate | null) {
   if (call.call_kind === "cursor_official") {
     return <span className={styles.costMuted}>{t("未知")}</span>;
   }
@@ -71,7 +72,7 @@ function renderCost(call: LlmCall, currency: DisplayCurrency, exchangeRate: stri
   </span>;
 }
 
-function costTitle(call: LlmCall, currency: DisplayCurrency, exchangeRate: string | null): string | undefined {
+function costTitle(call: LlmCall, currency: DisplayCurrency, exchangeRate: DisplayExchangeRate | null): string | undefined {
   if (call.call_kind === "cursor_official") return t("Cursor 官方通道无法估算费用");
   if (call.cost_status === "incomplete_usage") return t("调用用量字段不完整");
   if (call.cost_status !== "priced" || call.total_cost == null) return t("该供应商模型尚未配置定价");
@@ -122,7 +123,7 @@ export function CallTable({
   loading?: boolean;
   emptyText?: ReactNode;
 }) {
-  const { currency, exchangeRate } = useAppStore();
+  const { currency, exchangeRate } = useCurrencyDisplay();
   const rowRef = useCallHighlights(calls, queryKey, ready);
   const columns: DataTableColumn<LlmCall>[] = [
     {

@@ -12,6 +12,7 @@ use crate::{
         prompting::{PromptAssets, PromptCompiler},
         transport::TransportRegistry,
     },
+    exchange_rates::ExchangeRateService,
     local_app::CursorHarness,
     plugin::{PluginRegistry, PluginRuntime},
     pricing::PricingService,
@@ -28,6 +29,7 @@ pub struct App {
     harness: CursorHarness,
     store: Store,
     pricing: PricingService,
+    exchange_rates: ExchangeRateService,
 }
 
 impl App {
@@ -83,6 +85,7 @@ impl App {
         )?;
         let harness = control.cursor_harness().clone();
         let pricing = control.pricing().clone();
+        let exchange_rates = control.exchange_rates().clone();
         let mut router = api::router(registry.clone(), clients)?.merge(byok);
         router = match &config.console {
             Some(ConsoleSource::Directory(directory)) => {
@@ -99,6 +102,7 @@ impl App {
             harness,
             store,
             pricing,
+            exchange_rates,
             config,
         })
     }
@@ -148,6 +152,7 @@ impl App {
         self.registry.web_cache().set_service_addr(address);
         self.harness.set_backend_addr(address);
         self.pricing.start(shutdown.clone());
+        self.exchange_rates.start(shutdown.clone());
         tracing::info!(%address, "cursor server listening");
         let registry = self.registry;
         let harness = self.harness;

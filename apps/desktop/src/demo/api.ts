@@ -9,6 +9,7 @@ import type {
   ExternalApiSettings,
   InterfaceSettings,
   InterfaceSettingsPatch,
+  ExchangeRateSyncState,
   LlmCall,
   Model,
   Overview,
@@ -316,6 +317,8 @@ let interfaceSettings: InterfaceSettings = {
   home_refresh_interval_seconds: 30,
 };
 
+let exchangeRateSync: ExchangeRateSyncState = { auto_sync_enabled: false, snapshot: null, last_attempted_at_ms: null, last_synced_at_ms: null, last_error: null, syncing: false };
+
 export function installDemoApi(initialInterface?: Partial<Pick<InterfaceSettings, "locale" | "theme">>) {
   interfaceSettings = {
     ...interfaceSettings,
@@ -493,6 +496,18 @@ export function installDemoApi(initialInterface?: Partial<Pick<InterfaceSettings
       return json({ model_id: "", prompt: "", prompt_locale: "zh", default_prompt: "" });
     }
     if (path === "/settings/interface" && method === "GET") return json(interfaceSettings);
+    if (path === "/settings/exchange-rates")
+    {
+      if (method === "PUT")
+      {
+        exchangeRateSync = { ...exchangeRateSync, auto_sync_enabled: (body as { auto_sync_enabled: boolean }).auto_sync_enabled };
+      }
+      if (method === "POST")
+      {
+        exchangeRateSync = { ...exchangeRateSync, last_attempted_at_ms: Date.now(), last_error: "Exchange rate sync is unavailable in demo mode" };
+      }
+      return json(exchangeRateSync);
+    }
     if (path === "/settings/interface" && method === "PUT") {
       const result = applyDemoInterfacePatch(body as InterfaceSettingsPatch | null);
       if ("error" in result) return json({ message: result.error }, 400);

@@ -6,7 +6,8 @@ import {
   type OverviewFilterModel,
   type OverviewFilterSupplier,
 } from "../../shared/api";
-import { appStore, useAppStore } from "../../shared/store/appStore";
+import { appStore, useAppStore, useCurrencyDisplay } from "../../shared/store/appStore";
+import { ExchangeRateAttribution } from "../../shared/ui/ExchangeRateAttribution";
 import { SupplierFilter } from "../../shared/ui/SupplierFilter";
 import { buildModelFilterOptions, buildSupplierFilterOptions } from "../../shared/utils/supplierOptions";
 import { resolveTimeRange, type CustomRange, type OverviewRangePreset, type QuickPreset } from "../../shared/utils/timeRange";
@@ -21,6 +22,7 @@ const CALL_REFRESH_INTERVAL_MS = 2_000;
 
 export function CallsPage() {
   const { overview, plugins, pendingCallsFilter, refreshTick } = useAppStore();
+  const { exchangeRate } = useCurrencyDisplay();
   const { locale } = useI18n();
   const [preset, setPreset] = useState<OverviewRangePreset | "all">("all");
   const [quick, setQuick] = useState<QuickPreset | null>(null);
@@ -276,6 +278,7 @@ export function CallsPage() {
         options={supplierOptions}
         onChange={changeSuppliers}
       />
+      <ExchangeRateAttribution source={exchangeRate?.source} />
     </PageActions>
     <PageContent fixed title={t("调用")} sections={[{ key: "calls", estimatedHeight: 720, content }]} />
   </>;

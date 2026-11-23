@@ -9,8 +9,8 @@ import {
   formatConversionNote,
   formatDisplayCost,
   formatUsdExact,
-  resolveExchangeRate,
   type DisplayCurrency,
+  type DisplayExchangeRate,
 } from "../../../shared/utils/costFormat";
 import { formatCompactInteger } from "../../../shared/utils/numberFormat";
 import { EChart } from "./EChart";
@@ -103,7 +103,7 @@ export function DailyTokenUsageChart({
   mode: OverviewChartMode;
   chartType: OverviewChartType;
   currency: DisplayCurrency;
-  exchangeRate: string | null;
+  exchangeRate: DisplayExchangeRate | null;
   loading?: boolean;
   error?: string | null;
 }) {
@@ -125,10 +125,9 @@ export function DailyTokenUsageChart({
     ? 0
     : nonZeroTotals.reduce((sum, total) => sum + total, 0) / nonZeroTotals.length;
 
-  const displayCurrency = resolveExchangeRate(currency, exchangeRate) ? currency : "USD";
   const unitLabel = mode === "tokens"
     ? t("单位：Token")
-    : t("单位：{currency} ({symbol})", { currency: displayCurrency, symbol: CURRENCY_SYMBOLS[displayCurrency] });
+    : t("单位：{currency} ({symbol})", { currency, symbol: CURRENCY_SYMBOLS[currency] });
 
   const option = useMemo<EChartsCoreOption>(() => {
     const commonAxisPointer = chartType === "line"
@@ -336,12 +335,12 @@ export function DailyTokenUsageChart({
           fontFamily: "HFKos",
           formatter: (value: number) => mode === "tokens"
             ? formatCompactInteger(value)
-            : formatAxisCost(value, displayCurrency),
+            : formatAxisCost(value, currency),
         },
       },
       series: chartType === "line" ? lineSeries : barSeries,
     };
-  }, [averageLevel, axisMaximum, chartType, exchangeRate, conversionNote, currency, data, displayCurrency, granularity, hovered, mode, totals]);
+  }, [averageLevel, axisMaximum, chartType, exchangeRate, conversionNote, currency, data, granularity, hovered, mode, totals]);
 
   return <div className={styles.container}>
     <div className={styles.metaBar}>

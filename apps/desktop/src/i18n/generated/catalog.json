@@ -21,8 +21,24 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 167,
+          "line": 168,
           "column": 5
+        }
+      ]
+    },
+    "00afe667d026e63d": {
+      "source": "按默认汇率折算（1 USD = {rate} {currency}，参考日期 {date}）",
+      "kind": "template",
+      "placeholders": [
+        "rate",
+        "currency",
+        "date"
+      ],
+      "refs": [
+        {
+          "file": "shared/utils/costFormat.ts",
+          "line": 280,
+          "column": 12
         }
       ]
     },
@@ -57,12 +73,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 35,
+          "line": 36,
           "column": 21
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 56,
+          "line": 57,
           "column": 48
         }
       ]
@@ -76,7 +92,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 232,
+          "line": 233,
           "column": 45
         }
       ]
@@ -246,7 +262,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 362,
+          "line": 364,
           "column": 54
         }
       ]
@@ -262,7 +278,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 269,
+          "line": 270,
           "column": 16
         }
       ]
@@ -300,17 +316,17 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 171,
+          "line": 172,
           "column": 15
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 103,
+          "line": 104,
           "column": 7
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 291,
+          "line": 292,
           "column": 38
         },
         {
@@ -348,7 +364,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 170,
+          "line": 171,
           "column": 5
         }
       ]
@@ -362,7 +378,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 199,
+          "line": 200,
           "column": 5
         }
       ]
@@ -376,7 +392,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 275,
+          "line": 276,
           "column": 16
         }
       ]
@@ -388,7 +404,7 @@
       "refs": [
         {
           "file": "features/calls/CallsPage.tsx",
-          "line": 232,
+          "line": 234,
           "column": 9
         },
         {
@@ -432,7 +448,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 40,
+          "line": 41,
           "column": 19
         }
       ]
@@ -456,7 +472,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 65,
+          "line": 66,
           "column": 8
         }
       ]
@@ -509,22 +525,22 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 299,
+          "line": 301,
           "column": 61
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 334,
+          "line": 336,
           "column": 42
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 214,
+          "line": 215,
           "column": 72
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 247,
+          "line": 248,
           "column": 51
         }
       ]
@@ -536,22 +552,22 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 157,
+          "line": 158,
           "column": 14
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 204,
+          "line": 203,
           "column": 15
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 271,
+          "line": 270,
           "column": 51
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 287,
+          "line": 286,
           "column": 49
         }
       ]
@@ -589,12 +605,12 @@
       "refs": [
         {
           "file": "shared/store/appStore.ts",
-          "line": 427,
+          "line": 459,
           "column": 23
         },
         {
           "file": "shared/store/appStore.ts",
-          "line": 434,
+          "line": 466,
           "column": 25
         }
       ]
@@ -606,12 +622,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 332,
+          "line": 334,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 236,
+          "line": 237,
           "column": 15
         }
       ]
@@ -642,18 +658,6 @@
         }
       ]
     },
-    "0e29556abe09ec34": {
-      "source": "清除汇率",
-      "kind": "text",
-      "placeholders": [],
-      "refs": [
-        {
-          "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 90,
-          "column": 135
-        }
-      ]
-    },
     "0e41f8e3d59ec47b": {
       "source": "存储管理",
       "kind": "text",
@@ -673,7 +677,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 299,
+          "line": 298,
           "column": 27
         }
       ]
@@ -717,12 +721,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 235,
+          "line": 236,
           "column": 45
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 327,
+          "line": 329,
           "column": 13
         }
       ]
@@ -803,7 +807,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 140,
+          "line": 141,
           "column": 11
         }
       ]
@@ -815,12 +819,12 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 104,
+          "line": 105,
           "column": 7
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 298,
+          "line": 299,
           "column": 38
         }
       ]
@@ -914,12 +918,12 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 100,
+          "line": 101,
           "column": 7
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 267,
+          "line": 268,
           "column": 38
         }
       ]
@@ -1041,7 +1045,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 166,
+          "line": 167,
           "column": 5
         }
       ]
@@ -1053,7 +1057,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 296,
+          "line": 295,
           "column": 27
         }
       ]
@@ -1117,7 +1121,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 253,
+          "line": 254,
           "column": 9
         }
       ]
@@ -1283,7 +1287,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 197,
+          "line": 198,
           "column": 5
         }
       ]
@@ -1351,6 +1355,20 @@
         }
       ]
     },
+    "1d69144e3a9c3b19": {
+      "source": "汇率由 {provider} 提供",
+      "kind": "template",
+      "placeholders": [
+        "provider"
+      ],
+      "refs": [
+        {
+          "file": "shared/ui/ExchangeRateAttribution.tsx",
+          "line": 25,
+          "column": 7
+        }
+      ]
+    },
     "1ded6559f626109d": {
       "source": "缓存读取",
       "kind": "text",
@@ -1358,7 +1376,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 165,
+          "line": 166,
           "column": 14
         }
       ]
@@ -1404,7 +1422,7 @@
         },
         {
           "file": "features/home/HomePage.tsx",
-          "line": 868,
+          "line": 869,
           "column": 11
         }
       ]
@@ -1418,7 +1436,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 251,
+          "line": 252,
           "column": 11
         }
       ]
@@ -1445,7 +1463,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 88,
+          "line": 89,
           "column": 12
         }
       ]
@@ -1544,7 +1562,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 97,
+          "line": 98,
           "column": 11
         },
         {
@@ -1625,7 +1643,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 130,
+          "line": 129,
           "column": 7
         }
       ]
@@ -1704,7 +1722,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 174,
+          "line": 175,
           "column": 11
         }
       ]
@@ -1718,7 +1736,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 188,
+          "line": 189,
           "column": 5
         }
       ]
@@ -1730,12 +1748,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 53,
+          "line": 54,
           "column": 31
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 54,
+          "line": 55,
           "column": 10
         }
       ]
@@ -1749,7 +1767,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 219,
+          "line": 220,
           "column": 5
         }
       ]
@@ -1763,7 +1781,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 63,
+          "line": 64,
           "column": 14
         }
       ]
@@ -1801,7 +1819,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 223,
+          "line": 224,
           "column": 16
         }
       ]
@@ -1825,7 +1843,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 164,
+          "line": 165,
           "column": 5
         }
       ]
@@ -1863,7 +1881,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 277,
+          "line": 276,
           "column": 29
         }
       ]
@@ -2010,7 +2028,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 143,
+          "line": 144,
           "column": 5
         }
       ]
@@ -2036,12 +2054,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 334,
+          "line": 336,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 246,
+          "line": 247,
           "column": 15
         }
       ]
@@ -2055,7 +2073,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 171,
+          "line": 172,
           "column": 5
         }
       ]
@@ -2117,7 +2135,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 295,
+          "line": 297,
           "column": 6
         }
       ]
@@ -2214,7 +2232,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 137,
+          "line": 138,
           "column": 9
         }
       ]
@@ -2253,7 +2271,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 156,
+          "line": 157,
           "column": 28
         }
       ]
@@ -2265,42 +2283,42 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 120,
+          "line": 121,
           "column": 30
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 169,
+          "line": 170,
           "column": 13
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 187,
+          "line": 188,
           "column": 11
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 32,
+          "line": 33,
           "column": 66
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 81,
+          "line": 82,
           "column": 9
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 84,
+          "line": 85,
           "column": 7
         },
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 188,
+          "line": 189,
           "column": 47
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 133,
+          "line": 134,
           "column": 48
         }
       ]
@@ -2341,7 +2359,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 160,
+          "line": 159,
           "column": 46
         }
       ]
@@ -2355,7 +2373,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 220,
+          "line": 221,
           "column": 5
         }
       ]
@@ -2369,7 +2387,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 177,
+          "line": 178,
           "column": 7
         }
       ]
@@ -2434,7 +2452,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 306,
+          "line": 308,
           "column": 6
         }
       ]
@@ -2480,7 +2498,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 277,
+          "line": 278,
           "column": 44
         },
         {
@@ -2560,7 +2578,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 345,
+          "line": 347,
           "column": 32
         }
       ]
@@ -2572,12 +2590,12 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 182,
+          "line": 181,
           "column": 15
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 285,
+          "line": 284,
           "column": 52
         }
       ]
@@ -2589,7 +2607,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 354,
+          "line": 356,
           "column": 39
         }
       ]
@@ -2683,7 +2701,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 185,
+          "line": 186,
           "column": 7
         }
       ]
@@ -2857,23 +2875,8 @@
       "refs": [
         {
           "file": "shared/utils/costFormat.ts",
-          "line": 260,
-          "column": 7
-        }
-      ]
-    },
-    "41d0455cd1283ef6": {
-      "source": "按默认汇率折算（1 USD = {rate} {currency}）",
-      "kind": "template",
-      "placeholders": [
-        "rate",
-        "currency"
-      ],
-      "refs": [
-        {
-          "file": "shared/utils/costFormat.ts",
-          "line": 259,
-          "column": 7
+          "line": 276,
+          "column": 12
         }
       ]
     },
@@ -2896,17 +2899,17 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 171,
+          "line": 170,
           "column": 15
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 268,
+          "line": 267,
           "column": 50
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 284,
+          "line": 283,
           "column": 48
         }
       ]
@@ -2918,12 +2921,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 347,
+          "line": 349,
           "column": 39
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 354,
+          "line": 356,
           "column": 68
         }
       ]
@@ -2949,6 +2952,18 @@
           "file": "shared/utils/speedFormat.ts",
           "line": 39,
           "column": 14
+        }
+      ]
+    },
+    "4310cc359f0efa21": {
+      "source": "自动同步汇率（每 24 小时）",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/CurrencySettingsCard.tsx",
+          "line": 78,
+          "column": 139
         }
       ]
     },
@@ -2999,7 +3014,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 146,
+          "line": 147,
           "column": 11
         }
       ]
@@ -3011,7 +3026,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 320,
+          "line": 322,
           "column": 7
         }
       ]
@@ -3023,7 +3038,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 49,
+          "line": 50,
           "column": 16
         }
       ]
@@ -3065,7 +3080,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 169,
+          "line": 170,
           "column": 5
         }
       ]
@@ -3274,17 +3289,17 @@
       "refs": [
         {
           "file": "features/calls/CallsPage.tsx",
-          "line": 233,
+          "line": 235,
           "column": 9
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 51,
+          "line": 52,
           "column": 27
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 98,
+          "line": 99,
           "column": 11
         },
         {
@@ -3447,7 +3462,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 197,
+          "line": 198,
           "column": 8
         }
       ]
@@ -3476,12 +3491,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 32,
+          "line": 33,
           "column": 21
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 53,
+          "line": 54,
           "column": 48
         }
       ]
@@ -3522,7 +3537,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 354,
+          "line": 353,
           "column": 52
         }
       ]
@@ -3583,7 +3598,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 105,
+          "line": 106,
           "column": 12
         }
       ]
@@ -3595,7 +3610,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 75,
+          "line": 76,
           "column": 61
         }
       ]
@@ -3621,7 +3636,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 151,
+          "line": 152,
           "column": 28
         }
       ]
@@ -3659,12 +3674,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 192,
+          "line": 193,
           "column": 11
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 45,
+          "line": 46,
           "column": 49
         }
       ]
@@ -3678,7 +3693,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 139,
+          "line": 140,
           "column": 11
         }
       ]
@@ -3707,7 +3722,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 851,
+          "line": 852,
           "column": 69
         }
       ]
@@ -3746,7 +3761,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 322,
+          "line": 324,
           "column": 11
         }
       ]
@@ -3820,7 +3835,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 160,
+          "line": 161,
           "column": 5
         }
       ]
@@ -3834,7 +3849,7 @@
       "refs": [
         {
           "file": "features/calls/CallsPage.tsx",
-          "line": 230,
+          "line": 232,
           "column": 7
         },
         {
@@ -3885,7 +3900,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 52,
+          "line": 53,
           "column": 35
         },
         {
@@ -3922,12 +3937,12 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 208,
+          "line": 209,
           "column": 21
         },
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 231,
+          "line": 232,
           "column": 16
         }
       ]
@@ -4078,7 +4093,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 201,
+          "line": 202,
           "column": 5
         }
       ]
@@ -4116,7 +4131,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 307,
+          "line": 309,
           "column": 6
         }
       ]
@@ -4128,7 +4143,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 302,
+          "line": 301,
           "column": 27
         }
       ]
@@ -4224,7 +4239,7 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 62,
+          "line": 70,
           "column": 19
         }
       ]
@@ -4286,12 +4301,12 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 262,
+          "line": 263,
           "column": 5
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 242,
+          "line": 243,
           "column": 29
         }
       ]
@@ -4315,17 +4330,17 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 185,
+          "line": 186,
           "column": 14
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 193,
+          "line": 192,
           "column": 15
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 286,
+          "line": 285,
           "column": 53
         }
       ]
@@ -4363,7 +4378,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 168,
+          "line": 169,
           "column": 5
         }
       ]
@@ -4375,7 +4390,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 340,
+          "line": 342,
           "column": 29
         }
       ]
@@ -4389,7 +4404,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 169,
+          "line": 170,
           "column": 5
         }
       ]
@@ -4415,7 +4430,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 204,
+          "line": 205,
           "column": 18
         }
       ]
@@ -4451,12 +4466,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 300,
+          "line": 302,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 130,
+          "line": 131,
           "column": 15
         }
       ]
@@ -4549,7 +4564,7 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 868,
+          "line": 878,
           "column": 43
         }
       ]
@@ -4564,7 +4579,7 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 48,
+          "line": 56,
           "column": 30
         }
       ]
@@ -4579,7 +4594,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 131,
+          "line": 130,
           "column": 7
         }
       ]
@@ -4603,7 +4618,7 @@
       "refs": [
         {
           "file": "features/calls/CallsPage.tsx",
-          "line": 280,
+          "line": 283,
           "column": 31
         },
         {
@@ -4637,12 +4652,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 333,
+          "line": 335,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 241,
+          "line": 242,
           "column": 15
         }
       ]
@@ -4668,7 +4683,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 301,
+          "line": 302,
           "column": 44
         }
       ]
@@ -4709,18 +4724,6 @@
         }
       ]
     },
-    "66e13c48a4b6a5e3": {
-      "source": "汇率已清除",
-      "kind": "text",
-      "placeholders": [],
-      "refs": [
-        {
-          "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 48,
-          "column": 102
-        }
-      ]
-    },
     "66f58ead4c7ec1ed": {
       "source": "仅统计成功、流式、有可见输出且生成时间不少于 200ms 的业务调用；模型测试不计入。",
       "kind": "text",
@@ -4728,7 +4731,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 180,
+          "line": 181,
           "column": 5
         }
       ]
@@ -4769,7 +4772,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 354,
+          "line": 353,
           "column": 69
         }
       ]
@@ -4793,22 +4796,22 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 305,
+          "line": 307,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 165,
+          "line": 166,
           "column": 15
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 102,
+          "line": 103,
           "column": 7
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 284,
+          "line": 285,
           "column": 38
         },
         {
@@ -4856,7 +4859,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 139,
+          "line": 140,
           "column": 14
         }
       ]
@@ -4868,7 +4871,7 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 75,
+          "line": 76,
           "column": 52
         }
       ]
@@ -4918,7 +4921,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 176,
+          "line": 177,
           "column": 7
         }
       ]
@@ -5043,7 +5046,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 207,
+          "line": 208,
           "column": 29
         }
       ]
@@ -5055,7 +5058,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 308,
+          "line": 310,
           "column": 6
         }
       ]
@@ -5079,7 +5082,7 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 57,
+          "line": 65,
           "column": 29
         }
       ]
@@ -5093,7 +5096,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 259,
+          "line": 260,
           "column": 11
         }
       ]
@@ -5156,12 +5159,12 @@
       "refs": [
         {
           "file": "shared/store/appStore.ts",
-          "line": 587,
+          "line": 619,
           "column": 23
         },
         {
           "file": "shared/store/appStore.ts",
-          "line": 594,
+          "line": 626,
           "column": 25
         }
       ]
@@ -5185,7 +5188,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 250,
+          "line": 251,
           "column": 11
         }
       ]
@@ -5197,7 +5200,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 274,
+          "line": 273,
           "column": 29
         }
       ]
@@ -5224,7 +5227,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 255,
+          "line": 256,
           "column": 11
         }
       ]
@@ -5240,7 +5243,7 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 95,
+          "line": 96,
           "column": 16
         }
       ]
@@ -5314,7 +5317,7 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 863,
+          "line": 873,
           "column": 43
         }
       ]
@@ -5326,12 +5329,12 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 107,
+          "line": 108,
           "column": 57
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 265,
+          "line": 266,
           "column": 55
         }
       ]
@@ -5386,7 +5389,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 64,
+          "line": 65,
           "column": 45
         },
         {
@@ -5427,17 +5430,17 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 178,
+          "line": 179,
           "column": 15
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 194,
+          "line": 195,
           "column": 13
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 47,
+          "line": 48,
           "column": 28
         }
       ]
@@ -5451,7 +5454,7 @@
       "refs": [
         {
           "file": "App.tsx",
-          "line": 62,
+          "line": 84,
           "column": 21
         }
       ]
@@ -5552,7 +5555,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 861,
+          "line": 862,
           "column": 11
         }
       ]
@@ -5591,7 +5594,7 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 782,
+          "line": 792,
           "column": 21
         }
       ]
@@ -5617,7 +5620,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 189,
+          "line": 190,
           "column": 5
         }
       ]
@@ -5650,7 +5653,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 107,
+          "line": 108,
           "column": 10
         }
       ]
@@ -5719,7 +5722,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 224,
+          "line": 225,
           "column": 5
         }
       ]
@@ -5922,22 +5925,22 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 284,
+          "line": 286,
           "column": 56
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 285,
+          "line": 287,
           "column": 50
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 220,
+          "line": 221,
           "column": 48
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 226,
+          "line": 227,
           "column": 44
         }
       ]
@@ -5973,8 +5976,20 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 71,
+          "line": 72,
           "column": 17
+        }
+      ]
+    },
+    "87c32263fa4d3852": {
+      "source": "汇率同步失败，继续使用已有汇率。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/CurrencySettingsCard.tsx",
+          "line": 87,
+          "column": 100
         }
       ]
     },
@@ -6052,12 +6067,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 176,
+          "line": 177,
           "column": 13
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 45,
+          "line": 46,
           "column": 30
         }
       ]
@@ -6091,7 +6106,7 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 143,
+          "line": 144,
           "column": 15
         }
       ]
@@ -6154,7 +6169,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 220,
+          "line": 221,
           "column": 10
         }
       ]
@@ -6166,12 +6181,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 284,
+          "line": 286,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 218,
+          "line": 219,
           "column": 15
         }
       ]
@@ -6197,7 +6212,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 226,
+          "line": 227,
           "column": 16
         }
       ]
@@ -6392,7 +6407,7 @@
         },
         {
           "file": "features/home/HomePage.tsx",
-          "line": 873,
+          "line": 874,
           "column": 11
         }
       ]
@@ -6440,12 +6455,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 26,
+          "line": 27,
           "column": 49
         },
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 53,
+          "line": 54,
           "column": 36
         },
         {
@@ -6507,7 +6522,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 220,
+          "line": 219,
           "column": 35
         },
         {
@@ -6563,7 +6578,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 237,
+          "line": 238,
           "column": 83
         }
       ]
@@ -6613,7 +6628,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 217,
+          "line": 218,
           "column": 5
         }
       ]
@@ -6627,7 +6642,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 352,
+          "line": 351,
           "column": 40
         }
       ]
@@ -6749,12 +6764,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 298,
+          "line": 300,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 160,
+          "line": 161,
           "column": 15
         },
         {
@@ -6778,7 +6793,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 237,
+          "line": 238,
           "column": 27
         }
       ]
@@ -6821,20 +6836,6 @@
           "file": "features/settings/SettingsPage.tsx",
           "line": 268,
           "column": 54
-        }
-      ]
-    },
-    "9deb61b6b8cb40c2": {
-      "source": "尚未配置 {currency} 汇率，金额以美元显示。",
-      "kind": "template",
-      "placeholders": [
-        "currency"
-      ],
-      "refs": [
-        {
-          "file": "shared/utils/costFormat.ts",
-          "line": 256,
-          "column": 12
         }
       ]
     },
@@ -6955,6 +6956,21 @@
         }
       ]
     },
+    "a03f36779f99665c": {
+      "source": "已恢复参考汇率（1 USD = {rate} {currency}）",
+      "kind": "template",
+      "placeholders": [
+        "rate",
+        "currency"
+      ],
+      "refs": [
+        {
+          "file": "features/settings/CurrencySettingsCard.tsx",
+          "line": 56,
+          "column": 102
+        }
+      ]
+    },
     "a0a557a7e00c9ef7": {
       "source": "供应商名称、服务器地址或完整请求 URL 和 API Key 不能为空",
       "kind": "text",
@@ -7014,12 +7030,12 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 265,
+          "line": 266,
           "column": 5
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 221,
+          "line": 222,
           "column": 5
         }
       ]
@@ -7092,7 +7108,7 @@
         },
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 88,
+          "line": 109,
           "column": 35
         },
         {
@@ -7185,7 +7201,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 350,
+          "line": 352,
           "column": 44
         }
       ]
@@ -7216,7 +7232,7 @@
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 151,
+          "line": 150,
           "column": 20
         }
       ]
@@ -7230,42 +7246,42 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 243,
+          "line": 244,
           "column": 18
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 254,
+          "line": 255,
           "column": 20
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 103,
+          "line": 104,
           "column": 16
         },
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 282,
+          "line": 283,
           "column": 7
         },
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 298,
+          "line": 299,
           "column": 20
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 291,
+          "line": 290,
           "column": 18
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 245,
+          "line": 246,
           "column": 7
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 262,
+          "line": 263,
           "column": 77
         }
       ]
@@ -7291,12 +7307,12 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 220,
+          "line": 219,
           "column": 50
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 283,
+          "line": 282,
           "column": 16
         }
       ]
@@ -7351,7 +7367,7 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 64,
+          "line": 65,
           "column": 9
         }
       ]
@@ -7389,12 +7405,12 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 295,
+          "line": 296,
           "column": 32
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 298,
+          "line": 299,
           "column": 25
         },
         {
@@ -7476,7 +7492,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 863,
+          "line": 864,
           "column": 69
         }
       ]
@@ -7500,12 +7516,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 297,
+          "line": 299,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 286,
+          "line": 287,
           "column": 15
         },
         {
@@ -7582,6 +7598,18 @@
         }
       ]
     },
+    "abb1cebfcd09c102": {
+      "source": "同步汇率中…",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/CurrencySettingsCard.tsx",
+          "line": 80,
+          "column": 70
+        }
+      ]
+    },
     "abecab6701177721": {
       "source": "已开启开机启动",
       "kind": "text",
@@ -7627,12 +7655,12 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 266,
+          "line": 267,
           "column": 5
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 222,
+          "line": 223,
           "column": 5
         }
       ]
@@ -7702,12 +7730,12 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 875,
+          "line": 876,
           "column": 30
         },
         {
           "file": "features/home/HomePage.tsx",
-          "line": 879,
+          "line": 880,
           "column": 23
         },
         {
@@ -7736,7 +7764,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 240,
+          "line": 241,
           "column": 27
         }
       ]
@@ -7748,7 +7776,7 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 76,
+          "line": 77,
           "column": 55
         }
       ]
@@ -7880,7 +7908,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 167,
+          "line": 168,
           "column": 9
         }
       ]
@@ -7894,7 +7922,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 202,
+          "line": 203,
           "column": 5
         }
       ]
@@ -7965,7 +7993,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 292,
+          "line": 294,
           "column": 6
         }
       ]
@@ -8003,7 +8031,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 198,
+          "line": 199,
           "column": 5
         }
       ]
@@ -8015,22 +8043,22 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 299,
+          "line": 301,
           "column": 52
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 334,
+          "line": 336,
           "column": 33
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 214,
+          "line": 215,
           "column": 63
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 247,
+          "line": 248,
           "column": 42
         }
       ]
@@ -8106,12 +8134,12 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 168,
+          "line": 169,
           "column": 5
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 200,
+          "line": 201,
           "column": 5
         }
       ]
@@ -8123,22 +8151,22 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 27,
+          "line": 28,
           "column": 10
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 38,
+          "line": 39,
           "column": 21
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 59,
+          "line": 60,
           "column": 48
         },
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 54,
+          "line": 55,
           "column": 10
         },
         {
@@ -8196,12 +8224,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 285,
+          "line": 287,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 224,
+          "line": 225,
           "column": 15
         }
       ]
@@ -8247,8 +8275,8 @@
         },
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 90,
-          "column": 123
+          "line": 111,
+          "column": 108
         }
       ]
     },
@@ -8283,7 +8311,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 212,
+          "line": 213,
           "column": 7
         }
       ]
@@ -8295,7 +8323,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 214,
+          "line": 215,
           "column": 9
         }
       ]
@@ -8346,12 +8374,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 360,
+          "line": 362,
           "column": 62
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 365,
+          "line": 367,
           "column": 20
         }
       ]
@@ -8382,7 +8410,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 227,
+          "line": 228,
           "column": 27
         }
       ]
@@ -8421,7 +8449,7 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 77,
+          "line": 78,
           "column": 72
         }
       ]
@@ -8433,12 +8461,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 238,
+          "line": 239,
           "column": 78
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 66,
+          "line": 67,
           "column": 11
         }
       ]
@@ -8512,7 +8540,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 219,
+          "line": 220,
           "column": 31
         }
       ]
@@ -8560,7 +8588,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 216,
+          "line": 217,
           "column": 11
         }
       ]
@@ -8586,7 +8614,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 52,
+          "line": 53,
           "column": 18
         }
       ]
@@ -8663,12 +8691,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 349,
+          "line": 351,
           "column": 14
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 349,
+          "line": 351,
           "column": 51
         }
       ]
@@ -8680,7 +8708,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 208,
+          "line": 209,
           "column": 9
         }
       ]
@@ -8739,7 +8767,7 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 86,
+          "line": 87,
           "column": 16
         }
       ]
@@ -8751,22 +8779,22 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 51,
+          "line": 52,
           "column": 18
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 142,
+          "line": 143,
           "column": 60
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 167,
+          "line": 168,
           "column": 67
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 79,
+          "line": 80,
           "column": 83
         }
       ]
@@ -8780,7 +8808,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 234,
+          "line": 235,
           "column": 27
         }
       ]
@@ -8816,7 +8844,7 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 62,
+          "line": 63,
           "column": 7
         }
       ]
@@ -8845,7 +8873,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 269,
+          "line": 268,
           "column": 54
         }
       ]
@@ -8883,7 +8911,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 270,
+          "line": 269,
           "column": 55
         }
       ]
@@ -8951,7 +8979,7 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 148,
+          "line": 149,
           "column": 15
         },
         {
@@ -9021,12 +9049,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 348,
+          "line": 350,
           "column": 14
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 348,
+          "line": 350,
           "column": 51
         }
       ]
@@ -9038,8 +9066,20 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 330,
+          "line": 332,
           "column": 6
+        }
+      ]
+    },
+    "cf4c3e64bb70a05f": {
+      "source": "立即同步汇率",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/CurrencySettingsCard.tsx",
+          "line": 80,
+          "column": 84
         }
       ]
     },
@@ -9139,7 +9179,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 191,
+          "line": 192,
           "column": 5
         }
       ]
@@ -9153,7 +9193,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 264,
+          "line": 265,
           "column": 5
         }
       ]
@@ -9237,6 +9277,22 @@
           "file": "shared/ui/Modal.tsx",
           "line": 103,
           "column": 153
+        }
+      ]
+    },
+    "d45e76476c07e2fb": {
+      "source": "按同步汇率折算（1 USD = {rate} {currency}，参考日期 {date}）",
+      "kind": "template",
+      "placeholders": [
+        "rate",
+        "currency",
+        "date"
+      ],
+      "refs": [
+        {
+          "file": "shared/utils/costFormat.ts",
+          "line": 282,
+          "column": 10
         }
       ]
     },
@@ -9511,7 +9567,7 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 40,
+          "line": 41,
           "column": 14
         }
       ]
@@ -9535,17 +9591,17 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 154,
+          "line": 155,
           "column": 15
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 105,
+          "line": 106,
           "column": 7
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 305,
+          "line": 306,
           "column": 38
         },
         {
@@ -9567,8 +9623,23 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 267,
+          "line": 266,
           "column": 18
+        }
+      ]
+    },
+    "de6593085431dab7": {
+      "source": "汇率数据日期 {date} · 最近同步 {time}",
+      "kind": "template",
+      "placeholders": [
+        "date",
+        "time"
+      ],
+      "refs": [
+        {
+          "file": "features/settings/CurrencySettingsCard.tsx",
+          "line": 85,
+          "column": 12
         }
       ]
     },
@@ -9603,7 +9674,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 195,
+          "line": 196,
           "column": 5
         }
       ]
@@ -9649,12 +9720,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 352,
+          "line": 354,
           "column": 33
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 355,
+          "line": 357,
           "column": 32
         }
       ]
@@ -9730,12 +9801,12 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 70,
+          "line": 91,
           "column": 20
         },
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 80,
+          "line": 101,
           "column": 97
         }
       ]
@@ -9747,7 +9818,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 186,
+          "line": 187,
           "column": 7
         }
       ]
@@ -9783,7 +9854,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 288,
+          "line": 290,
           "column": 6
         }
       ]
@@ -9812,7 +9883,7 @@
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 160,
+          "line": 159,
           "column": 35
         }
       ]
@@ -9898,7 +9969,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 144,
+          "line": 145,
           "column": 5
         }
       ]
@@ -9965,7 +10036,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 135,
+          "line": 136,
           "column": 7
         }
       ]
@@ -9989,7 +10060,7 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 92,
+          "line": 113,
           "column": 69
         }
       ]
@@ -10001,12 +10072,12 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 101,
+          "line": 102,
           "column": 7
         },
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 274,
+          "line": 275,
           "column": 38
         }
       ]
@@ -10032,7 +10103,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 95,
+          "line": 96,
           "column": 9
         }
       ]
@@ -10044,7 +10115,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 331,
+          "line": 333,
           "column": 6
         }
       ]
@@ -10068,7 +10139,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 190,
+          "line": 191,
           "column": 5
         }
       ]
@@ -10121,7 +10192,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 304,
+          "line": 306,
           "column": 6
         }
       ]
@@ -10157,7 +10228,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 25,
+          "line": 26,
           "column": 48
         },
         {
@@ -10174,7 +10245,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 121,
+          "line": 122,
           "column": 28
         }
       ]
@@ -10222,7 +10293,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 293,
+          "line": 295,
           "column": 6
         }
       ]
@@ -10270,7 +10341,7 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 292,
+          "line": 293,
           "column": 15
         },
         {
@@ -10347,7 +10418,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 313,
+          "line": 315,
           "column": 6
         }
       ]
@@ -10415,7 +10486,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 90,
+          "line": 91,
           "column": 10
         }
       ]
@@ -10467,7 +10538,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 202,
+          "line": 203,
           "column": 7
         }
       ]
@@ -10479,7 +10550,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 294,
+          "line": 296,
           "column": 6
         }
       ]
@@ -10595,7 +10666,7 @@
       "refs": [
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 61,
+          "line": 69,
           "column": 20
         },
         {
@@ -10721,7 +10792,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 162,
+          "line": 163,
           "column": 9
         }
       ]
@@ -10771,7 +10842,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 356,
+          "line": 358,
           "column": 44
         }
       ]
@@ -10811,7 +10882,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 210,
+          "line": 211,
           "column": 29
         }
       ]
@@ -10940,7 +11011,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 145,
+          "line": 146,
           "column": 5
         }
       ]
@@ -11003,7 +11074,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 204,
+          "line": 205,
           "column": 5
         }
       ]
@@ -11017,7 +11088,7 @@
       "refs": [
         {
           "file": "features/home/breakdown/breakdownShared.tsx",
-          "line": 263,
+          "line": 264,
           "column": 5
         }
       ]
@@ -11070,7 +11141,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 266,
+          "line": 267,
           "column": 12
         }
       ]
@@ -11084,7 +11155,7 @@
       "refs": [
         {
           "file": "features/home/metrics/HomeMetrics.tsx",
-          "line": 251,
+          "line": 252,
           "column": 7
         }
       ]
@@ -11096,7 +11167,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 887,
+          "line": 888,
           "column": 25
         }
       ]
@@ -11149,7 +11220,7 @@
         },
         {
           "file": "features/settings/CurrencySettingsCard.tsx",
-          "line": 88,
+          "line": 109,
           "column": 23
         },
         {

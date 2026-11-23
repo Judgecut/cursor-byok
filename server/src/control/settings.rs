@@ -1,5 +1,5 @@
 //! Implements settings management endpoints.
-use crate::Result;
+use crate::{exchange_rates::ExchangeRateSyncState, Result};
 use axum::{
     extract::State,
     http::{header, HeaderMap},
@@ -159,6 +159,27 @@ pub async fn update_interface(
     Json(patch): Json<InterfaceSettingsPatch>,
 ) -> Result<Json<InterfaceSettings>> {
     Ok(Json(service.update_interface_settings(patch).await?))
+}
+
+#[derive(Deserialize)]
+pub struct ExchangeRateSyncInput
+{
+    auto_sync_enabled: bool,
+}
+
+pub async fn exchange_rate_status(State(service): State<ControlService>) -> Result<Json<ExchangeRateSyncState>>
+{
+    Ok(Json(service.exchange_rates().status().await?))
+}
+
+pub async fn update_exchange_rate_sync(State(service): State<ControlService>, Json(input): Json<ExchangeRateSyncInput>) -> Result<Json<ExchangeRateSyncState>>
+{
+    Ok(Json(service.exchange_rates().set_auto_sync(input.auto_sync_enabled).await?))
+}
+
+pub async fn sync_exchange_rates(State(service): State<ControlService>) -> Result<Json<ExchangeRateSyncState>>
+{
+    Ok(Json(service.exchange_rates().sync_now().await?))
 }
 
 fn requested_commit_locale(headers: &HeaderMap) -> CommitPromptLocale {

@@ -6,6 +6,7 @@ import {
   formatDisplayCostExact,
   formatUsdExact,
   type DisplayCurrency,
+  type DisplayExchangeRate,
 } from "../../../shared/utils/costFormat";
 import { formatCompactInteger, formatInteger } from "../../../shared/utils/numberFormat";
 import { aggregateTooltip, formatFirstOutput, formatSpeed } from "../../../shared/utils/speedFormat";
@@ -85,7 +86,7 @@ export function HomeMetrics({
 }: {
   data: HomeMetricsData | null;
   currency: DisplayCurrency;
-  exchangeRate: string | null;
+  exchangeRate: DisplayExchangeRate | null;
   loading?: boolean;
   error?: string | null;
 }) {

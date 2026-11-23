@@ -6,6 +6,7 @@ import {
   formatDisplayCostExact,
   formatUsdExact,
   type DisplayCurrency,
+  type DisplayExchangeRate,
 } from "../../../shared/utils/costFormat";
 import { formatCompactInteger, formatInteger } from "../../../shared/utils/numberFormat";
 import styles from "./BreakdownTable.module.scss";
@@ -239,7 +240,7 @@ export function breakdownCacheTitle(row: BreakdownRowBase): string {
 export function renderBreakdownCostCell(
   row: BreakdownRowBase,
   currency: DisplayCurrency,
-  exchangeRate: string | null,
+  exchangeRate: DisplayExchangeRate | null,
 ) {
   const main = formatDisplayCost(row.total_cost, currency, exchangeRate);
   if (row.assumed_cache_calls <= 0) return main;
@@ -256,7 +257,7 @@ export function renderBreakdownCostCell(
 export function breakdownCostTitle(
   row: BreakdownRowBase,
   currency: DisplayCurrency,
-  exchangeRate: string | null,
+  exchangeRate: DisplayExchangeRate | null,
 ): string {
   const lines = [
     t("合计：{cost}", { cost: formatDisplayCostExact(row.total_cost, currency, exchangeRate) }),
@@ -289,7 +290,7 @@ export function breakdownCostTitle(
 export function averageCostTitle(
   usdCost: string | null,
   currency: DisplayCurrency,
-  exchangeRate: string | null,
+  exchangeRate: DisplayExchangeRate | null,
 ): string | undefined {
   if (!usdCost) return undefined;
   const note = formatConversionNote(currency, exchangeRate);

@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import {
   applyLocalePreference,
   getLocalePreference,
@@ -7,6 +7,7 @@ import {
 import {
   api,
   type CursorHarnessStatus,
+  type ExchangeRateSyncState,
   type InterfaceSettings,
   type InterfaceSettingsPatch,
   type LlmCall,
@@ -30,7 +31,7 @@ import {
   type SupplierPricingView,
 } from "../api";
 import { applyTheme, type ThemeId } from "../theme/theme";
-import { exchangeRateKey, type DisplayCurrency, type ForeignCurrency } from "../utils/costFormat";
+import { exchangeRateKey, resolveExchangeRate, type DisplayCurrency, type ForeignCurrency } from "../utils/costFormat";
 import type { CustomRange } from "../utils/timeRange";
 
 export type {
@@ -97,7 +98,9 @@ export type AppSnapshot = {
   error: string | null;
   theme: ThemeId;
   currency: DisplayCurrency;
-  exchangeRate: string | null;
+  customExchangeRate: string | null;
+  exchangeRateSync: ExchangeRateSyncState | null;
+  exchangeRateSyncUpdating: boolean;
   overviewRangePreset: OverviewRangePresetOption;
   overviewChartMode: OverviewChartMode;
   overviewChartType: OverviewChartType;
@@ -125,6 +128,8 @@ let persistedInterface: InterfaceSettings = { ...DEFAULT_INTERFACE_SETTINGS };
 let interfaceRevision = 0;
 let pendingInterfaceWrites = 0;
 let interfaceWriteQueue: Promise<void> = Promise.resolve();
+let exchangeRateSyncReading = false;
+let exchangeRateSyncRevision = 0;
 
 let snapshot: AppSnapshot = {
   sidebarCollapsed: DEFAULT_INTERFACE_SETTINGS.sidebar_collapsed,
@@ -176,7 +181,9 @@ let snapshot: AppSnapshot = {
   error: null,
   theme: DEFAULT_INTERFACE_SETTINGS.theme,
   currency: DEFAULT_INTERFACE_SETTINGS.currency,
-  exchangeRate: null,
+  customExchangeRate: null,
+  exchangeRateSync: null,
+  exchangeRateSyncUpdating: false,
   overviewRangePreset: DEFAULT_INTERFACE_SETTINGS.overview_range_preset,
   overviewChartMode: DEFAULT_INTERFACE_SETTINGS.overview_chart_mode,
   overviewChartType: DEFAULT_INTERFACE_SETTINGS.overview_chart_type,
@@ -211,7 +218,7 @@ function applyInterfaceSettings(
     sidebarCollapsed: next.sidebar_collapsed,
     theme: next.theme,
     currency: next.currency,
-    exchangeRate: next.currency === "USD" ? null : next[exchangeRateKey(next.currency)],
+    customExchangeRate: next.currency === "USD" ? null : next[exchangeRateKey(next.currency)],
     overviewRangePreset: next.overview_range_preset,
     overviewChartMode: next.overview_chart_mode,
     overviewChartType: next.overview_chart_type,
@@ -255,7 +262,7 @@ async function persistInterfacePatch(
     if (patch.currency !== undefined)
     {
       optimisticPatch.currency = patch.currency;
-      optimisticPatch.exchangeRate = patch.currency === "USD" ? null : persistedInterface[exchangeRateKey(patch.currency)];
+      optimisticPatch.customExchangeRate = patch.currency === "USD" ? null : persistedInterface[exchangeRateKey(patch.currency)];
     }
     if (patch.overview_range_preset !== undefined) {
       optimisticPatch.overviewRangePreset = patch.overview_range_preset;
@@ -299,6 +306,28 @@ async function persistInterfacePatch(
   }
 }
 
+async function updateExchangeRateSync(task: () => Promise<ExchangeRateSyncState>)
+{
+  if (snapshot.exchangeRateSyncUpdating)
+  {
+    return;
+  }
+  exchangeRateSyncRevision += 1;
+  update({ exchangeRateSyncUpdating: true, error: null });
+  try
+  {
+    update({ exchangeRateSync: await task() });
+  }
+  catch (cause)
+  {
+    update({ error: cause instanceof Error ? cause.message : String(cause) });
+  }
+  finally
+  {
+    update({ exchangeRateSyncUpdating: false });
+  }
+}
+
 async function perform(task: () => Promise<void>) {
   update({ error: null });
   try {
@@ -315,7 +344,7 @@ export const appStore = {
   },
   getSnapshot: () => snapshot,
 
-  async hydrateInterfaceSettings() {
+  async hydrateInterfaceSettings(force = true) {
     const revisionBefore = interfaceRevision;
     // A read started during a write can return stale settings after that write completes.
     const canApplyInterfaceSettings = pendingInterfaceWrites === 0;
@@ -323,17 +352,20 @@ export const appStore = {
       const settings = await api.interfaceSettings();
       if (canApplyInterfaceSettings && interfaceRevision === revisionBefore)
       {
-        applyInterfaceSettings(settings, {
-          forceApplyTheme: true,
-          forceApplyLocale: true,
-        });
+        if (force || JSON.stringify(settings) !== JSON.stringify(persistedInterface))
+        {
+          applyInterfaceSettings(settings, { forceApplyTheme: force, forceApplyLocale: force });
+        }
         return;
       }
     } catch {
       // Keep default theme and system locale when management API is unreachable; refresh() surfaces errors.
     }
-    applyTheme(snapshot.theme);
-    applyLocalePreference(getLocalePreference());
+    if (force)
+    {
+      applyTheme(snapshot.theme);
+      applyLocalePreference(getLocalePreference());
+    }
   },
 
   async refresh() {
@@ -731,6 +763,39 @@ export const appStore = {
   {
     return persistInterfacePatch({ [exchangeRateKey(currency)]: rate }, { optimistic: false });
   },
+  async loadExchangeRateSync()
+  {
+    if (exchangeRateSyncReading || snapshot.exchangeRateSyncUpdating)
+    {
+      return;
+    }
+    const revision = exchangeRateSyncRevision;
+    exchangeRateSyncReading = true;
+    try
+    {
+      const status = await api.exchangeRateSyncStatus();
+      if (exchangeRateSyncRevision === revision && JSON.stringify(status) !== JSON.stringify(snapshot.exchangeRateSync))
+      {
+        update({ exchangeRateSync: status });
+      }
+    }
+    catch
+    {
+      // Continue displaying the last rate if the local management service is unavailable.
+    }
+    finally
+    {
+      exchangeRateSyncReading = false;
+    }
+  },
+  setExchangeRateAutoSync(enabled: boolean)
+  {
+    return updateExchangeRateSync(() => api.setExchangeRateAutoSync(enabled));
+  },
+  syncExchangeRates()
+  {
+    return updateExchangeRateSync(api.syncExchangeRates);
+  },
   selectOverviewRangePreset(overviewRangePreset: OverviewRangePresetOption) {
     if (
       snapshot.overviewRangePreset === overviewRangePreset
@@ -800,4 +865,12 @@ export const appStore = {
 
 export function useAppStore() {
   return useSyncExternalStore(appStore.subscribe, appStore.getSnapshot);
+}
+
+export function useCurrencyDisplay()
+{
+  const { currency, customExchangeRate, exchangeRateSync } = useAppStore();
+  const synced = exchangeRateSync?.snapshot;
+  const exchangeRate = useMemo(() => resolveExchangeRate(currency, customExchangeRate, synced), [currency, customExchangeRate, synced]);
+  return { currency, exchangeRate };
 }

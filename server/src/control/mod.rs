@@ -245,6 +245,10 @@ pub fn api_router(service: ControlService) -> Router {
             get(settings::get_interface).put(settings::update_interface),
         )
         .route(
+            "/__byok-api__/api/settings/exchange-rates",
+            get(settings::exchange_rate_status).put(settings::update_exchange_rate_sync).post(settings::sync_exchange_rates),
+        )
+        .route(
             "/__byok-api__/api/pricing/catalog",
             get(pricing::get_catalog),
         )

@@ -11,13 +11,33 @@ export const CURRENCY_SYMBOLS = {
 export type DisplayCurrency = keyof typeof CURRENCY_SYMBOLS;
 export type ForeignCurrency = Exclude<DisplayCurrency, "USD">;
 export type ExchangeRates = Record<`${Lowercase<ForeignCurrency>}_rate`, string | null>;
+export type ExchangeRateSource = "exchange_rate_api" | "float_rates";
+export type ExchangeRateSnapshot = {
+  source: ExchangeRateSource;
+  published_at_ms: number;
+  rates: Record<ForeignCurrency, string>;
+};
+export type DisplayExchangeRate = {
+  rate: string;
+} & ({ source: "custom" } | { source: "built_in" | ExchangeRateSource; referenceDate: string });
 
 export function exchangeRateKey(currency: ForeignCurrency): keyof ExchangeRates
 {
   return `${currency.toLowerCase() as Lowercase<ForeignCurrency>}_rate`;
 }
 
-export const DEFAULT_CNY_RATE = "6.8";
+const DEFAULT_EXCHANGE_RATE_DATE = "2026-11-20";
+
+// ECB EUR reference rates converted to USD: https://www.ecb.europa.eu/stats/exchange/eurofxref/shared/pdf/2026/11/20261120.pdf
+// TWD uses the CBC's USD closing rate: https://www.cbc.gov.tw/en/lp-700-2-1-40.html
+export const DEFAULT_EXCHANGE_RATES: Readonly<Record<ForeignCurrency, string>> = {
+  CNY: "6.6777",
+  EUR: "0.9099",
+  JPY: "158.64",
+  TWD: "32.936",
+  TRY: "50.5722",
+  KRW: "1339.44",
+};
 
 type DecimalParts = {
   negative: boolean;
@@ -79,20 +99,21 @@ export function normalizeExchangeRate(raw: string): string | null {
   return trimDecimalString(raw);
 }
 
-export function resolveExchangeRate(currency: DisplayCurrency, exchangeRate: string | null | undefined): {
-  rate: string;
-  isDefault: boolean;
-} | null
+export function resolveExchangeRate(currency: DisplayCurrency, customRate: string | null | undefined, synced?: ExchangeRateSnapshot | null): DisplayExchangeRate | null
 {
   if (currency === "USD")
   {
     return null;
   }
-  if (isValidExchangeRate(exchangeRate))
+  if (isValidExchangeRate(customRate))
   {
-    return { rate: trimDecimalString(exchangeRate), isDefault: false };
+    return { rate: trimDecimalString(customRate), source: "custom" };
   }
-  return currency === "CNY" ? { rate: DEFAULT_CNY_RATE, isDefault: true } : null;
+  if (synced)
+  {
+    return { rate: synced.rates[currency], source: synced.source, referenceDate: new Date(synced.published_at_ms).toISOString().slice(0, 10) };
+  }
+  return { rate: DEFAULT_EXCHANGE_RATES[currency], source: "built_in", referenceDate: DEFAULT_EXCHANGE_RATE_DATE };
 }
 
 export function addUsdStrings(left: string | null | undefined, right: string | null | undefined): string {
@@ -134,13 +155,12 @@ export function multiplyDecimalStrings(
 export function convertUsdToDisplayDecimal(
   usdValue: string | null | undefined,
   currency: DisplayCurrency,
-  exchangeRate: string | null | undefined,
+  exchangeRate: DisplayExchangeRate | null,
 ): { currency: DisplayCurrency; amount: string; rateUsed: string | null } {
   const normalizedUsd = usdValue ? trimDecimalString(usdValue) : "0";
-  const resolved = resolveExchangeRate(currency, exchangeRate);
-  if (resolved)
+  if (currency !== "USD" && exchangeRate)
   {
-    const { rate } = resolved;
+    const { rate } = exchangeRate;
     const converted = multiplyDecimalStrings(normalizedUsd, rate);
     if (converted !== null)
     {
@@ -159,7 +179,7 @@ export function parseUsdAmount(value: string | null | undefined): number {
 export function convertUsdToDisplayNumber(
   usdValue: string | null | undefined,
   currency: DisplayCurrency,
-  exchangeRate: string | null | undefined,
+  exchangeRate: DisplayExchangeRate | null,
 ): number {
   const converted = convertUsdToDisplayDecimal(usdValue, currency, exchangeRate);
   const parsed = Number(converted.amount);
@@ -219,7 +239,7 @@ export function formatUsdExact(value: string | null | undefined): string {
 export function formatDisplayCost(
   usdValue: string | null | undefined,
   currency: DisplayCurrency,
-  exchangeRate: string | null | undefined,
+  exchangeRate: DisplayExchangeRate | null,
 ): string {
   const resolved = convertUsdToDisplayDecimal(usdValue, currency, exchangeRate);
   return formatDecimalWithSymbol(resolved.amount, CURRENCY_SYMBOLS[resolved.currency]);
@@ -228,7 +248,7 @@ export function formatDisplayCost(
 export function formatDisplayCostExact(
   usdValue: string | null | undefined,
   currency: DisplayCurrency,
-  exchangeRate: string | null | undefined,
+  exchangeRate: DisplayExchangeRate | null,
 ): string {
   const resolved = convertUsdToDisplayDecimal(usdValue, currency, exchangeRate);
   return formatDecimalExactWithSymbol(resolved.amount, CURRENCY_SYMBOLS[resolved.currency]);
@@ -244,20 +264,22 @@ export function formatAxisCost(
   return formatDecimalWithSymbol(decimalText, symbol);
 }
 
-export function formatConversionNote(currency: DisplayCurrency, exchangeRate: string | null | undefined): string | null
+export function formatConversionNote(currency: DisplayCurrency, exchangeRate: DisplayExchangeRate | null): string | null
 {
-  if (currency === "USD")
+  if (!exchangeRate)
   {
     return null;
   }
-  const resolved = resolveExchangeRate(currency, exchangeRate);
-  if (!resolved)
+  const { rate, source } = exchangeRate;
+  if (source === "custom")
   {
-    return t("尚未配置 {currency} 汇率，金额以美元显示。", { currency });
+    return t("按设置汇率折算（1 USD = {rate} {currency}）", { rate, currency });
   }
-  return resolved.isDefault
-    ? t("按默认汇率折算（1 USD = {rate} {currency}）", { rate: resolved.rate, currency })
-    : t("按设置汇率折算（1 USD = {rate} {currency}）", { rate: resolved.rate, currency });
+  if (source === "built_in")
+  {
+    return t("按默认汇率折算（1 USD = {rate} {currency}，参考日期 {date}）", { rate, currency, date: exchangeRate.referenceDate });
+  }
+  return t("按同步汇率折算（1 USD = {rate} {currency}，参考日期 {date}）", { rate, currency, date: exchangeRate.referenceDate });
 }
 
 export function formatRatePerMillion(value: string | null | undefined): string {
