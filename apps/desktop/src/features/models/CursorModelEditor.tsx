@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import geminiIconUrl from "../../shared/assets/provider-icons/gemini.png";
 import type { Model, ModelInput, RequestFormat, Provider } from "../../shared/api";
 import { modelPresets, requestFormatLabels, trimTrailingSlash } from "../../shared/utils/modelPresets";
 import { Button } from "../../shared/ui/Button";
@@ -149,7 +150,7 @@ export function CursorModelEditor({ draft, providers, modelOptions, discovering,
           { value: "openai-chat", label: requestFormatLabels["openai-chat"], icon: openAiIcon },
           { value: "openai-responses", label: requestFormatLabels["openai-responses"], icon: openAiIcon },
           { value: "anthropic", label: requestFormatLabels.anthropic, icon: claudeIcon },
-          { value: "gemini", label: requestFormatLabels.gemini },
+          { value: "gemini", label: requestFormatLabels.gemini, iconSrc: geminiIconUrl },
         ]} onChange={(value) => setModel({ request_format: value as RequestFormat | "", reasoning_effort: null, anthropic_thinking_effort: value === "anthropic" ? "xhigh" : null, thinking_budget_tokens: null })} />
       </FormField>
       <FormField label={t("完整请求 URL")} hint={t("留空时，系统会在供应商地址后追加所选格式的标准端点。")}>
