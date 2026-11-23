@@ -2,6 +2,7 @@
 mod anthropic;
 mod attempt;
 mod event;
+mod gemini;
 mod normalize;
 mod openai_chat;
 mod openai_responses;
@@ -18,6 +19,7 @@ use crate::{model::ModelInvocation, Result};
 
 pub use anthropic::AnthropicProvider;
 pub use event::*;
+pub use gemini::GeminiProvider;
 pub use openai_chat::OpenAiChatProvider;
 pub use openai_responses::OpenAiResponsesProvider;
 pub use recorder::CallRecorder;
@@ -31,6 +33,7 @@ pub(crate) fn native_usage(
         crate::model::ProviderType::OpenAiChat => openai_chat::openai_usage(value),
         crate::model::ProviderType::OpenAiResponses => openai_responses::responses_usage(value),
         crate::model::ProviderType::Anthropic => anthropic::anthropic_usage(value),
+        crate::model::ProviderType::Gemini => gemini::gemini_usage(value),
         crate::model::ProviderType::Plugin => {
             unreachable!("plugin calls have no native HTTP protocol")
         }

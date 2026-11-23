@@ -23,9 +23,9 @@ use crate::{
     model::{
         evaluate as evaluate_performance, CallOrigin, ContentPart, CursorRunTraceArtifact,
         CursorRunTraceSummary, LlmCallRequest, LlmCallResponseChunk, LlmCallSummary, ModelConfig,
-        ModelConfigInput, ModelInvocation, ModelRequest, ModelSpec, ModelType, Overview,
+        ModelConfigInput, ModelInvocation, ModelRequest, ModelSpec, RequestFormat, Overview,
         ProjectedContent, ProjectedMessage, PromptSpec, ProviderConfig, ProviderConfigInput,
-        ProviderType, Role, SpeedSample, SpeedStatus, SpeedUnavailableReason,
+        Role, SpeedSample, SpeedStatus, SpeedUnavailableReason,
     },
     plugin::{PluginDescriptor, PluginRegistry, PluginRuntime, PluginRuntimeStatus},
     pricing::{PricingService, PricingSyncState},
@@ -80,8 +80,7 @@ pub struct LegacyModelImportPreviewItem {
     pub model_hash: String,
     pub display_name: String,
     pub model_id: String,
-    #[serde(rename = "type")]
-    pub model_type: ModelType,
+    pub request_format: RequestFormat,
     pub existing: bool,
 }
 
@@ -599,23 +598,26 @@ impl ControlService {
         })
     }
 
-    pub async fn discover_provider_models(&self, provider_id: &str) -> Result<DiscoveredModels> {
+    pub async fn discover_provider_models(&self, provider_id: &str, request_format: RequestFormat, request_url_override: Option<&str>) -> Result<DiscoveredModels> {
         let provider = self
             .store
             .provider(provider_id)
             .await?
             .ok_or_else(|| Error::RunNotFound(format!("provider {provider_id}")))?;
         let client = self.clients.default_client().await?;
+        let headers = if provider.custom_headers_enabled { &provider.custom_headers } else { empty_json_object_ref() };
+        if request_format == RequestFormat::Gemini
+        {
+            let url = crate::model::gemini_models_url(&provider.base_url, request_url_override)?;
+            return Ok(DiscoveredModels { models: gemini_models(&client, url, &provider.api_key, headers).await? });
+        }
+        let request_url_override = crate::model::normalize_request_url_override(request_url_override)?;
         discover_models_from_endpoint(
             &client,
-            provider.provider_type(),
-            &provider.base_url,
+            request_format,
+            request_url_override.as_deref().unwrap_or(&provider.base_url),
             &provider.api_key,
-            if provider.custom_headers_enabled {
-                &provider.custom_headers
-            } else {
-                empty_json_object_ref()
-            },
+            headers,
         )
         .await
     }
@@ -647,7 +649,7 @@ impl ControlService {
                     model_hash: model.model_hash,
                     display_name: model.input.display_name,
                     model_id: model.input.model_id,
-                    model_type: model.model_type,
+                    request_format: model.input.request_format,
                     existing: model.existing,
                 })
                 .collect(),
@@ -1082,27 +1084,66 @@ fn readable_utf8(data: &[u8]) -> Option<&str> {
 
 async fn discover_models_from_endpoint(
     client: &reqwest::Client,
-    provider_type: ProviderType,
+    request_format: RequestFormat,
     base_url: &str,
     api_key: &str,
     custom_headers: &serde_json::Value,
 ) -> Result<DiscoveredModels> {
-    let mut models = match provider_type {
-        ProviderType::OpenAiChat | ProviderType::OpenAiResponses => {
+    let mut models = match request_format {
+        RequestFormat::OpenAiChat | RequestFormat::OpenAiResponses => {
             openai_models(client, base_url, api_key, custom_headers).await?
         }
-        ProviderType::Anthropic => {
+        RequestFormat::Anthropic => {
             anthropic_models(client, base_url, api_key, custom_headers).await?
         }
-        ProviderType::Plugin => {
-            return Err(Error::Config(
-                "plugin providers discover models through their plugin".into(),
-            ))
-        }
+        RequestFormat::Gemini => unreachable!("Gemini uses its model collection URL"),
     };
     models.sort();
     models.dedup();
     Ok(DiscoveredModels { models })
+}
+
+async fn gemini_models(client: &reqwest::Client, url: Url, api_key: &str, custom_headers: &serde_json::Value) -> Result<Vec<String>>
+{
+    let mut models = BTreeSet::new();
+    let mut seen_pages = std::collections::HashSet::new();
+    let mut page_token = None::<String>;
+    loop
+    {
+        let mut request = client.get(url.clone()).header("x-goog-api-key", api_key);
+        if let Some(token) = &page_token
+        {
+            request = request.query(&[("pageToken", token)]);
+        }
+        let response = apply_discovery_headers(request, custom_headers)?.send().await?;
+        let status = response.status();
+        let body: serde_json::Value = response.json().await?;
+        if !status.is_success()
+        {
+            return Err(Error::Provider(format!("Gemini model discovery failed ({status}): {body}")));
+        }
+        if let Some(entries) = body.get("models").and_then(serde_json::Value::as_array)
+        {
+            for model in entries
+            {
+                if !model.get("supportedGenerationMethods").and_then(serde_json::Value::as_array).is_some_and(|methods| methods.iter().any(|method| method.as_str() == Some("generateContent")))
+                {
+                    continue;
+                }
+                if let Some(name) = model.get("name").and_then(serde_json::Value::as_str).and_then(|name| name.strip_prefix("models/")).filter(|name| !name.is_empty())
+                {
+                    models.insert(name.to_owned());
+                }
+            }
+        }
+        let Some(token) = body.get("nextPageToken").and_then(serde_json::Value::as_str).filter(|token| !token.is_empty()) else { break };
+        if !seen_pages.insert(token.to_owned())
+        {
+            return Err(Error::Provider("Gemini model discovery repeated a page token".into()));
+        }
+        page_token = Some(token.to_owned());
+    }
+    Ok(models.into_iter().collect())
 }
 
 fn model_discovery_url(base_url: &str) -> Result<Url> {

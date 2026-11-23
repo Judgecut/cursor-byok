@@ -7,7 +7,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::{
-    model::{ModelConfig, ModelConfigInput, ProviderConfig, ProviderConfigInput},
+    model::{ModelConfig, ModelConfigInput, ProviderConfig, ProviderConfigInput, RequestFormat},
     Result,
 };
 
@@ -70,11 +70,19 @@ pub async fn remove_provider(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Deserialize)]
+pub struct DiscoverModels
+{
+    pub request_format: RequestFormat,
+    pub request_url_override: Option<String>,
+}
+
 pub async fn discover_provider_models(
     State(service): State<ControlService>,
     Path(provider_id): Path<String>,
+    Json(input): Json<DiscoverModels>,
 ) -> Result<Json<DiscoveredModels>> {
-    Ok(Json(service.discover_provider_models(&provider_id).await?))
+    Ok(Json(service.discover_provider_models(&provider_id, input.request_format, input.request_url_override.as_deref()).await?))
 }
 
 pub async fn list(State(service): State<ControlService>) -> Result<Json<Vec<ModelConfig>>> {

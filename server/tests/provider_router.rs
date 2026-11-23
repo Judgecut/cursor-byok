@@ -2,17 +2,18 @@
 #[path = "support/fixtures.rs"]
 mod fixtures;
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use axum::{
     extract::State,
-    http::{header, Uri},
+    http::{header, HeaderMap, Uri},
     Json, Router,
 };
 use cursor_server::{
+    control::ControlService,
     model::{
-        CallOrigin, ModelConfigInput, ModelInvocation, ModelRequest, ModelSpec, ModelType,
-        PromptSpec, ProviderConfigInput, OPENAI_CHAT_ENDPOINT, OPENAI_RESPONSES_ENDPOINT,
+        CallOrigin, ModelConfigInput, ModelInvocation, ModelRequest, ModelSpec, RequestFormat,
+        PromptSpec, ProviderConfigInput,
     },
     network::NetworkClients,
     plugin::{PluginRegistry, PluginRuntime},
@@ -24,11 +25,12 @@ use tokio::{net::TcpListener, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 
 async fn upstream(
-    State(requests): State<mpsc::UnboundedSender<Value>>,
+    State(requests): State<mpsc::UnboundedSender<(Uri, HeaderMap, Value)>>,
     uri: Uri,
+    headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> ([(header::HeaderName, &'static str); 1], String) {
-    requests.send(body).unwrap();
+    requests.send((uri.clone(), headers, body)).unwrap();
     let events = match uri.path() {
         "/v1/messages" => vec![
             json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
@@ -36,7 +38,7 @@ async fn upstream(
             json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}}),
             json!({"type": "message_stop"}),
         ],
-        "/v1/responses" => vec![
+        "/relay/v2/responses" => vec![
             json!({"type": "response.output_text.delta", "delta": "ok"}),
             json!({"type": "response.completed", "response": {"status": "completed"}}),
         ],
@@ -52,36 +54,62 @@ async fn upstream(
     ([(header::CONTENT_TYPE, "text/event-stream")], body)
 }
 
+async fn discover(uri: Uri, headers: HeaderMap) -> Json<Value>
+{
+    assert_eq!(headers["x-shared"], "gateway");
+    let id = if headers.contains_key("x-api-key")
+    {
+        assert_eq!(headers["x-api-key"], "test-key");
+        "anthropic-model"
+    }
+    else
+    {
+        assert_eq!(headers["authorization"], "Bearer test-key");
+        if uri.path() == "/relay/v2/models" { "responses-model" } else { "openai-model" }
+    };
+    Json(json!({"data": [{"id": id}]}))
+}
+
 #[tokio::test]
 async fn recorded_reasoning_effort_matches_the_effective_request() {
     let (_directory, store) = fixtures::temp_store().await;
     let (requests, mut received) = mpsc::unbounded_channel();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let app = Router::new().fallback(upstream).with_state(requests);
+    let app = Router::new().route("/v1/models", axum::routing::get(discover)).route("/relay/v2/models", axum::routing::get(discover)).fallback(upstream).with_state(requests);
     let server = tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
+    let runtime = PluginRuntime::managed().unwrap();
     let plugins = PluginRegistry::managed(
         store.clone(),
-        PluginRuntime::managed().unwrap(),
+        runtime.clone(),
         "0.1.0".into(),
     )
     .unwrap();
-    let router = ProviderRouter::new(
+    let clients = NetworkClients::new(store.clone());
+    let router = Arc::new(ProviderRouter::new(
         store.clone(),
-        plugins,
-        NetworkClients::new(store.clone()),
+        plugins.clone(),
+        clients.clone(),
         Duration::from_secs(5),
         Duration::from_secs(5),
-    );
+    ));
+    let control = ControlService::new(store.clone(), router.clone(), runtime, plugins, clients, "test".into()).unwrap();
+    let provider_cfg = store.create_provider(&ProviderConfigInput {
+        sort_order: 0,
+        name: "Shared gateway".into(),
+        base_url: format!("http://{address}"),
+        api_key: "test-key".into(),
+        custom_headers_enabled: true,
+        custom_headers: json!({"x-shared": "gateway"}),
+    }).await.unwrap();
 
-    for (model_type, endpoint, effort_pointer) in [
-        (ModelType::Anthropic, "", "/output_config/effort"),
-        (ModelType::OpenAi, OPENAI_CHAT_ENDPOINT, "/reasoning_effort"),
+    for (request_format, effort_pointer) in [
+        (RequestFormat::Anthropic, "/output_config/effort"),
+        (RequestFormat::OpenAiChat, "/reasoning_effort"),
         (
-            ModelType::OpenAi,
-            OPENAI_RESPONSES_ENDPOINT,
+            RequestFormat::OpenAiResponses,
             "/reasoning/effort",
         ),
     ] {
@@ -91,27 +119,15 @@ async fn recorded_reasoning_effort_matches_the_effective_request() {
             (None, None, None),
         ] {
             // Anthropic configurations always receive a default effort during normalization.
-            if model_type == ModelType::Anthropic && configured.is_none() {
+            if request_format == RequestFormat::Anthropic && configured.is_none() {
                 continue;
             }
-            let provider_cfg = store
-                .create_provider(&ProviderConfigInput {
-                    sort_order: 0,
-                    name: "test-provider".into(),
-                    model_type,
-                    base_url: format!("http://{address}"),
-                    use_full_url: false,
-                    api_key: "test-key".into(),
-                    openai_endpoint: endpoint.into(),
-                    custom_headers_enabled: false,
-                    custom_headers: json!({}),
-                    extra_params_enabled: false,
-                    extra_params: json!({}),
-                })
-                .await
-                .unwrap();
             let input = ModelConfigInput {
-                provider_id: provider_cfg.provider_id,
+                provider_id: provider_cfg.provider_id.clone(),
+                request_format,
+                request_url_override: (request_format == RequestFormat::OpenAiResponses).then(|| format!("http://{address}/relay/v2/responses?channel=direct")),
+                extra_params_enabled: configured.is_some(),
+                extra_params: json!({"top_p": 0.8}),
                 sort_order: 0,
                 display_name: "Test Model".into(),
                 tooltip_data: "Test Model".into(),
@@ -123,8 +139,22 @@ async fn recorded_reasoning_effort_matches_the_effective_request() {
                 thinking_budget_tokens: None,
             };
             let configured_model = store.create_model(&input).await.unwrap();
+            if requested.is_none() && configured.is_some()
+            {
+                let models = control.discover_provider_models(&provider_cfg.provider_id, request_format, input.request_url_override.as_deref()).await.unwrap().models;
+                assert_eq!(models, [match request_format
+                {
+                    RequestFormat::Gemini => unreachable!("tested separately"),
+                    RequestFormat::OpenAiChat => "openai-model",
+                    RequestFormat::OpenAiResponses => "responses-model",
+                    RequestFormat::Anthropic => "anthropic-model",
+                }]);
+                let result = control.test_model(&configured_model.model_hash, &uuid::Uuid::new_v4().to_string()).await.unwrap();
+                assert_eq!(result.output, "ok");
+                assert_eq!(received.try_recv().unwrap().2["model"], configured_model.model_id);
+            }
             let mut model = ModelSpec::new(&configured_model.model_hash);
-            model.extra_params = json!({"temperature": 0.25, "top_p": 0.8, "stop": ["done"]});
+            model.extra_params = json!({"temperature": 0.25, "stop": ["done"]});
             model.reasoning.effort = requested.map(str::to_owned);
             let call_id = uuid::Uuid::new_v4().to_string();
             let invocation = ModelInvocation {
@@ -146,11 +176,34 @@ async fn recorded_reasoning_effort_matches_the_effective_request() {
             while let Some(event) = stream.next().await {
                 event.unwrap();
             }
-            let body = received.try_recv().unwrap();
+            let (uri, headers, body) = received.try_recv().unwrap();
+            assert_eq!(headers["x-shared"], "gateway");
+            match request_format
+            {
+                RequestFormat::Gemini => unreachable!("tested separately"),
+                RequestFormat::OpenAiChat =>
+                {
+                    assert_eq!(uri.path(), "/v1/chat/completions");
+                    assert_eq!(headers["authorization"], "Bearer test-key");
+                    assert!(body["messages"].is_array());
+                }
+                RequestFormat::OpenAiResponses =>
+                {
+                    assert_eq!(uri.to_string(), "/relay/v2/responses?channel=direct");
+                    assert_eq!(headers["authorization"], "Bearer test-key");
+                    assert!(body["input"].is_array());
+                }
+                RequestFormat::Anthropic =>
+                {
+                    assert_eq!(uri.path(), "/v1/messages");
+                    assert_eq!(headers["x-api-key"], "test-key");
+                    assert!(body["messages"].is_array());
+                }
+            }
             assert_eq!(body["temperature"], 0.25);
-            assert_eq!(body["top_p"], 0.8);
+            assert_eq!(body["top_p"].as_f64(), configured.map(|_| 0.8));
             assert_eq!(
-                body[if model_type == ModelType::Anthropic {
+                body[if request_format == RequestFormat::Anthropic {
                     "stop_sequences"
                 } else {
                     "stop"
@@ -160,13 +213,15 @@ async fn recorded_reasoning_effort_matches_the_effective_request() {
             let sent_effort = body.pointer(effort_pointer).and_then(Value::as_str);
             assert_eq!(
                 sent_effort, expected,
-                "upstream request for {model_type:?} {endpoint}"
+                "upstream request for {request_format:?}"
             );
             let call = store.llm_call(&call_id).await.unwrap().unwrap();
+            assert_eq!(call.request_type, request_format.as_str());
+            assert_eq!(call.request_url, configured_model.request_url().unwrap());
             assert_eq!(
                 call.reasoning_effort.as_deref(),
                 sent_effort,
-                "recorded effort for {model_type:?} {endpoint}"
+                "recorded effort for {request_format:?}"
             );
         }
     }

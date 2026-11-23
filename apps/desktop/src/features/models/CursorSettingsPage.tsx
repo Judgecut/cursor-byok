@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, configuredPluginModels, type Model, type Provider } from "../../shared/api";
+import { api, configuredPluginModels, type Model, type Provider, type RequestFormat } from "../../shared/api";
 import { CursorCaGate, CursorCaProvider, CursorModelGate, CursorModelProvider } from "./CursorGates";
 import { CursorModelCards } from "./CursorModelCards";
 import { cursorModelGroups, resolveCursorModelGrouping, type CursorModelGrouping } from "./cursorModelGrouping";
@@ -32,7 +32,7 @@ export function CursorSettingsPage() {
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
   const [deletingProvider, setDeletingProvider] = useState<Provider | null>(null);
   const [savingProvider, setSavingProvider] = useState(false);
-  const [modelOptionsByProvider, setModelOptionsByProvider] = useState<Record<string, string[]>>({});
+  const [modelOptionsByEndpoint, setModelOptionsByEndpoint] = useState<Record<string, string[]>>({});
   const [discovering, setDiscovering] = useState(false);
   const [caCommand, setCaCommand] = useState<string | null>(null);
   const [waitingForCaRefresh, setWaitingForCaRefresh] = useState(false);
@@ -84,6 +84,7 @@ export function CursorSettingsPage() {
         ? await appStore.updateProvider(editingProvider.provider_id, input)
         : await appStore.createProvider(input);
       if (saved) {
+        setModelOptionsByEndpoint({});
         setProviderDraft(null);
         setEditingProvider(null);
       }
@@ -93,33 +94,30 @@ export function CursorSettingsPage() {
       setSavingProvider(false);
     }
   };
-  const openNewModel = (provider?: Provider) => {
+  const openNewModel = (provider?: Provider, format?: RequestFormat) => {
     const target = provider ?? providers[0];
     if (!target) {
       openNewProvider();
       return;
     }
-    const next = emptyCursorModelDraft(target);
+    const next = emptyCursorModelDraft(target, format);
     next.model.sort_order = nextSortOrder(models.filter((item) => item.provider_id === target.provider_id));
     setEditing(null);
     setDraft(next);
   };
   const openEdit = (model: Model) => {
     setEditing(model);
-    setModelOptionsByProvider((current) => {
-      const existing = current[model.provider_id] ?? [];
-      if (existing.includes(model.model_id)) return current;
-      return { ...current, [model.provider_id]: [model.model_id, ...existing] };
-    });
     setDraft(modelDraftFrom(model));
   };
-  const discover = async (providerId: string): Promise<boolean> => {
+  const discover = async (providerId: string, request_format: RequestFormat, url: string | null): Promise<boolean> => {
     setDiscovering(true);
     try {
-      const result = await api.discoverProviderModels(providerId);
-      setModelOptionsByProvider((current) => ({
+      const request_url_override = url?.trim() || null;
+      const key = JSON.stringify([providerId, request_format, request_url_override]);
+      const result = await api.discoverProviderModels(providerId, { request_format, request_url_override });
+      setModelOptionsByEndpoint((current) => ({
         ...current,
-        [providerId]: [...new Set(result.models)],
+        [key]: [...new Set(result.models)],
       }));
       return true;
     } catch (cause) {
@@ -261,6 +259,7 @@ export function CursorSettingsPage() {
     }
     const created = await appStore.createModels([{
       ...modelDraftFrom(model).model,
+      request_format: model.request_format,
       sort_order: nextSortOrder(models.filter((item) => item.provider_id === model.provider_id)),
       display_name: displayName,
     }]);
@@ -317,7 +316,7 @@ export function CursorSettingsPage() {
 
   const editorTestState = editing ? modelTestResults.get(editing.model_hash) : undefined;
   const editorTesting = Boolean(editing && testingModelHashes.has(editing.model_hash));
-  const activeModelOptions = draft ? (modelOptionsByProvider[draft.model.provider_id || providers[0]?.provider_id || ""] ?? []) : [];
+  const activeModelOptions = draft ? (modelOptionsByEndpoint[JSON.stringify([draft.model.provider_id, draft.model.request_format, draft.model.request_url_override?.trim() || null])] ?? []) : [];
 
   return <>
     <PageActions position="left">
@@ -337,7 +336,7 @@ export function CursorSettingsPage() {
         {(canGroupByType || testTargets.length > 0) && <div className={styles.groupActions} role="group" aria-label={t("操作")}>
           {canGroupByType && <>
             <button type="button" aria-pressed={effectiveGrouping === "provider"} onClick={() => setGrouping("provider")}>{t("按供应商")}</button>
-            <button type="button" aria-pressed={effectiveGrouping === "type"} onClick={() => setGrouping("type")}>{t("按类型")}</button>
+            <button type="button" aria-pressed={effectiveGrouping === "type"} onClick={() => setGrouping("type")}>{t("按格式")}</button>
           </>}
           {testTargets.length > 0 && <button type="button" disabled={cursorBusy || (!batchTesting && testingModelHashes.size > 0)} onClick={() => void (batchTesting ? cancelAllModelTests() : testAllModels())}>{batchTesting ? t("取消全部测试") : t("一键测试")}</button>}
         </div>}

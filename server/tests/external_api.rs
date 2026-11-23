@@ -16,8 +16,7 @@ use cursor_server::{
     api::byok,
     control,
     model::{
-        ModelConfigInput, ModelType, ProjectedContent, ProviderConfigInput, Usage,
-        OPENAI_CHAT_ENDPOINT, OPENAI_RESPONSES_ENDPOINT,
+        ModelConfigInput, RequestFormat, ProjectedContent, ProviderConfigInput, Usage,
     },
     network::NetworkClients,
     plugin::{PluginRegistry, PluginRuntime},
@@ -31,21 +30,20 @@ fn provider_input(name: &str, base_url: &str) -> ProviderConfigInput {
     ProviderConfigInput {
         sort_order: 0,
         name: name.into(),
-        model_type: ModelType::OpenAi,
         base_url: base_url.into(),
-        use_full_url: false,
         api_key: "upstream".into(),
-        openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
         custom_headers_enabled: false,
         custom_headers: json!({}),
-        extra_params_enabled: false,
-        extra_params: json!({}),
     }
 }
 
 fn model_input(provider_id: &str) -> ModelConfigInput {
     ModelConfigInput {
         provider_id: provider_id.into(),
+        request_format: RequestFormat::OpenAiChat,
+        request_url_override: None,
+        extra_params_enabled: false,
+        extra_params: serde_json::json!({}),
         sort_order: 0,
         display_name: "Example".into(),
         tooltip_data: "test".into(),
@@ -805,23 +803,21 @@ async fn all_entry_and_upstream_protocol_pairs_preserve_cache_usage() {
     let port = listener.local_addr().unwrap().port();
     let server = tokio::spawn(async move { axum::serve(listener, inner).await.unwrap() });
 
-    for (order, group, model_type, endpoint) in [
-        (1, "bridge-chat", ModelType::OpenAi, OPENAI_CHAT_ENDPOINT),
+    for (order, group, request_format) in [
+        (1, "bridge-chat", RequestFormat::OpenAiChat),
         (
             2,
             "bridge-responses",
-            ModelType::OpenAi,
-            OPENAI_RESPONSES_ENDPOINT,
+            RequestFormat::OpenAiResponses,
         ),
-        (3, "bridge-messages", ModelType::Anthropic, ""),
+        (3, "bridge-messages", RequestFormat::Anthropic),
     ] {
         let mut provider_cfg = provider_input(group, &format!("http://127.0.0.1:{port}/byok/v1"));
         provider_cfg.sort_order = order;
-        provider_cfg.model_type = model_type;
-        provider_cfg.openai_endpoint = endpoint.into();
         provider_cfg.api_key = "secret".into();
         let created_provider = store.create_provider(&provider_cfg).await.unwrap();
         let mut model = model_input(&created_provider.provider_id);
+        model.request_format = request_format;
         model.sort_order = order;
         model.display_name = format!("Bridge {group}");
         model.model_id = "work/qwen/model".into();
@@ -988,38 +984,34 @@ async fn matching_http_protocols_forward_native_requests_and_responses() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
-    for (order, group, model_type, endpoint, path, request) in [
+    for (order, group, request_format, path, request) in [
         (
             1,
             "chat",
-            ModelType::OpenAi,
-            OPENAI_CHAT_ENDPOINT,
+            RequestFormat::OpenAiChat,
             "/byok/v1/chat/completions",
             json!({"messages":[{"role":"user","content":"hi"}],"native_extension":{"keep":1}}),
         ),
         (
             2,
             "responses",
-            ModelType::OpenAi,
-            OPENAI_RESPONSES_ENDPOINT,
+            RequestFormat::OpenAiResponses,
             "/byok/v1/responses",
             json!({"input":[{"type":"native_unsupported","value":1}],"native_extension":{"keep":2}}),
         ),
         (
             3,
             "messages",
-            ModelType::Anthropic,
-            "",
+            RequestFormat::Anthropic,
             "/byok/v1/messages",
             json!({"max_tokens":100,"messages":[{"role":"user","content":[{"type":"document","source":{"type":"url","url":"https://example.com"}}]}],"native_extension":{"keep":3}}),
         ),
     ] {
         let mut provider_cfg = provider_input(group, &format!("http://127.0.0.1:{port}/byok/v1"));
         provider_cfg.sort_order = order;
-        provider_cfg.model_type = model_type;
-        provider_cfg.openai_endpoint = endpoint.into();
         let created_provider = store.create_provider(&provider_cfg).await.unwrap();
         let mut model = model_input(&created_provider.provider_id);
+        model.request_format = request_format;
         model.sort_order = order;
         model.model_id = "native-model".into();
         store.create_model(&model).await.unwrap();
@@ -1057,7 +1049,7 @@ async fn matching_http_protocols_forward_native_requests_and_responses() {
             let (upstream_headers, forwarded) = receiver.recv().await.unwrap();
             request["model"] = json!("native-model");
             assert_eq!(forwarded, request);
-            if model_type == ModelType::Anthropic {
+            if request_format == RequestFormat::Anthropic {
                 assert_eq!(upstream_headers["x-api-key"], "upstream");
                 assert_eq!(upstream_headers["anthropic-version"], "2023-06-01");
                 assert!(!upstream_headers.contains_key(header::AUTHORIZATION));

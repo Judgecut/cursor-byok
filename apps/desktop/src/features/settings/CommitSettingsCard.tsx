@@ -66,7 +66,7 @@ export function CommitSettingsCard() {
           ? `${model.display_name}（${model.model_id}）`
           : model.display_name || model.model_id,
         group: modelProviderName(model),
-        icon: model.type === "anthropic" ? claudeIcon : openAiIcon,
+        icon: model.request_format === "gemini" ? undefined : model.request_format === "anthropic" ? claudeIcon : openAiIcon,
       });
     }
     for (const plugin of plugins) {

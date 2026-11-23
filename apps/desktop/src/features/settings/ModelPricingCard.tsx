@@ -392,7 +392,7 @@ export function ModelPricingCard() {
                 ? undefined
                 : item.provider_type === "anthropic"
                   ? claudeIcon
-                  : item.source_kind === "plugin"
+                  : (item.source_kind === "plugin" || item.provider_type === "gemini")
                     ? flatColorOrganizationIcon
                     : openAiIcon;
               const rates: Array<{ label: string; value: string | null; custom: boolean }> = [

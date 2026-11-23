@@ -18,8 +18,8 @@ use cursor_server::{
     api::byok,
     control,
     model::{
-        CallOrigin, ModelConfig, ModelConfigInput, ModelType, NewLlmCall, ProviderConfigInput,
-        ProviderType, Usage, OPENAI_CHAT_ENDPOINT, OPENAI_RESPONSES_ENDPOINT,
+        CallOrigin, ModelConfig, ModelConfigInput, RequestFormat, NewLlmCall, ProviderConfigInput,
+        ProviderType, Usage,
     },
     network::NetworkClients,
     plugin::{PluginRegistry, PluginRuntime},
@@ -39,11 +39,10 @@ async fn create_test_model(
     store: &cursor_server::store::Store,
     display_name: &str,
     group_name: Option<&str>,
-    model_type: ModelType,
+    request_format: RequestFormat,
     base_url: &str,
     api_key: &str,
     model_id: &str,
-    endpoint: &str,
 ) -> ModelConfig {
     let provider = store
         .create_provider(&ProviderConfigInput {
@@ -51,21 +50,20 @@ async fn create_test_model(
             name: group_name
                 .map(str::to_owned)
                 .unwrap_or_else(|| base_url.into()),
-            model_type,
             base_url: base_url.into(),
-            use_full_url: false,
             api_key: api_key.into(),
-            openai_endpoint: endpoint.into(),
             custom_headers_enabled: false,
             custom_headers: json!({}),
-            extra_params_enabled: false,
-            extra_params: json!({}),
         })
         .await
         .unwrap();
     store
         .create_model(&ModelConfigInput {
             provider_id: provider.provider_id,
+            request_format,
+            request_url_override: None,
+            extra_params_enabled: false,
+            extra_params: serde_json::json!({}),
             sort_order: 0,
             display_name: display_name.into(),
             tooltip_data: display_name.into(),
@@ -187,22 +185,20 @@ async fn same_model_across_suppliers_aggregates_cleanly_and_shares_identity_acro
         &store,
         "OpenAI Main",
         Some("official"),
-        ModelType::OpenAi,
+        RequestFormat::OpenAiResponses,
         "https://api.openai.com/v1",
         "sk-key-1",
         "gpt-4o",
-        OPENAI_RESPONSES_ENDPOINT,
     )
     .await;
     let openrouter_model = create_test_model(
         &store,
         "OpenRouter Pool",
         Some("relay"),
-        ModelType::OpenAi,
+        RequestFormat::OpenAiChat,
         "https://openrouter.ai/api/v1",
         "sk-or-1",
         "gpt-4o",
-        OPENAI_CHAT_ENDPOINT,
     )
     .await;
 
@@ -268,21 +264,20 @@ async fn same_model_across_suppliers_aggregates_cleanly_and_shares_identity_acro
             &ProviderConfigInput {
                 sort_order: 0,
                 name: "renamed-group".into(),
-                model_type: ModelType::OpenAi,
                 base_url: "https://api.openai.com/v1".into(),
-                use_full_url: false,
                 api_key: "sk-key-2".into(),
-                openai_endpoint: OPENAI_RESPONSES_ENDPOINT.into(),
                 custom_headers_enabled: false,
                 custom_headers: json!({}),
-                extra_params_enabled: false,
-                extra_params: json!({}),
             },
         )
         .await
         .unwrap();
     let edited = ModelConfigInput {
         provider_id: openai_model.provider_id.clone(),
+        request_format: openai_model.request_format,
+        request_url_override: None,
+        extra_params_enabled: false,
+        extra_params: serde_json::json!({}),
         sort_order: openai_model.sort_order,
         display_name: "OpenAI Renamed".into(),
         tooltip_data: "OpenAI Renamed".into(),
@@ -529,33 +524,30 @@ async fn protocol_billing_and_native_external_api_forwarding_agree() {
         &store,
         "Native Chat",
         Some("chat"),
-        ModelType::OpenAi,
+        RequestFormat::OpenAiChat,
         &format!("http://127.0.0.1:{port}/v1"),
         "k1",
         "proto-model",
-        OPENAI_CHAT_ENDPOINT,
     )
     .await;
     let resp_model = create_test_model(
         &store,
         "Native Resp",
         Some("resp"),
-        ModelType::OpenAi,
+        RequestFormat::OpenAiResponses,
         &format!("http://127.0.0.1:{port}/v1"),
         "k2",
         "proto-model",
-        OPENAI_RESPONSES_ENDPOINT,
     )
     .await;
     let ant_model = create_test_model(
         &store,
         "Native Ant",
         Some("ant"),
-        ModelType::Anthropic,
+        RequestFormat::Anthropic,
         &format!("http://127.0.0.1:{port}"),
         "k3",
         "proto-model",
-        "",
     )
     .await;
 
@@ -1185,22 +1177,20 @@ async fn catalog_sync_matching_override_priority_and_offline_resilience() {
         &store,
         "Generic Relay",
         Some("relay"),
-        ModelType::OpenAi,
+        RequestFormat::OpenAiChat,
         "https://relay.example.com/v1",
         "sk",
         "gpt-4o",
-        OPENAI_CHAT_ENDPOINT,
     )
     .await;
     let unique = create_test_model(
         &store,
         "Unique Model",
         Some("vendor"),
-        ModelType::OpenAi,
+        RequestFormat::OpenAiChat,
         "https://relay.example.com/v1",
         "sk",
         "unique-model-v1",
-        OPENAI_CHAT_ENDPOINT,
     )
     .await;
 
@@ -1522,11 +1512,10 @@ async fn partial_custom_rates_fallback_to_catalog_across_views_calls_and_backfil
         &store,
         "OpenAI Partial",
         Some("official"),
-        ModelType::OpenAi,
+        RequestFormat::OpenAiResponses,
         "https://api.openai.com/v1",
         "sk-partial",
         "gpt-4o",
-        OPENAI_RESPONSES_ENDPOINT,
     )
     .await;
 

@@ -12,16 +12,57 @@ test("creates a provider and model through the real forms and reloads them", asy
   await providerDialog.getByRole("button", { name: "Save", exact: true }).click();
   await expect(providerDialog).toBeHidden();
   await expect.poll(() => management.providers.length).toBe(1);
-  expect(management.providers[0]).toMatchObject({ name: "Smoke provider", type: "openai", base_url: "https://provider.example", openai_endpoint: "/v1/responses" });
+  expect(management.providers[0]).toMatchObject({ name: "Smoke provider", base_url: "https://provider.example" });
 
   await page.getByTitle("Add model", { exact: true }).click();
   const modelDialog = page.getByRole("dialog", { name: "Add model", exact: true });
+  await modelDialog.getByRole("button", { name: "Request format", exact: true }).click();
+  await page.getByRole("option", { name: "OpenAI Responses", exact: true }).click();
   await modelDialog.getByPlaceholder("gpt-5", { exact: true }).fill("smoke-model");
   await modelDialog.getByLabel("Display name", { exact: true }).fill("Smoke model");
   await modelDialog.getByRole("button", { name: "Save", exact: true }).click();
   await expect(modelDialog).toBeHidden();
   await expect(page.getByText("Smoke model", { exact: true })).toBeVisible();
-  expect(management.models[0]).toMatchObject({ provider_id: "smoke-provider", model_id: "smoke-model", display_name: "Smoke model", tooltip_data: "Smoke provider" });
+  expect(management.models[0]).toMatchObject({ provider_id: "smoke-provider", model_id: "smoke-model", display_name: "Smoke model", tooltip_data: "Smoke provider", request_format: "openai-responses" });
+  await page.getByTitle("Add model", { exact: true }).click();
+  await modelDialog.getByRole("button", { name: "Request format", exact: true }).click();
+  await page.getByRole("option", { name: "Anthropic Messages", exact: true }).click();
+  await modelDialog.getByLabel("Complete request URL", { exact: true }).fill("https://provider.example/edge/messages?route=tools");
+  await modelDialog.getByRole("button", { name: "Fetch models", exact: true }).click();
+  await page.getByRole("option", { name: "discovered-claude", exact: true }).click();
+  expect(management.writes).toContainEqual({
+    path: "/providers/smoke-provider/discover",
+    body: { request_format: "anthropic", request_url_override: "https://provider.example/edge/messages?route=tools" },
+  });
+  await modelDialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(modelDialog).toBeHidden();
+
+  await page.getByRole("button", { name: "By format", exact: true }).click();
+  await expect(page.getByText("OpenAI Responses", { exact: true })).toBeVisible();
+  await expect(page.getByText("Anthropic Messages", { exact: true })).toBeVisible();
+  const claude = page.locator('[data-model-hash="smoke-model-1"]');
+  await claude.getByRole("button", { name: "Duplicate", exact: true }).click();
+  await expect.poll(() => management.models.length).toBe(3);
+  expect(management.models[2]).toMatchObject({ request_format: "anthropic", request_url_override: "https://provider.example/edge/messages?route=tools" });
+
+  await claude.getByRole("button", { name: "Edit", exact: true }).click();
+  const editDialog = page.getByRole("dialog", { name: "Edit model", exact: true });
+  await expect(editDialog.getByRole("button", { name: "Request format", exact: true })).toContainText("Anthropic Messages");
+  await editDialog.getByLabel("Complete request URL", { exact: true }).clear();
+  await editDialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(editDialog).toBeHidden();
+  await expect.poll(() => management.models[1].request_url_override).toBeNull();
+
+  await page.getByTitle("Add model", { exact: true }).click();
+  await modelDialog.getByRole("button", { name: "Request format", exact: true }).click();
+  await page.getByRole("option", { name: "Gemini", exact: true }).click();
+  await expect(modelDialog.getByRole("button", { name: "Request format", exact: true })).toContainText("Gemini");
+  await modelDialog.getByPlaceholder("gemini-2.5-flash", { exact: true }).fill("gemini-model");
+  await modelDialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(modelDialog).toBeHidden();
+  expect(management.models[3]).toMatchObject({ provider_id: "smoke-provider", request_format: "gemini", model_id: "gemini-model", request_url_override: null });
+  await expect(page.getByText("Gemini", { exact: true })).toBeVisible();
+
   await page.reload();
   await expect(page.getByText("Smoke model", { exact: true })).toBeVisible();
   await expect(page.getByText("Smoke provider", { exact: true }).first()).toBeVisible();

@@ -5,11 +5,11 @@ const result: ModelConnectivityResult = { duration_ms: 2000, generation_ms: 1000
 
 test.beforeEach(async ({ management }) =>
 {
-  const provider: Provider = { provider_id: "batch-provider", sort_order: 0, name: "Batch provider", type: "openai", base_url: "https://provider.example", use_full_url: false, api_key: "test-key", openai_endpoint: "/v1/responses", custom_headers_enabled: false, custom_headers: {}, extra_params_enabled: false, extra_params: {}, created_at_ms: 1, updated_at_ms: 1 };
+  const provider: Provider = { provider_id: "batch-provider", sort_order: 0, name: "Batch provider", base_url: "https://provider.example", api_key: "test-key", custom_headers_enabled: false, custom_headers: {}, created_at_ms: 1, updated_at_ms: 1 };
   management.providers.push(provider);
   for (const [sort_order, model_hash] of ["first", "second", "third"].entries())
   {
-    management.models.push({ ...provider, model_hash, sort_order, provider_name: provider.name, model_id: model_hash, display_name: model_hash, tooltip_data: provider.name, reasoning_effort: null, context_window_tokens: null, max_output_tokens: null, anthropic_thinking_effort: null, thinking_budget_tokens: null });
+    management.models.push({ ...provider, request_format: "openai-responses", request_url_override: null, extra_params_enabled: false, extra_params: {}, model_hash, sort_order, provider_name: provider.name, model_id: model_hash, display_name: model_hash, tooltip_data: provider.name, reasoning_effort: null, context_window_tokens: null, max_output_tokens: null, anthropic_thinking_effort: null, thinking_budget_tokens: null });
   }
 });
 

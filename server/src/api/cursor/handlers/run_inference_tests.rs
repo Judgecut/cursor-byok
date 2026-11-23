@@ -13,8 +13,8 @@ use crate::{
         transport::TransportRegistry,
     },
     model::{
-        ModelConfigInput, ModelInvocation, ModelRequest, ModelType, ProjectedContent,
-        ProviderConfigInput, Usage, OPENAI_CHAT_ENDPOINT,
+        ModelConfigInput, ModelInvocation, ModelRequest, RequestFormat, ProjectedContent,
+        ProviderConfigInput, Usage,
     },
     network::NetworkClients,
     provider::{FinishReason, ModelEvent, Provider, ProviderStream},
@@ -1374,21 +1374,20 @@ fn provider_input() -> ProviderConfigInput {
     ProviderConfigInput {
         sort_order: 1,
         name: "example.com".into(),
-        model_type: ModelType::OpenAi,
         base_url: "https://example.com/v1".into(),
-        use_full_url: false,
         api_key: "test-key".into(),
-        openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
         custom_headers_enabled: false,
         custom_headers: serde_json::json!({}),
-        extra_params_enabled: false,
-        extra_params: serde_json::json!({}),
     }
 }
 
 fn model_input(provider_id: &str) -> ModelConfigInput {
     ModelConfigInput {
         provider_id: provider_id.into(),
+        request_format: RequestFormat::OpenAiChat,
+        request_url_override: None,
+        extra_params_enabled: false,
+        extra_params: serde_json::json!({}),
         sort_order: 1,
         display_name: "Test model".into(),
         tooltip_data: "Test model".into(),

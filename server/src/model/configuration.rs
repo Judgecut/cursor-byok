@@ -18,6 +18,8 @@ pub enum ProviderType {
     OpenAiResponses,
     #[serde(rename = "anthropic")]
     Anthropic,
+    #[serde(rename = "gemini")]
+    Gemini,
     /// 插件执行的调用;协议细节在插件内部,核心只按统一事件流记录。
     #[serde(rename = "plugin")]
     Plugin,
@@ -29,6 +31,7 @@ impl ProviderType {
             Self::OpenAiChat => "openai-chat",
             Self::OpenAiResponses => "openai-responses",
             Self::Anthropic => "anthropic",
+            Self::Gemini => "gemini",
             Self::Plugin => "plugin",
         }
     }
@@ -48,6 +51,7 @@ impl FromStr for ProviderType {
             "openai-chat" => Ok(Self::OpenAiChat),
             "openai-responses" => Ok(Self::OpenAiResponses),
             "anthropic" => Ok(Self::Anthropic),
+            "gemini" => Ok(Self::Gemini),
             "plugin" => Ok(Self::Plugin),
             _ => Err(Error::Config(format!("unsupported provider type: {value}"))),
         }
@@ -55,29 +59,61 @@ impl FromStr for ProviderType {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum ModelType {
-    OpenAi,
+#[serde(rename_all = "kebab-case")]
+pub enum RequestFormat
+{
+    #[serde(rename = "openai-chat")]
+    OpenAiChat,
+    #[serde(rename = "openai-responses")]
+    OpenAiResponses,
     Anthropic,
+    #[serde(rename = "gemini")]
+    Gemini,
 }
 
-impl ModelType {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::OpenAi => "openai",
-            Self::Anthropic => "anthropic",
+impl RequestFormat
+{
+    pub fn provider_type(self) -> ProviderType
+    {
+        match self
+        {
+            Self::OpenAiChat => ProviderType::OpenAiChat,
+            Self::OpenAiResponses => ProviderType::OpenAiResponses,
+            Self::Anthropic => ProviderType::Anthropic,
+            Self::Gemini => ProviderType::Gemini,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str
+    {
+        self.provider_type().as_str()
+    }
+
+    fn endpoint(self) -> Option<&'static str>
+    {
+        match self
+        {
+            Self::OpenAiChat => Some(OPENAI_CHAT_ENDPOINT),
+            Self::OpenAiResponses => Some(OPENAI_RESPONSES_ENDPOINT),
+            Self::Anthropic => Some("/v1/messages"),
+            Self::Gemini => None,
         }
     }
 }
 
-impl FromStr for ModelType {
+impl FromStr for RequestFormat
+{
     type Err = Error;
 
-    fn from_str(value: &str) -> Result<Self> {
-        match value {
-            "openai" => Ok(Self::OpenAi),
+    fn from_str(value: &str) -> Result<Self>
+    {
+        match value
+        {
+            "openai-chat" => Ok(Self::OpenAiChat),
+            "openai-responses" => Ok(Self::OpenAiResponses),
             "anthropic" => Ok(Self::Anthropic),
-            _ => Err(Error::Config(format!("unsupported model type: {value}"))),
+            "gemini" => Ok(Self::Gemini),
+            _ => Err(Error::Config(format!("unsupported request format: {value}"))),
         }
     }
 }
@@ -87,22 +123,12 @@ pub struct ProviderConfigInput {
     #[serde(default)]
     pub sort_order: i64,
     pub name: String,
-    #[serde(rename = "type")]
-    pub model_type: ModelType,
     pub base_url: String,
-    #[serde(default)]
-    pub use_full_url: bool,
     pub api_key: String,
-    #[serde(default)]
-    pub openai_endpoint: String,
     #[serde(default)]
     pub custom_headers_enabled: bool,
     #[serde(default = "empty_object")]
     pub custom_headers: serde_json::Value,
-    #[serde(default)]
-    pub extra_params_enabled: bool,
-    #[serde(default = "empty_object")]
-    pub extra_params: serde_json::Value,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -110,38 +136,24 @@ pub struct ProviderConfig {
     pub provider_id: String,
     pub sort_order: i64,
     pub name: String,
-    #[serde(rename = "type")]
-    pub model_type: ModelType,
     pub base_url: String,
-    pub use_full_url: bool,
     pub api_key: String,
-    pub openai_endpoint: String,
     pub custom_headers_enabled: bool,
     pub custom_headers: serde_json::Value,
-    pub extra_params_enabled: bool,
-    pub extra_params: serde_json::Value,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
-}
-
-impl ProviderConfig {
-    pub fn provider_type(&self) -> ProviderType {
-        provider_type_for(self.model_type, &self.openai_endpoint)
-    }
-
-    pub fn request_url(&self) -> Result<String> {
-        resolve_request_url(
-            self.model_type,
-            &self.base_url,
-            &self.openai_endpoint,
-            self.use_full_url,
-        )
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ModelConfigInput {
     pub provider_id: String,
+    pub request_format: RequestFormat,
+    #[serde(default)]
+    pub request_url_override: Option<String>,
+    #[serde(default)]
+    pub extra_params_enabled: bool,
+    #[serde(default = "empty_object")]
+    pub extra_params: serde_json::Value,
     #[serde(default)]
     pub sort_order: i64,
     pub display_name: String,
@@ -163,12 +175,10 @@ pub struct ModelConfig {
     pub provider_name: String,
     pub sort_order: i64,
     pub display_name: String,
-    #[serde(rename = "type")]
-    pub model_type: ModelType,
+    pub request_format: RequestFormat,
+    pub request_url_override: Option<String>,
     pub base_url: String,
-    pub use_full_url: bool,
     pub api_key: String,
-    pub openai_endpoint: String,
     pub custom_headers_enabled: bool,
     pub custom_headers: serde_json::Value,
     pub extra_params_enabled: bool,
@@ -186,16 +196,11 @@ pub struct ModelConfig {
 
 impl ModelConfig {
     pub fn provider_type(&self) -> ProviderType {
-        provider_type_for(self.model_type, &self.openai_endpoint)
+        self.request_format.provider_type()
     }
 
     pub fn request_url(&self) -> Result<String> {
-        resolve_request_url(
-            self.model_type,
-            &self.base_url,
-            &self.openai_endpoint,
-            self.use_full_url,
-        )
+        resolve_request_url(self.request_format, &self.base_url, self.request_url_override.as_deref(), &self.model_id)
     }
 
     pub fn max_output_tokens(&self) -> Option<u64> {
@@ -218,25 +223,16 @@ impl ModelConfig {
             model.context_window_tokens = self.context_window_tokens;
         }
         if model.reasoning.effort.is_none() && model.reasoning.enabled_override != Some(false) {
-            model.reasoning.effort = match self.model_type {
-                ModelType::OpenAi => self.reasoning_effort.clone(),
-                ModelType::Anthropic => self
+            model.reasoning.effort = match self.request_format {
+                RequestFormat::OpenAiChat | RequestFormat::OpenAiResponses => self.reasoning_effort.clone(),
+                RequestFormat::Gemini => None,
+                RequestFormat::Anthropic => self
                     .anthropic_thinking_effort
                     .clone()
                     .or_else(|| Some("xhigh".into())),
             };
         }
         model.reasoning.enabled |= model.reasoning.effort.is_some();
-    }
-}
-
-fn provider_type_for(model_type: ModelType, openai_endpoint: &str) -> ProviderType {
-    match model_type {
-        ModelType::Anthropic => ProviderType::Anthropic,
-        ModelType::OpenAi if openai_endpoint == OPENAI_RESPONSES_ENDPOINT => {
-            ProviderType::OpenAiResponses
-        }
-        ModelType::OpenAi => ProviderType::OpenAiChat,
     }
 }
 
@@ -248,61 +244,55 @@ pub fn normalize_provider_input(input: &ProviderConfigInput) -> Result<ProviderC
     let name = required(&input.name, "provider name")?;
     let base_url = normalize_request_url(&input.base_url)?;
     let api_key = required(&input.api_key, "provider API key")?;
-    let openai_endpoint = match input.model_type {
-        ModelType::OpenAi => normalize_openai_endpoint(&input.openai_endpoint)?,
-        ModelType::Anthropic => String::new(),
-    };
     validate_headers(&input.custom_headers)?;
-    validate_object(&input.extra_params, "provider extra params")?;
-
-    let normalized = ProviderConfigInput {
+    Ok(ProviderConfigInput {
         sort_order: input.sort_order.max(0),
         name,
-        model_type: input.model_type,
         base_url,
-        use_full_url: input.use_full_url,
         api_key,
-        openai_endpoint,
         custom_headers_enabled: input.custom_headers_enabled,
         custom_headers: input.custom_headers.clone(),
-        extra_params_enabled: input.extra_params_enabled,
-        extra_params: input.extra_params.clone(),
-    };
-    resolve_request_url(
-        normalized.model_type,
-        &normalized.base_url,
-        &normalized.openai_endpoint,
-        normalized.use_full_url,
-    )?;
-    Ok(normalized)
+    })
 }
 
-pub fn normalize_model_input(
-    input: &ModelConfigInput,
-    model_type: ModelType,
-) -> Result<ModelConfigInput> {
+pub fn normalize_model_input(input: &ModelConfigInput) -> Result<ModelConfigInput>
+{
     let provider_id = required(&input.provider_id, "provider id")?;
     let display_name = required(&input.display_name, "model display name")?;
     let tooltip_data = required(&input.tooltip_data, "model tooltip")?;
     let model_id = required(&input.model_id, "model id")?;
-    let reasoning_effort = match model_type {
-        ModelType::OpenAi => normalize_effort(input.reasoning_effort.as_deref(), true)?,
-        ModelType::Anthropic => None,
+    let model_id = if input.request_format == RequestFormat::Gemini
+    {
+        required(model_id.strip_prefix("models/").unwrap_or(&model_id), "model id")?
+    }
+    else
+    {
+        model_id
     };
-    let anthropic_thinking_effort = match model_type {
-        ModelType::Anthropic => Some(
+    let request_url_override = normalize_request_url_override(input.request_url_override.as_deref())?;
+    validate_object(&input.extra_params, "model extra params")?;
+    let reasoning_effort = match input.request_format {
+        RequestFormat::OpenAiChat | RequestFormat::OpenAiResponses => normalize_effort(input.reasoning_effort.as_deref(), true)?,
+        RequestFormat::Anthropic | RequestFormat::Gemini => None,
+    };
+    let anthropic_thinking_effort = match input.request_format {
+        RequestFormat::Anthropic => Some(
             normalize_effort(
                 input.anthropic_thinking_effort.as_deref().or(Some("xhigh")),
                 false,
             )?
             .expect("Anthropic effort has a default"),
         ),
-        ModelType::OpenAi => None,
+        RequestFormat::OpenAiChat | RequestFormat::OpenAiResponses | RequestFormat::Gemini => None,
     };
     let thinking_budget_tokens = positive(input.thinking_budget_tokens, "thinking budget")?;
 
     Ok(ModelConfigInput {
         provider_id,
+        request_format: input.request_format,
+        request_url_override,
+        extra_params_enabled: input.extra_params_enabled,
+        extra_params: input.extra_params.clone(),
         sort_order: input.sort_order.max(0),
         display_name,
         tooltip_data,
@@ -311,9 +301,9 @@ pub fn normalize_model_input(
         context_window_tokens: positive(input.context_window_tokens, "context window")?,
         max_output_tokens: positive(input.max_output_tokens, "max output tokens")?,
         anthropic_thinking_effort,
-        thinking_budget_tokens: match model_type {
-            ModelType::Anthropic => thinking_budget_tokens,
-            ModelType::OpenAi => None,
+        thinking_budget_tokens: match input.request_format {
+            RequestFormat::Anthropic => thinking_budget_tokens,
+            RequestFormat::OpenAiChat | RequestFormat::OpenAiResponses | RequestFormat::Gemini => None,
         },
     })
 }
@@ -343,21 +333,74 @@ pub fn normalize_request_url(value: &str) -> Result<String> {
     Ok(value.into())
 }
 
-pub fn resolve_request_url(
-    model_type: ModelType,
-    base_url: &str,
-    openai_endpoint: &str,
-    use_full_url: bool,
-) -> Result<String> {
-    let base_url = normalize_request_url(base_url)?;
-    let endpoint = match model_type {
-        ModelType::OpenAi => normalize_openai_endpoint(openai_endpoint)?,
-        ModelType::Anthropic => "/v1/messages".into(),
-    };
-    if use_full_url {
-        return Ok(base_url);
+pub(crate) fn normalize_request_url_override(value: Option<&str>) -> Result<Option<String>>
+{
+    value.map(str::trim).filter(|value| !value.is_empty()).map(normalize_request_url).transpose()
+}
+
+pub fn resolve_request_url(format: RequestFormat, base_url: &str, request_url_override: Option<&str>, model_id: &str) -> Result<String>
+{
+    let override_url = normalize_request_url_override(request_url_override)?;
+    if let Some(endpoint) = format.endpoint()
+    {
+        return match override_url
+        {
+            Some(url) => Ok(url),
+            None => append_standard_endpoint(&normalize_request_url(base_url)?, endpoint),
+        };
     }
-    append_standard_endpoint(&base_url, &endpoint)
+
+    let mut url = match override_url
+    {
+        Some(url) => Url::parse(&url).map_err(|error| Error::Config(format!("invalid Gemini endpoint: {error}")))?,
+        None =>
+        {
+            let mut url = gemini_models_url(base_url, None)?;
+            let model_id = model_id.strip_prefix("models/").unwrap_or(model_id);
+            if model_id.is_empty() || !model_id.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+            {
+                return Err(Error::Config("invalid Gemini model ID".into()));
+            }
+            url.path_segments_mut().expect("HTTP URL").push(&format!("{model_id}:streamGenerateContent"));
+            url
+        }
+    };
+    let query: Vec<_> = url.query_pairs().filter(|(key, _)| key != "alt").map(|(key, value)| (key.into_owned(), value.into_owned())).collect();
+    url.query_pairs_mut().clear().extend_pairs(query).append_pair("alt", "sse");
+    Ok(url.into())
+}
+
+pub(crate) fn gemini_models_url(base_url: &str, request_url_override: Option<&str>) -> Result<Url>
+{
+    if let Some(value) = normalize_request_url_override(request_url_override)?
+    {
+        let mut url = Url::parse(&value).map_err(|error| Error::Config(format!("invalid Gemini endpoint: {error}")))?;
+        if let Some(collection) = gemini_model_collection(url.path())
+        {
+            let collection = collection.to_owned();
+            url.set_path(&collection);
+            url.set_query(None);
+            return Ok(url);
+        }
+    }
+    let mut url = Url::parse(&normalize_request_url(base_url)?).map_err(|error| Error::Config(format!("invalid Gemini base URL: {error}")))?;
+    let path = url.path().trim_end_matches('/');
+    let has_version = has_trailing_version(path) || path.ends_with("/v1beta") || path.ends_with("/v1alpha");
+    let mut segments = url.path_segments_mut().expect("HTTP URL");
+    segments.pop_if_empty();
+    if !has_version
+    {
+        segments.push("v1beta");
+    }
+    segments.push("models");
+    drop(segments);
+    Ok(url)
+}
+
+pub(crate) fn gemini_model_collection(path: &str) -> Option<&str>
+{
+    let (collection, resource) = path.trim_end_matches('/').rsplit_once('/')?;
+    (collection.ends_with("/models") && resource.ends_with(":streamGenerateContent")).then_some(collection)
 }
 
 fn append_standard_endpoint(base_url: &str, endpoint: &str) -> Result<String> {
@@ -385,18 +428,8 @@ fn has_trailing_version(path: &str) -> bool {
 pub fn is_sensitive_header(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "authorization" | "proxy-authorization" | "x-api-key" | "api-key" | "cookie" | "set-cookie"
+        "authorization" | "proxy-authorization" | "x-api-key" | "x-goog-api-key" | "api-key" | "cookie" | "set-cookie"
     )
-}
-
-fn normalize_openai_endpoint(value: &str) -> Result<String> {
-    match value.trim() {
-        "" | OPENAI_RESPONSES_ENDPOINT => Ok(OPENAI_RESPONSES_ENDPOINT.into()),
-        OPENAI_CHAT_ENDPOINT => Ok(OPENAI_CHAT_ENDPOINT.into()),
-        value => Err(Error::Config(format!(
-            "unsupported OpenAI endpoint: {value}"
-        ))),
-    }
 }
 
 fn normalize_effort(value: Option<&str>, allow_empty: bool) -> Result<Option<String>> {

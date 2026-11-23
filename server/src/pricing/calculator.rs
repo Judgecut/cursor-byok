@@ -177,7 +177,7 @@ pub fn billed_tokens(request_type: ProviderType, usage: &Usage) -> Option<Billed
     let cache_write = usage.cache_write_tokens.unwrap_or(0);
     let non_cached_input = match request_type {
         ProviderType::Anthropic => raw_input,
-        ProviderType::OpenAiChat | ProviderType::OpenAiResponses | ProviderType::Plugin => {
+        ProviderType::OpenAiChat | ProviderType::OpenAiResponses | ProviderType::Gemini | ProviderType::Plugin => {
             raw_input
                 .saturating_sub(cache_read)
                 .saturating_sub(cache_write)

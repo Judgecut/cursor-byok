@@ -572,8 +572,8 @@ mod tests {
     use std::time::Duration;
 
     use crate::model::{
-        CallOrigin, ModelConfigInput, ModelType, NewLlmCall, ProviderConfigInput, ProviderType,
-        Usage, OPENAI_CHAT_ENDPOINT,
+        CallOrigin, ModelConfigInput, RequestFormat, NewLlmCall, ProviderConfigInput, ProviderType,
+        Usage,
     };
 
     use super::*;
@@ -590,21 +590,20 @@ mod tests {
             .create_provider(&ProviderConfigInput {
                 sort_order: 0,
                 name: "example.com".into(),
-                model_type: ModelType::OpenAi,
-                base_url: "https://example.com/v1/chat/completions".into(),
-                use_full_url: true,
+                base_url: "https://example.com/v1".into(),
                 api_key: "test-key".into(),
-                openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
                 custom_headers_enabled: false,
                 custom_headers: serde_json::json!({}),
-                extra_params_enabled: false,
-                extra_params: serde_json::json!({}),
             })
             .await
             .unwrap();
         let model = store
             .create_model(&ModelConfigInput {
                 provider_id: provider.provider_id,
+                request_format: RequestFormat::OpenAiChat,
+                request_url_override: None,
+                extra_params_enabled: false,
+                extra_params: serde_json::json!({}),
                 sort_order: 0,
                 display_name: "Test Model".into(),
                 tooltip_data: "Test Model".into(),

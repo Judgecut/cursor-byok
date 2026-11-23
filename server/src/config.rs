@@ -36,6 +36,7 @@ pub enum ProviderKind {
     OpenAiChat,
     OpenAiResponses,
     Anthropic,
+    Gemini,
 }
 
 #[derive(Clone)]

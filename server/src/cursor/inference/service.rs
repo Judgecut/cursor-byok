@@ -21,7 +21,7 @@ use crate::{
         transport::{OutputHub, TransportRegistry},
         variant,
     },
-    model::{CallOrigin, ModelInvocation, ModelType},
+    model::{CallOrigin, ModelInvocation, RequestFormat},
     provider::{ModelEvent, Provider},
     Error, Result,
 };
@@ -58,7 +58,7 @@ pub(crate) struct Run {
 
 struct ModelInfo {
     display_name: String,
-    model_type: ModelType,
+    request_format: RequestFormat,
     context_window_tokens: Option<u64>,
     model_id: String,
     reasoning_effort: Option<String>,
@@ -126,7 +126,7 @@ impl InferenceService {
         let route = if local {
             let headers = RunHeaders::parse(headers)?;
             let default_effort = configured.as_ref().and_then(|model| {
-                if model.model_type == ModelType::Anthropic {
+                if model.request_format == RequestFormat::Anthropic {
                     model.anthropic_thinking_effort.as_deref().or(Some("xhigh"))
                 } else {
                     model.reasoning_effort.as_deref()
@@ -175,10 +175,10 @@ impl InferenceService {
                 requested_model,
                 configured.map(|model| ModelInfo {
                     display_name: model.display_name,
-                    model_type: model.model_type,
+                    request_format: model.request_format,
                     context_window_tokens: model.context_window_tokens,
                     model_id: model.model_id,
-                    reasoning_effort: if model.model_type == ModelType::Anthropic {
+                    reasoning_effort: if model.request_format == RequestFormat::Anthropic {
                         model
                             .anthropic_thinking_effort
                             .or_else(|| Some("xhigh".into()))
@@ -340,10 +340,10 @@ fn run_ready(
     requested_model: Option<pb::InferenceRequestedModel>,
     model_info: Option<&ModelInfo>,
 ) -> pb::RunInferenceRunReady {
-    let (display_name, model_type) = model_info
-        .map(|model| (model.display_name.clone(), model.model_type))
-        .unwrap_or_else(|| (String::new(), ModelType::OpenAi));
-    let anthropic = model_type == ModelType::Anthropic;
+    let (display_name, request_format) = model_info
+        .map(|model| (model.display_name.clone(), model.request_format))
+        .unwrap_or_else(|| (String::new(), RequestFormat::OpenAiChat));
+    let anthropic = request_format == RequestFormat::Anthropic;
     let name = model_info
         .map(|model| model.model_id.to_ascii_lowercase())
         .unwrap_or_default();

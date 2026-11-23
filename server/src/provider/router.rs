@@ -15,7 +15,7 @@ use crate::{
 
 use super::{
     normalize::NormalizedProvider, recorder::CancelOnDrop, AnthropicProvider, CallRecorder,
-    OpenAiChatProvider, OpenAiResponsesProvider, Provider, ProviderStream,
+    GeminiProvider, OpenAiChatProvider, OpenAiResponsesProvider, Provider, ProviderStream,
 };
 
 pub struct ProviderRouter {
@@ -277,7 +277,8 @@ fn provider_kind(provider_type: ProviderType) -> ProviderKind {
         ProviderType::OpenAiChat => ProviderKind::OpenAiChat,
         ProviderType::OpenAiResponses => ProviderKind::OpenAiResponses,
         ProviderType::Anthropic => ProviderKind::Anthropic,
-        // 内置模型的 provider_type 只来自 ModelType,不可能是插件。
+        ProviderType::Gemini => ProviderKind::Gemini,
+        // The configured request format always selects a built-in protocol.
         ProviderType::Plugin => unreachable!("plugin models never use built-in provider configs"),
     }
 }
@@ -376,6 +377,7 @@ fn build_inner(
         ProviderKind::OpenAiResponses => {
             Arc::new(OpenAiResponsesProvider::new(client, config.clone()).with_recorder(recorder))
         }
+        ProviderKind::Gemini => Arc::new(GeminiProvider::new(client, config.clone()).with_recorder(recorder)),
         ProviderKind::Anthropic => {
             Arc::new(AnthropicProvider::new(client, config.clone()).with_recorder(recorder))
         }

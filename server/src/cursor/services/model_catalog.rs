@@ -728,7 +728,7 @@ fn usable_model(model: &ModelConfig) -> agent::ModelDetails {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ModelType, OPENAI_CHAT_ENDPOINT};
+    use crate::model::{RequestFormat};
 
     fn model() -> ModelConfig {
         ModelConfig {
@@ -737,11 +737,10 @@ mod tests {
             provider_name: "provider.example".into(),
             sort_order: 0,
             display_name: "Local Model".into(),
-            model_type: ModelType::OpenAi,
-            base_url: "https://provider.example/v1/chat/completions".into(),
-            use_full_url: true,
+            request_format: RequestFormat::OpenAiChat,
+            request_url_override: None,
+            base_url: "https://provider.example/v1".into(),
             api_key: "provider-secret".into(),
-            openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
             custom_headers_enabled: false,
             custom_headers: serde_json::json!({}),
             extra_params_enabled: false,
@@ -832,21 +831,20 @@ mod tests {
         crate::model::ProviderConfigInput {
             sort_order: 0,
             name: name.into(),
-            model_type: ModelType::OpenAi,
-            base_url: "https://provider.example/v1/chat/completions".into(),
-            use_full_url: true,
+            base_url: "https://provider.example/v1".into(),
             api_key: "provider-secret".into(),
-            openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
             custom_headers_enabled: false,
             custom_headers: serde_json::json!({}),
-            extra_params_enabled: false,
-            extra_params: serde_json::json!({}),
         }
     }
 
     fn test_model_input(provider_id: &str, display_name: &str) -> crate::model::ModelConfigInput {
         crate::model::ModelConfigInput {
             provider_id: provider_id.into(),
+            request_format: RequestFormat::OpenAiChat,
+            request_url_override: None,
+            extra_params_enabled: false,
+            extra_params: serde_json::json!({}),
             sort_order: 0,
             display_name: display_name.into(),
             tooltip_data: display_name.into(),

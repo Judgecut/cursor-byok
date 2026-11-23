@@ -18,8 +18,7 @@ use cursor_server::{
         transport::TransportRegistry,
     },
     model::{
-        ContentPart, ModelConfigInput, ModelType, ProjectedContent, ProviderConfigInput,
-        OPENAI_CHAT_ENDPOINT,
+        ContentPart, ModelConfigInput, RequestFormat, ProjectedContent, ProviderConfigInput,
     },
     network::NetworkClients,
     provider::{FinishReason, ModelEvent},
@@ -50,21 +49,20 @@ async fn create_model(
         .create_provider(&ProviderConfigInput {
             sort_order: 1,
             name: "example.com".into(),
-            model_type: ModelType::OpenAi,
             base_url: "https://example.com/v1".into(),
-            use_full_url: false,
             api_key: "test-key".into(),
-            openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
             custom_headers_enabled: false,
             custom_headers: serde_json::json!({}),
-            extra_params_enabled: false,
-            extra_params: serde_json::json!({}),
         })
         .await
         .unwrap();
     store
         .create_model(&ModelConfigInput {
             provider_id: provider.provider_id,
+            request_format: RequestFormat::OpenAiChat,
+            request_url_override: None,
+            extra_params_enabled: false,
+            extra_params: serde_json::json!({}),
             sort_order: 1,
             display_name: "Qwen Flash".into(),
             tooltip_data: "模型介绍".into(),

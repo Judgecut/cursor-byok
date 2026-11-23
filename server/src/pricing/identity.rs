@@ -134,6 +134,17 @@ pub fn normalize_endpoint_key(raw: &str) -> Result<String> {
     let _ = url.set_username("");
     let _ = url.set_password(None);
     url.set_fragment(None);
+    if let Some(collection) = crate::model::gemini_model_collection(url.path())
+    {
+        let collection = collection.to_owned();
+        url.set_path(&collection);
+        let query = url.query_pairs().filter(|(name, _)| name != "alt").map(|(name, value)| (name.into_owned(), value.into_owned())).collect::<Vec<_>>();
+        url.set_query(None);
+        if !query.is_empty()
+        {
+            url.query_pairs_mut().extend_pairs(query);
+        }
+    }
     let path = url.path().to_owned();
     let normalized_path = if path.is_empty() {
         "/"

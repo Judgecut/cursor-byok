@@ -43,6 +43,13 @@ const MAX_RANGE_BUCKETS = 60;
 const MIN_SPEED_GENERATION_MS = 200;
 const DEFAULT_ASSUMED_CACHE_HIT_RATE_BPS = 9_000;
 
+const demoRequestPaths = {
+  "openai-chat": "/v1/chat/completions",
+  "openai-responses": "/v1/responses",
+  anthropic: "/v1/messages",
+  gemini: "/v1beta/models",
+};
+
 let models: Model[] = [
   createModel({ hash: "mock-claude-sonnet", order: 1, name: "Claude Sonnet 4", type: "anthropic", url: "https://api.anthropic.com", modelId: "claude-sonnet-4-20250514" }),
   createModel({ hash: "mock-claude-opus", order: 2, name: "Claude Opus 4", type: "anthropic", url: "https://api.anthropic.com", modelId: "claude-opus-4-20250514" }),
@@ -68,15 +75,10 @@ let providers: Provider[] = [...new Map(models.map((model) => [
     provider_id: model.provider_id,
     sort_order: 0,
     name: model.provider_name,
-    type: model.type,
     base_url: model.base_url,
-    use_full_url: model.use_full_url,
     api_key: model.api_key,
-    openai_endpoint: model.openai_endpoint,
     custom_headers_enabled: model.custom_headers_enabled,
     custom_headers: model.custom_headers,
-    extra_params_enabled: model.extra_params_enabled,
-    extra_params: model.extra_params,
     created_at_ms: model.created_at_ms,
     updated_at_ms: model.updated_at_ms,
   },
@@ -179,7 +181,7 @@ const calls: LlmCall[] = Array.from({ length: 84 }, (_, index) => {
   const observedThinking = index % 2 === 0;
   const reasoningTokens = index % 2 === 0 ? 420 + (index % 5) * 45 : null;
   const streaming = true;
-  const reportedInputTokens = model.type === "anthropic"
+  const reportedInputTokens = model.request_format === "anthropic"
     ? rawInput
     : rawInput + (cacheReadTokens ?? 0) + (cacheWriteTokens ?? 0);
 
@@ -193,10 +195,10 @@ const calls: LlmCall[] = Array.from({ length: 84 }, (_, index) => {
     model_hash: model.model_hash,
     supplier_key: supplierKeyFor(model),
     endpoint_key: model.base_url,
-    provider_type: model.type,
+    provider_type: model.request_format,
     provider_url: model.base_url,
-    request_type: model.type === "anthropic" ? "messages" : "responses",
-    request_url: model.type === "anthropic" ? `${model.base_url}/v1/messages` : `${model.base_url}${model.openai_endpoint}`,
+    request_type: model.request_format,
+    request_url: model.request_url_override ?? (model.request_format === "gemini" ? `${model.base_url}${demoRequestPaths.gemini}/${model.model_id}:streamGenerateContent?alt=sse` : `${model.base_url}${demoRequestPaths[model.request_format]}`),
     model_id: model.model_id,
     display_name: model.display_name,
     reasoning_effort: index % 2 === 0 ? "high" : null,
@@ -367,9 +369,10 @@ export function installDemoApi(initialInterface?: Partial<Pick<InterfaceSettings
       return json(providers);
     }
     if (/^\/providers\/[^/]+\/discover$/.test(path) && method === "POST") {
-      const providerId = path.split("/")[2];
-      const discovered = models.filter((model) => model.provider_id === providerId).map((model) => model.model_id);
-      return json({ models: discovered.length > 0 ? discovered : models.map((model) => model.model_id) });
+      const providerId = decodeURIComponent(path.split("/")[2]);
+      const input = body as Pick<Model, "request_format" | "request_url_override">;
+      const discovered = models.filter((model) => model.provider_id === providerId && model.request_format === input.request_format && model.request_url_override === input.request_url_override).map((model) => model.model_id);
+      return json({ models: discovered });
     }
     const providerModelsOrderMatch = path.match(/^\/providers\/([^/]+)\/models\/order$/);
     if (providerModelsOrderMatch && method === "PUT") {
@@ -574,7 +577,7 @@ function buildSupplierPricingViews(): SupplierPricingView[] {
       endpoint_key: model.base_url,
       model_id: model.model_id,
       display_name: model.display_name,
-      provider_type: model.type,
+      provider_type: model.request_format,
       plugin_icon: null,
       active: true,
       call_count: modelCalls.length,
@@ -611,12 +614,12 @@ function createModel({ hash, order, name, type, url, modelId, endpoint = "/v1/re
   hash: string;
   order: number;
   name: string;
-  type: Model["type"];
+  type: "openai" | "anthropic";
   url: string;
   modelId: string;
   endpoint?: string;
 }): Model {
-  const openaiEndpoint = type === "openai" ? endpoint : "";
+  const request_format = type === "anthropic" ? "anthropic" : endpoint === "/v1/responses" ? "openai-responses" : "openai-chat";
   const providerName = providerNameForUrl(url);
   return {
     model_hash: hash,
@@ -624,11 +627,10 @@ function createModel({ hash, order, name, type, url, modelId, endpoint = "/v1/re
     provider_name: providerName,
     sort_order: order,
     display_name: name,
-    type,
+    request_format,
     base_url: url,
-    use_full_url: false,
     api_key: "demo-key",
-    openai_endpoint: openaiEndpoint,
+    request_url_override: type === "openai" && endpoint !== demoRequestPaths[request_format] ? url + endpoint : null,
     custom_headers_enabled: false,
     custom_headers: {},
     extra_params_enabled: false,
@@ -909,7 +911,7 @@ function createOverview(params: URLSearchParams): Overview {
         source_kind: "builtin",
         endpoint_key: model.base_url,
         label: endpointLabel(model.base_url),
-        provider_type: model.type,
+        provider_type: model.request_format,
         plugin_icon: null,
         active: true,
         model_count: 1,
@@ -974,7 +976,7 @@ function createOverview(params: URLSearchParams): Overview {
     model_id: model.model_id,
     label: model.display_name,
     group: endpointLabel(model.base_url),
-    provider_type: model.type,
+    provider_type: model.request_format,
     plugin_icon: null,
     active: true,
   }));

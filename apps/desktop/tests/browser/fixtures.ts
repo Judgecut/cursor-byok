@@ -85,6 +85,18 @@ export const test = base.extend<{ management: ManagementState }>({
         state.models.push(...created);
         response = created;
       }
+      else if (path === "/providers/smoke-provider/discover" && method === "POST")
+      {
+        response = { models: body.request_format === "anthropic" ? ["discovered-claude"] : ["discovered-gpt"] };
+      }
+      else if (path.startsWith("/models/") && method === "PUT")
+      {
+        const hash = path.split("/").at(-1);
+        const model = state.models.find((item) => item.model_hash === hash);
+        expect(model).toBeDefined();
+        Object.assign(model!, body);
+        response = model;
+      }
       else if (path === "/settings/interface" && method === "PUT")
       {
         Object.assign(state.settings, body);

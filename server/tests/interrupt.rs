@@ -12,9 +12,8 @@ use cursor_server::{
     cursor::protocol::{connect, proto::agent::v1 as pb},
     cursor::{TransportCommand, TransportRegistry},
     model::{
-        CanonicalMessage, ConversationId, ModelConfigInput, ModelSpec, ModelType, Origin,
+        CanonicalMessage, ConversationId, ModelConfigInput, ModelSpec, RequestFormat, Origin,
         PreparedRun, PromptSpec, ProviderConfigInput, Role, RunAction, RunId, RunKind, Usage,
-        OPENAI_CHAT_ENDPOINT,
     },
     provider::{FinishReason, ModelEvent},
     run::{self, CommandResult, CommitCause, RunEngine, RunEvent, RunOutcome, RunPhase},
@@ -1086,21 +1085,20 @@ async fn injected_user_context_interrupts_automatic_compaction() {
         .create_provider(&ProviderConfigInput {
             sort_order: 0,
             name: "example.com".into(),
-            model_type: ModelType::OpenAi,
-            base_url: "https://example.com/v1/chat/completions".into(),
-            use_full_url: true,
+            base_url: "https://example.com/v1".into(),
             api_key: "test-key".into(),
-            openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
             custom_headers_enabled: false,
             custom_headers: serde_json::json!({}),
-            extra_params_enabled: false,
-            extra_params: serde_json::json!({}),
         })
         .await
         .unwrap();
     let model = store
         .create_model(&ModelConfigInput {
             provider_id: provider_cfg.provider_id,
+            request_format: RequestFormat::OpenAiChat,
+            request_url_override: None,
+            extra_params_enabled: false,
+            extra_params: serde_json::json!({}),
             sort_order: 0,
             display_name: "Test Model".into(),
             tooltip_data: "Test Model".into(),

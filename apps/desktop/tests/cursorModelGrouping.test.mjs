@@ -21,15 +21,10 @@ function provider(overrides) {
     provider_id: "p1",
     sort_order: 1,
     name: "OpenAI",
-    type: "openai",
     base_url: "https://api.openai.com",
-    use_full_url: false,
     api_key: "sk-test",
-    openai_endpoint: "/v1/responses",
     custom_headers_enabled: false,
     custom_headers: {},
-    extra_params_enabled: false,
-    extra_params: {},
     created_at_ms: 1,
     updated_at_ms: 1,
     ...overrides,
@@ -43,11 +38,10 @@ function model(overrides) {
     provider_name: "OpenAI",
     sort_order: 1,
     display_name: "GPT-5",
-    type: "openai",
+    request_format: "openai-responses",
     base_url: "https://api.openai.com",
-    use_full_url: false,
     api_key: "sk-test",
-    openai_endpoint: "/v1/responses",
+    request_url_override: null,
     custom_headers_enabled: false,
     custom_headers: {},
     extra_params_enabled: false,
@@ -74,13 +68,13 @@ test("resolveCursorModelGrouping keeps provider as default and falls back from t
 
 test("cursorModelGroups retains empty providers and preserves provider/model order in provider and type groupings", () => {
   const providers = [
-    provider({ provider_id: "p-oai", name: "OpenAI Official", type: "openai", openai_endpoint: "/v1/responses" }),
-    provider({ provider_id: "p-ant-empty", name: "Anthropic Empty", type: "anthropic", openai_endpoint: "" }),
-    provider({ provider_id: "p-oai-2", name: "OpenAI Backup", type: "openai", openai_endpoint: "/v1/responses" }),
+    provider({ provider_id: "p-oai", name: "OpenAI Official" }),
+    provider({ provider_id: "p-ant-empty", name: "Anthropic Empty" }),
+    provider({ provider_id: "p-oai-2", name: "OpenAI Backup" }),
   ];
   const models = [
     model({ model_hash: "m2", provider_id: "p-oai", provider_name: "OpenAI Official", display_name: "GPT-5 Mini" }),
-    model({ model_hash: "m1", provider_id: "p-oai", provider_name: "OpenAI Official", display_name: "GPT-5" }),
+    model({ model_hash: "m1", provider_id: "p-oai", provider_name: "OpenAI Official", display_name: "GPT-5", request_format: "anthropic" }),
     model({ model_hash: "m3", provider_id: "p-oai-2", provider_name: "OpenAI Backup", display_name: "GPT-4.1" }),
   ];
 
@@ -102,8 +96,8 @@ test("cursorModelGroups retains empty providers and preserves provider/model ord
     modelHashes: Array.from(group.models, (item) => item.model_hash),
   }));
   assert.deepEqual(byType, [
-    { key: "openai-responses", label: "OpenAI Responses", modelHashes: ["m2", "m1", "m3"] },
-    { key: "anthropic", label: "Anthropic", modelHashes: [] },
+    { key: "openai-responses", label: "OpenAI Responses", modelHashes: ["m2", "m3"] },
+    { key: "anthropic", label: "Anthropic Messages", modelHashes: ["m1"] },
   ]);
 });
 

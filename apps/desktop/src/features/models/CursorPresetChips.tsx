@@ -1,25 +1,23 @@
-import type { ModelType } from "../../shared/api";
-import { modelPresets, presetEndpoint, trimTrailingSlash, type ModelPreset } from "../../shared/utils/modelPresets";
+import { modelPresets, requestFormatLabels, trimTrailingSlash, type ModelPreset, type ModelPresetEndpoint } from "../../shared/utils/modelPresets";
 import styles from "./CursorPresetChips.module.scss";
 
-/** 常用服务商预设：点击按当前协议类型自动填充对应端点与默认模型 */
-export function CursorPresetChips({ type, baseUrl, onPick }: { type: ModelType; baseUrl: string; onPick: (preset: ModelPreset) => void }) {
+export function CursorPresetChips({ baseUrl, onPick }: { baseUrl: string; onPick: (preset: ModelPreset, endpoint: ModelPresetEndpoint) => void }) {
   return <div className={styles.wrap}>
     <span className={styles.label}>{t("常用预设")}</span>
     <div className={styles.chips}>
-      {modelPresets.map((preset) => {
-        const active = trimTrailingSlash(baseUrl) === trimTrailingSlash(presetEndpoint(preset, type).baseUrl);
+      {modelPresets.flatMap((preset) => preset.endpoints.map((endpoint) => {
+        const active = trimTrailingSlash(baseUrl) === trimTrailingSlash(endpoint.baseUrl);
         return <button
           type="button"
-          key={preset.key}
+          key={`${preset.key}-${endpoint.format}`}
           className={active ? `${styles.chip} ${styles.active}` : styles.chip}
           title={preset.keyHint}
-          onClick={() => onPick(preset)}
+          onClick={() => onPick(preset, endpoint)}
         >
           <img className={styles.icon} src={preset.icon} alt="" />
-          {preset.name}
+          {preset.name} · {requestFormatLabels[endpoint.format]}
         </button>;
-      })}
+      }))}
     </div>
   </div>;
 }

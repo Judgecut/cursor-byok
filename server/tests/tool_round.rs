@@ -21,8 +21,8 @@ use cursor_server::{
     },
     cursor::{TransportCommand, TransportRegistry},
     model::{
-        MessageContent, ModelConfigInput, ModelType, ProjectedContent, ProviderConfigInput,
-        ToolCall, OPENAI_CHAT_ENDPOINT,
+        MessageContent, ModelConfigInput, RequestFormat, ProjectedContent, ProviderConfigInput,
+        ToolCall,
     },
     provider::{FinishReason, ModelEvent},
     run::consume_model_cycle,
@@ -832,21 +832,20 @@ async fn one_run_can_auto_compact_again_after_more_tool_output() {
         .create_provider(&ProviderConfigInput {
             sort_order: 0,
             name: "example.com".into(),
-            model_type: ModelType::OpenAi,
-            base_url: "https://example.com/v1/chat/completions".into(),
-            use_full_url: true,
+            base_url: "https://example.com/v1".into(),
             api_key: "test-key".into(),
-            openai_endpoint: OPENAI_CHAT_ENDPOINT.into(),
             custom_headers_enabled: false,
             custom_headers: json!({}),
-            extra_params_enabled: false,
-            extra_params: json!({}),
         })
         .await
         .unwrap();
     let model = store
         .create_model(&ModelConfigInput {
             provider_id: provider_cfg.provider_id,
+            request_format: RequestFormat::OpenAiChat,
+            request_url_override: None,
+            extra_params_enabled: false,
+            extra_params: serde_json::json!({}),
             sort_order: 0,
             display_name: "Repeated compaction".into(),
             tooltip_data: "Repeated compaction".into(),

@@ -34,7 +34,7 @@ export function buildSupplierFilterOptions(
         ? undefined
         : supplier.provider_type === "anthropic"
           ? claudeIcon
-          : supplier.source_kind === "plugin"
+          : (supplier.source_kind === "plugin" || supplier.provider_type === "gemini")
             ? flatColorOrganizationIcon
             : openAiIcon,
     };
@@ -56,7 +56,7 @@ export function buildModelFilterOptions(
       ? undefined
       : item.provider_type === "anthropic"
         ? claudeIcon
-        : item.source_kind === "plugin"
+        : (item.source_kind === "plugin" || item.provider_type === "gemini")
           ? flatColorOrganizationIcon
           : openAiIcon,
   }));

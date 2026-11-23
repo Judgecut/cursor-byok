@@ -3,21 +3,16 @@ import type { CommitPromptLocale, Locale, LocalePreference } from "../i18n/runti
 import type { ThemeId } from "./theme/theme";
 import type { DisplayCurrency, ExchangeRates, ExchangeRateSnapshot } from "./utils/costFormat";
 
-export type ModelType = "openai" | "anthropic";
+export type RequestFormat = "openai-chat" | "openai-responses" | "anthropic" | "gemini";
 
 export interface Provider {
   provider_id: string;
   sort_order: number;
   name: string;
-  type: ModelType;
   base_url: string;
-  use_full_url: boolean;
   api_key: string;
-  openai_endpoint: string;
   custom_headers_enabled: boolean;
   custom_headers: Record<string, string>;
-  extra_params_enabled: boolean;
-  extra_params: Record<string, unknown>;
   created_at_ms: number;
   updated_at_ms: number;
 }
@@ -25,15 +20,10 @@ export interface Provider {
 export interface ProviderInput {
   sort_order: number;
   name: string;
-  type: ModelType;
   base_url: string;
-  use_full_url: boolean;
   api_key: string;
-  openai_endpoint: string;
   custom_headers_enabled: boolean;
   custom_headers: Record<string, string>;
-  extra_params_enabled: boolean;
-  extra_params: Record<string, unknown>;
 }
 
 export interface Model {
@@ -42,11 +32,10 @@ export interface Model {
   provider_name: string;
   sort_order: number;
   display_name: string;
-  type: ModelType;
+  request_format: RequestFormat;
   base_url: string;
-  use_full_url: boolean;
   api_key: string;
-  openai_endpoint: string;
+  request_url_override: string | null;
   custom_headers_enabled: boolean;
   custom_headers: Record<string, string>;
   extra_params_enabled: boolean;
@@ -64,6 +53,10 @@ export interface Model {
 
 export interface ModelInput {
   provider_id: string;
+  request_format: RequestFormat;
+  request_url_override: string | null;
+  extra_params_enabled: boolean;
+  extra_params: Record<string, unknown>;
   sort_order: number;
   display_name: string;
   tooltip_data: string;
@@ -79,7 +72,7 @@ export interface LegacyModelImportPreviewItem {
   model_hash: string;
   display_name: string;
   model_id: string;
-  type: ModelType;
+  request_format: RequestFormat;
   existing: boolean;
 }
 
@@ -822,7 +815,7 @@ export const api = {
   updateProvider: (providerId: string, provider: ProviderInput) => request<Provider>(`/providers/${encodeURIComponent(providerId)}`, { method: "PUT", body: JSON.stringify(provider) }),
   deleteProvider: (providerId: string) => request<void>(`/providers/${encodeURIComponent(providerId)}`, { method: "DELETE" }),
   reorderProviders: (providerIds: string[]) => request<Provider[]>("/providers/order", { method: "PUT", body: JSON.stringify({ provider_ids: providerIds }) }),
-  discoverProviderModels: (providerId: string) => request<{ models: string[] }>(`/providers/${encodeURIComponent(providerId)}/discover`, { method: "POST" }),
+  discoverProviderModels: (providerId: string, input: Pick<ModelInput, "request_format" | "request_url_override">) => request<{ models: string[] }>(`/providers/${encodeURIComponent(providerId)}/discover`, { method: "POST", body: JSON.stringify(input) }),
   models: () => request<Model[]>("/models"),
   createModels: (models: ModelInput[]) => request<Model[]>("/models", { method: "POST", body: JSON.stringify({ models }) }),
   reorderModels: (providerId: string, modelHashes: string[]) => request<Model[]>(`/providers/${encodeURIComponent(providerId)}/models/order`, { method: "PUT", body: JSON.stringify({ model_hashes: modelHashes }) }),

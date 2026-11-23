@@ -1,3 +1,4 @@
+import { requestFormatLabels } from "../../shared/utils/modelPresets";
 import { useState, type ReactNode } from "react";
 import { api, type LegacyModelImportPreview } from "../../shared/api";
 import { appStore } from "../../shared/store/appStore";
@@ -74,7 +75,7 @@ export function LegacyModelImport({ children }: { children: (control: LegacyMode
           {preview.models.map((model) => <div className={styles.model} key={model.model_hash}>
             <div>
               <strong>{model.display_name}</strong>
-              <small>{model.model_id} · {model.type === "openai" ? "OpenAI" : "Anthropic"}</small>
+              <small>{model.model_id} · {requestFormatLabels[model.request_format]}</small>
             </div>
             <span className={model.existing ? styles.existing : styles.new}>
               {model.existing ? t("已存在，跳过") : t("新增")}

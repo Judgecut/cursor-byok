@@ -30,7 +30,7 @@ import styles from "../breakdown/BreakdownTable.module.scss";
 
 function supplierIcon(sourceKind: string, providerType: string) {
   if (providerType === "anthropic") return claudeIcon;
-  if (sourceKind === "plugin") return flatColorOrganizationIcon;
+  if (sourceKind === "plugin" || providerType === "gemini") return flatColorOrganizationIcon;
   return openAiIcon;
 }
 

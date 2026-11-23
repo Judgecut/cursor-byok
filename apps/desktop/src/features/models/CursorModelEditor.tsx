@@ -1,19 +1,26 @@
 import { useRef } from "react";
-import type { Model, ModelInput, ModelType, Provider } from "../../shared/api";
-import { modelPresets, presetEndpoint, trimTrailingSlash } from "../../shared/utils/modelPresets";
+import type { Model, ModelInput, RequestFormat, Provider } from "../../shared/api";
+import { modelPresets, requestFormatLabels, trimTrailingSlash } from "../../shared/utils/modelPresets";
 import { Button } from "../../shared/ui/Button";
 import { FormField, TextInput } from "../../shared/ui/FormControls";
 import { Combobox, Select, type ComboboxHandle } from "../../shared/ui/Select";
 import { claudeIcon, openAiIcon } from "../../shared/ui/icons";
+import { parseObject, ToggleJsonField } from "./CursorProviderEditor";
 import styles from "./CursorSettings.module.scss";
 
 export type CursorModelDraft = {
-  model: ModelInput;
+  model: Omit<ModelInput, "request_format"> & { request_format: RequestFormat | "" };
+  extraParamsText: string;
 };
 
-export const emptyCursorModelDraft = (provider?: Provider | null): CursorModelDraft => ({
+export const emptyCursorModelDraft = (provider?: Provider | null, format: RequestFormat | "" = ""): CursorModelDraft => ({
+  extraParamsText: "{}",
   model: {
     provider_id: provider?.provider_id ?? "",
+    request_format: format,
+    request_url_override: null,
+    extra_params_enabled: false,
+    extra_params: {},
     sort_order: 0,
     display_name: "",
     tooltip_data: provider?.name ?? "",
@@ -21,15 +28,20 @@ export const emptyCursorModelDraft = (provider?: Provider | null): CursorModelDr
     reasoning_effort: null,
     context_window_tokens: null,
     max_output_tokens: null,
-    anthropic_thinking_effort: provider?.type === "anthropic" ? "xhigh" : null,
+    anthropic_thinking_effort: format === "anthropic" ? "xhigh" : null,
     thinking_budget_tokens: null,
   },
 });
 
 export function modelDraftFrom(model: Model): CursorModelDraft {
   return {
+    extraParamsText: JSON.stringify(model.extra_params, null, 2),
     model: {
       provider_id: model.provider_id,
+      request_format: model.request_format,
+      request_url_override: model.request_url_override,
+      extra_params_enabled: model.extra_params_enabled,
+      extra_params: model.extra_params,
       sort_order: model.sort_order,
       display_name: model.display_name,
       tooltip_data: model.tooltip_data,
@@ -37,8 +49,8 @@ export function modelDraftFrom(model: Model): CursorModelDraft {
       reasoning_effort: model.reasoning_effort,
       context_window_tokens: model.context_window_tokens,
       max_output_tokens: model.max_output_tokens,
-      anthropic_thinking_effort: model.type === "anthropic" ? model.anthropic_thinking_effort || "xhigh" : null,
-      thinking_budget_tokens: model.type === "anthropic" ? model.thinking_budget_tokens : null,
+      anthropic_thinking_effort: model.request_format === "anthropic" ? model.anthropic_thinking_effort || "xhigh" : null,
+      thinking_budget_tokens: model.request_format === "anthropic" ? model.thinking_budget_tokens : null,
     },
   };
 }
@@ -49,6 +61,11 @@ export function modelDraftInput(draft: CursorModelDraft): ModelInput {
   const tooltip_data = draft.model.tooltip_data.trim();
   if (!draft.model.provider_id.trim() || !model_id || !display_name || !tooltip_data) {
     throw new Error(t("所属供应商、模型名称、显示名称和备注不能为空"));
+  }
+  const request_format = draft.model.request_format;
+  if (!request_format)
+  {
+    throw new Error(t("请选择请求格式"));
   }
   for (const [label, value] of [
     [t("上下文窗口 Token"), draft.model.context_window_tokens],
@@ -61,6 +78,9 @@ export function modelDraftInput(draft: CursorModelDraft): ModelInput {
   }
   return {
     ...draft.model,
+    request_format,
+    request_url_override: draft.model.request_url_override?.trim() || null,
+    extra_params: parseObject(draft.extraParamsText, t("额外请求参数")),
     provider_id: draft.model.provider_id.trim(),
     model_id,
     display_name,
@@ -74,31 +94,31 @@ export function CursorModelEditor({ draft, providers, modelOptions, discovering,
   modelOptions: string[];
   discovering: boolean;
   onChange: (draft: CursorModelDraft) => void;
-  onDiscover: (providerId: string) => Promise<boolean>;
+  onDiscover: (providerId: string, format: RequestFormat, requestUrlOverride: string | null) => Promise<boolean>;
 }) {
   const modelCombobox = useRef<ComboboxHandle>(null);
   const selectedProvider = providers.find((item) => item.provider_id === draft.model.provider_id) ?? providers[0] ?? null;
-  const providerType: ModelType = selectedProvider?.type ?? "openai";
-  const setModel = (patch: Partial<ModelInput>) => onChange({ model: { ...draft.model, ...patch } });
+  const format = draft.model.request_format;
+  const setModel = (patch: Partial<CursorModelDraft["model"]>) => onChange({ ...draft, model: { ...draft.model, ...patch } });
   const setProvider = (provider_id: string) => {
     const next = providers.find((item) => item.provider_id === provider_id);
     const shouldSyncTooltip = !draft.model.tooltip_data.trim() || draft.model.tooltip_data === selectedProvider?.name;
     setModel({
       provider_id,
       ...(shouldSyncTooltip && next ? { tooltip_data: next.name } : {}),
-      anthropic_thinking_effort: next?.type === "anthropic" ? draft.model.anthropic_thinking_effort || "xhigh" : null,
+      request_url_override: provider_id === draft.model.provider_id ? draft.model.request_url_override : null,
     });
   };
   const numberValue = (value: string) => value === "" ? null : Math.trunc(Number(value));
-  const canDiscover = Boolean(selectedProvider && selectedProvider.base_url.trim() && selectedProvider.api_key.trim());
+  const canDiscover = Boolean(format && selectedProvider && selectedProvider.base_url.trim() && selectedProvider.api_key.trim());
   const presetEntries = selectedProvider
     ? modelPresets
-      .filter((preset) => trimTrailingSlash(presetEndpoint(preset, providerType).baseUrl) === trimTrailingSlash(selectedProvider.base_url.trim()))
+      .filter((preset) => preset.endpoints.some((endpoint) => endpoint.format === format && trimTrailingSlash(endpoint.baseUrl) === trimTrailingSlash(selectedProvider.base_url.trim())))
       .flatMap((preset) => preset.models)
     : [];
   const combinedOptions = [...new Set([...modelOptions, ...presetEntries.map((item) => item.model_id)])];
   const discoverModels = async () => {
-    if (selectedProvider && await onDiscover(selectedProvider.provider_id)) {
+    if (format && selectedProvider && await onDiscover(selectedProvider.provider_id, format, draft.model.request_url_override)) {
       modelCombobox.current?.openAll();
     }
   };
@@ -115,13 +135,25 @@ export function CursorModelEditor({ draft, providers, modelOptions, discovering,
   const providerOptions = providers.map((provider) => ({
     value: provider.provider_id,
     label: provider.name,
-    icon: provider.type === "anthropic" ? claudeIcon : openAiIcon,
   }));
 
   return <div className={styles.editor}>
     <div className={styles.grid}>
-      <FormField className={styles.fullWidth} label={t("所属供应商")} hint={t("接口地址、API Key 与请求格式由所属供应商统一管理。")}>
+      <FormField className={styles.fullWidth} label={t("所属供应商")} hint={t("供应商提供基础地址、API Key 和公共请求头。")}>
         <Select ariaLabel={t("所属供应商")} value={selectedProvider?.provider_id ?? ""} options={providerOptions} onChange={setProvider} />
+      </FormField>
+
+      <FormField label={t("请求格式")}>
+        <Select ariaLabel={t("请求格式")} value={format} options={[
+          { value: "", label: t("请选择请求格式") },
+          { value: "openai-chat", label: requestFormatLabels["openai-chat"], icon: openAiIcon },
+          { value: "openai-responses", label: requestFormatLabels["openai-responses"], icon: openAiIcon },
+          { value: "anthropic", label: requestFormatLabels.anthropic, icon: claudeIcon },
+          { value: "gemini", label: requestFormatLabels.gemini },
+        ]} onChange={(value) => setModel({ request_format: value as RequestFormat | "", reasoning_effort: null, anthropic_thinking_effort: value === "anthropic" ? "xhigh" : null, thinking_budget_tokens: null })} />
+      </FormField>
+      <FormField label={t("完整请求 URL")} hint={t("留空时，系统会在供应商地址后追加所选格式的标准端点。")}>
+        <TextInput placeholder={t("留空使用标准端点")} value={draft.model.request_url_override ?? ""} onChange={(event) => setModel({ request_url_override: event.target.value })} />
       </FormField>
 
       <FormField label={t("模型名称")} hint={t("可以直接输入模型标识，也可以读取接口返回的模型列表。")}>
@@ -129,7 +161,7 @@ export function CursorModelEditor({ draft, providers, modelOptions, discovering,
           ref={modelCombobox}
           value={draft.model.model_id}
           options={combinedOptions}
-          placeholder={providerType === "anthropic" ? "claude-opus-4-6" : "gpt-5"}
+          placeholder={format === "gemini" ? "gemini-2.5-flash" : format === "anthropic" ? "claude-opus-4-6" : "gpt-5"}
           append={<Button className={styles.discoverButton} disabled={discovering || !canDiscover} onClick={() => void discoverModels()}>{discovering ? t("获取中…") : t("获取模型")}</Button>}
           onChange={changeModelId}
         />
@@ -148,7 +180,7 @@ export function CursorModelEditor({ draft, providers, modelOptions, discovering,
         <TextInput type="number" min={1} step={1} placeholder={t("留空使用默认值")} value={draft.model.max_output_tokens ?? ""} onChange={(event) => setModel({ max_output_tokens: numberValue(event.target.value) })} />
       </FormField>
 
-      {providerType === "openai" ? (
+      {format && format !== "gemini" && (format !== "anthropic" ? (
         <FormField label={t("推理强度")}>
           <Select ariaLabel={t("推理强度")} value={draft.model.reasoning_effort ?? ""} options={effortOptions(true)} onChange={(value) => setModel({ reasoning_effort: value || null })} />
         </FormField>
@@ -159,7 +191,14 @@ export function CursorModelEditor({ draft, providers, modelOptions, discovering,
         <FormField label={t("思考预算 Token")} hint={t("留空时使用 adaptive thinking。")}>
           <TextInput type="number" min={1} step={1} placeholder={t("留空使用 adaptive thinking")} value={draft.model.thinking_budget_tokens ?? ""} onChange={(event) => setModel({ thinking_budget_tokens: numberValue(event.target.value) })} />
         </FormField>
-      </>}
+      </>)}
+      <ToggleJsonField
+        label={t("额外请求参数")}
+        enabled={draft.model.extra_params_enabled}
+        text={draft.extraParamsText}
+        onEnabledChange={(extra_params_enabled) => setModel({ extra_params_enabled })}
+        onTextChange={(extraParamsText) => onChange({ ...draft, extraParamsText })}
+      />
     </div>
   </div>;
 }

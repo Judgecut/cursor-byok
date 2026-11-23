@@ -1,13 +1,13 @@
 import type { IconifyIcon } from "@iconify/react/offline";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Sortable from "sortablejs";
-import type { Model, PluginModelDescriptor, Provider } from "../../shared/api";
+import type { Model, PluginModelDescriptor, Provider, RequestFormat } from "../../shared/api";
 import { Card } from "../../shared/ui/Card";
 import { Icon } from "../../shared/ui/Icon";
 import { addIcon, chevronDownIcon, chevronRightIcon, claudeIcon, dragIcon, editIcon, openAiIcon, trashIcon } from "../../shared/ui/icons";
 import { TruncatedButton } from "../../shared/ui/TruncatedButton";
 import { CursorModelTestResult, type CursorModelTestState } from "./CursorModelTestResult";
-import { cursorModelGroups, replaceOrderedSubset, typeGroupDescriptor, type CursorModelGroup, type CursorModelGrouping } from "./cursorModelGrouping";
+import { cursorModelGroups, replaceOrderedSubset, type CursorModelGroup, type CursorModelGrouping } from "./cursorModelGrouping";
 import styles from "./CursorSettings.module.scss";
 
 export { cursorModelGroups, type CursorModelGroup, type CursorModelGrouping };
@@ -28,7 +28,7 @@ type CursorModelCardsProps = {
   onPluginSettings: (model: PluginModelDescriptor) => void;
   onReorderProviders: (providerIds: string[]) => void;
   onReorderModels: (providerId: string, modelHashes: string[]) => void;
-  onAddModelForProvider: (provider: Provider) => void;
+  onAddModelForProvider: (provider: Provider, format?: RequestFormat) => void;
   onEditProvider: (provider: Provider) => void;
   onDeleteProvider: (provider: Provider) => void;
 };
@@ -150,7 +150,6 @@ export function CursorModelCards(props: CursorModelCardsProps) {
           {orphanProviderGroups.map((group) => <CollapsibleGroup
             key={group.key}
             label={group.label}
-            icon={group.protocol === "anthropic" ? claudeIcon : openAiIcon}
             defaultOpen
           >
             <SortableModelList
@@ -214,7 +213,6 @@ function ProviderGroupsList({
       className={styles.providerCard}
       providerId={group.provider.provider_id}
       label={group.label}
-      icon={group.protocol === "anthropic" ? claudeIcon : openAiIcon}
       defaultOpen
       dragHandle={canSortProviders ? <SortHandle className={styles.providerSortHandle} disabled={props.disabled} /> : undefined}
       actions={<ProviderActionButtons
@@ -244,19 +242,20 @@ function ProviderGroupsList({
 }
 
 function TypeGroupCard({ group, props }: { group: CursorModelGroup; props: CursorModelCardsProps }) {
-  const providersInType = props.providers.filter((provider) => typeGroupDescriptor(provider).key === group.key);
+  const groupProviderIds = new Set(group.models.map((model) => model.provider_id));
+  const providersInType = props.providers.filter((provider) => groupProviderIds.has(provider.provider_id));
   const matchedProviderIds = new Set(providersInType.map((provider) => provider.provider_id));
   const orphanModels = group.models.filter((model) => !matchedProviderIds.has(model.provider_id));
 
   return <CollapsibleGroup
     label={group.label}
-    icon={group.protocol === "anthropic" ? claudeIcon : openAiIcon}
+    icon={group.protocol === "gemini" ? undefined : group.protocol === "anthropic" ? claudeIcon : openAiIcon}
     defaultOpen
   >
     {providersInType.length > 0 && <TypeProviderSubgroups
       providersInType={providersInType}
       groupModels={group.models}
-      allProviders={props.providers}
+      format={group.protocol}
       props={props}
     />}
     {orphanModels.length > 0 && <SortableModelList
@@ -277,12 +276,12 @@ function TypeGroupCard({ group, props }: { group: CursorModelGroup; props: Curso
 function TypeProviderSubgroups({
   providersInType,
   groupModels,
-  allProviders,
+  format,
   props,
 }: {
   providersInType: Provider[];
   groupModels: Model[];
-  allProviders: Provider[];
+  format: RequestFormat | undefined;
   props: CursorModelCardsProps;
 }) {
   const canSortProviders = providersInType.length > 1;
@@ -295,7 +294,7 @@ function TypeProviderSubgroups({
     dataIdAttr: "data-provider-id",
     onReorder: (reorderedTypeIds) => {
       props.onReorderProviders(
-        replaceOrderedSubset(allProviders.map((provider) => provider.provider_id), reorderedTypeIds),
+        replaceOrderedSubset(props.providers.map((provider) => provider.provider_id), reorderedTypeIds),
       );
     },
   });
@@ -307,13 +306,12 @@ function TypeProviderSubgroups({
         <div className={styles.providerSubheader}>
           {canSortProviders && <SortHandle className={styles.providerSortHandle} disabled={props.disabled} />}
           <div className={styles.providerSubheaderTitle}>
-            <Icon icon={provider.type === "anthropic" ? claudeIcon : openAiIcon} size="1em" />
             <span className={styles.providerSubheaderName}>{provider.name}</span>
           </div>
           <ProviderActionButtons
             provider={provider}
             disabled={props.disabled}
-            onAddModel={props.onAddModelForProvider}
+            onAddModel={(target) => props.onAddModelForProvider(target, format)}
             onEdit={props.onEditProvider}
             onDelete={props.onDeleteProvider}
           />
@@ -330,7 +328,7 @@ function TypeProviderSubgroups({
             onEdit={props.onEdit}
             onDuplicate={props.onDuplicate}
             onDelete={props.onDelete}
-            onReorder={(modelHashes) => props.onReorderModels(provider.provider_id, modelHashes)}
+            onReorder={(modelHashes) => props.onReorderModels(provider.provider_id, replaceOrderedSubset(props.models.filter((model) => model.provider_id === provider.provider_id).map((model) => model.model_hash), modelHashes))}
           />}
       </div>;
     })}

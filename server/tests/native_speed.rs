@@ -14,8 +14,7 @@ use axum::{
 use cursor_server::{
     api::byok,
     model::{
-        ModelConfigInput, ModelType, ProviderConfigInput, SpeedStatus, OPENAI_CHAT_ENDPOINT,
-        OPENAI_RESPONSES_ENDPOINT,
+        ModelConfigInput, RequestFormat, ProviderConfigInput, SpeedStatus,
     },
     network::NetworkClients,
     plugin::{PluginRegistry, PluginRuntime},
@@ -25,10 +24,9 @@ use serde_json::json;
 use tower::ServiceExt;
 
 async fn native_stream(protocol: &str, thinking_first: bool) {
-    let (model_type, endpoint, path, thinking, first, last, usage) = match protocol {
+    let (request_format, path, thinking, first, last, usage) = match protocol {
         "chat" => (
-            ModelType::OpenAi,
-            OPENAI_CHAT_ENDPOINT,
+            RequestFormat::OpenAiChat,
             "/byok/v1/chat/completions",
             json!({"choices":[{"delta":{"reasoning_content":"summary"}}]}),
             json!({"choices":[{"delta":{"content":"first "}}]}),
@@ -36,8 +34,7 @@ async fn native_stream(protocol: &str, thinking_first: bool) {
             json!({"choices":[],"usage":{"completion_tokens":401,"completion_tokens_details":{"reasoning_tokens":300}}}),
         ),
         "responses" => (
-            ModelType::OpenAi,
-            OPENAI_RESPONSES_ENDPOINT,
+            RequestFormat::OpenAiResponses,
             "/byok/v1/responses",
             json!({"type":"response.reasoning_summary_text.delta","delta":"summary"}),
             json!({"type":"response.output_text.delta","delta":"first "}),
@@ -45,8 +42,7 @@ async fn native_stream(protocol: &str, thinking_first: bool) {
             json!({"type":"response.completed","response":{"usage":{"output_tokens":401,"output_tokens_details":{"reasoning_tokens":300}}}}),
         ),
         "messages" => (
-            ModelType::Anthropic,
-            "",
+            RequestFormat::Anthropic,
             "/byok/v1/messages",
             json!({"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"summary"}}),
             json!({"type":"content_block_delta","delta":{"type":"text_delta","text":"first "}}),
@@ -100,21 +96,20 @@ async fn native_stream(protocol: &str, thinking_first: bool) {
         .create_provider(&ProviderConfigInput {
             sort_order: 0,
             name: protocol.into(),
-            model_type,
             base_url: format!("http://{address}"),
-            use_full_url: false,
             api_key: "test-key".into(),
-            openai_endpoint: endpoint.into(),
             custom_headers_enabled: false,
             custom_headers: json!({}),
-            extra_params_enabled: false,
-            extra_params: json!({}),
         })
         .await
         .unwrap();
     store
         .create_model(&ModelConfigInput {
             provider_id: provider.provider_id,
+            request_format,
+            request_url_override: None,
+            extra_params_enabled: false,
+            extra_params: serde_json::json!({}),
             sort_order: 0,
             display_name: "Test model".into(),
             tooltip_data: "test".into(),

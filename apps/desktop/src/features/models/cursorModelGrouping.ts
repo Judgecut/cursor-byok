@@ -1,28 +1,21 @@
-import type { Model, ModelType, Provider } from "../../shared/api";
+import type { Model, RequestFormat, Provider } from "../../shared/api";
 
 export type CursorModelGrouping = "provider" | "type";
 
 export type CursorModelGroup = {
   key: string;
   label: string;
-  protocol: ModelType;
+  protocol?: RequestFormat;
   provider?: Provider;
   models: Model[];
 };
 
-export function providerGroupDescriptor(model: Pick<Model, "provider_id" | "provider_name" | "type">) {
-  return {
-    key: model.provider_id,
-    label: model.provider_name,
-    protocol: model.type,
-  };
-}
-
-export function typeGroupDescriptor(provider: Pick<Provider, "type" | "openai_endpoint">) {
-  if (provider.type === "anthropic") return { key: "anthropic", label: "Anthropic", protocol: "anthropic" as const };
-  if (provider.openai_endpoint === "/v1/chat/completions") return { key: "openai-chat", label: "OpenAI Chat", protocol: "openai" as const };
-  return { key: "openai-responses", label: "OpenAI Responses", protocol: "openai" as const };
-}
+const formatLabels: Record<RequestFormat, string> = {
+  "openai-chat": "OpenAI Chat Completions",
+  "openai-responses": "OpenAI Responses",
+  anthropic: "Anthropic Messages",
+  gemini: "Gemini",
+};
 
 export function resolveCursorModelGrouping(
   preferred: CursorModelGrouping,
@@ -55,21 +48,17 @@ export function cursorModelGroups(
       groups.set(provider.provider_id, {
         key: provider.provider_id,
         label: provider.name,
-        protocol: provider.type,
         provider,
         models: [],
       });
     }
-  } else {
-    for (const provider of providers) {
-      const descriptor = typeGroupDescriptor(provider);
-      if (!groups.has(descriptor.key)) {
-        groups.set(descriptor.key, { ...descriptor, models: [] });
-      }
-    }
   }
-  for (const model of models) {
-    const descriptor = grouping === "provider" ? providerGroupDescriptor(model) : typeGroupDescriptor(model);
+  for (const model of models)
+  {
+    const format = model.request_format;
+    const descriptor = grouping === "provider"
+      ? { key: model.provider_id, label: model.provider_name }
+      : { key: format, label: formatLabels[format], protocol: format };
     const group = groups.get(descriptor.key);
     if (group) {
       group.models.push(model);

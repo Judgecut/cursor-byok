@@ -12,8 +12,8 @@ use axum::{
 use cursor_server::{
     control::{ControlService, ModelConnectivityResult},
     model::{
-        LlmCallSummary, ModelConfigInput, ModelType, ProviderConfigInput, SpeedStatus,
-        SpeedUnavailableReason, OPENAI_RESPONSES_ENDPOINT,
+        LlmCallSummary, ModelConfigInput, RequestFormat, ProviderConfigInput, SpeedStatus,
+        SpeedUnavailableReason,
     },
     network::NetworkClients,
     plugin::{PluginRegistry, PluginRuntime},
@@ -46,21 +46,20 @@ async fn model_test(events: Vec<(u64, &'static str)>) -> (ModelConnectivityResul
         .create_provider(&ProviderConfigInput {
             sort_order: 0,
             name: "test-provider".into(),
-            model_type: ModelType::OpenAi,
             base_url: format!("http://{address}"),
-            use_full_url: false,
             api_key: "test-key".into(),
-            openai_endpoint: OPENAI_RESPONSES_ENDPOINT.into(),
             custom_headers_enabled: false,
             custom_headers: serde_json::json!({}),
-            extra_params_enabled: false,
-            extra_params: serde_json::json!({}),
         })
         .await
         .unwrap();
     let model = store
         .create_model(&ModelConfigInput {
             provider_id: provider.provider_id,
+            request_format: RequestFormat::OpenAiResponses,
+            request_url_override: None,
+            extra_params_enabled: false,
+            extra_params: serde_json::json!({}),
             sort_order: 0,
             display_name: "Test model".into(),
             tooltip_data: "Test model".into(),
