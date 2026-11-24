@@ -17,6 +17,7 @@ use crate::{network::safe_web_resolution, Error, Result};
 const MAX_IMAGE_BYTES: usize = 1024 * 1024;
 const MAX_PAGE_BYTES: usize = 512 * 1024;
 const MAX_IMAGE_EDGE: u32 = 2048;
+const MAX_DECODE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_REDIRECTS: usize = 4;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(4);
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(20);
@@ -58,6 +59,13 @@ fn site_origins(base: &str) -> Result<Vec<Url>> {
     origin.set_path("/");
     origin.set_query(None);
     origin.set_fragment(None);
+    if let Some(host) = origin
+        .host_str()
+        .and_then(|host| host.strip_suffix('.'))
+        .map(str::to_owned)
+    {
+        origin.set_host(Some(&host)).map_err(|_| invalid())?;
+    }
     if !valid_destination(&origin) {
         return Err(invalid());
     }
@@ -212,11 +220,17 @@ async fn load_icon<Fut: Future<Output = Option<Download>>>(
             .await?
             .bytes
     };
-    let media_type = image_type(&bytes)?;
-    Some(format!(
-        "data:{media_type};base64,{}",
-        STANDARD.encode(bytes)
-    ))
+    // Raster decoding can be expensive even for small compressed images.
+    tokio::task::spawn_blocking(move || {
+        let media_type = image_type(&bytes)?;
+        Some(format!(
+            "data:{media_type};base64,{}",
+            STANDARD.encode(bytes)
+        ))
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 fn decode_inline_icon(data: &str) -> Option<Vec<u8>> {
@@ -239,19 +253,20 @@ fn decode_inline_icon(data: &str) -> Option<Vec<u8>> {
 
 fn image_type(bytes: &[u8]) -> Option<&'static str> {
     if let Ok(format) = image::guess_format(bytes) {
-        let content_type = match format {
-            ImageFormat::Png
-            | ImageFormat::Jpeg
-            | ImageFormat::Gif
-            | ImageFormat::WebP
-            | ImageFormat::Ico => format.to_mime_type(),
+        match format {
+            ImageFormat::Png => validate_png(bytes)?,
+            ImageFormat::Jpeg | ImageFormat::Gif | ImageFormat::WebP | ImageFormat::Ico => {
+                let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
+                let mut limits = image::Limits::default();
+                limits.max_image_width = Some(MAX_IMAGE_EDGE);
+                limits.max_image_height = Some(MAX_IMAGE_EDGE);
+                limits.max_alloc = Some(MAX_DECODE_BYTES as u64);
+                reader.limits(limits);
+                reader.decode().ok()?;
+            }
             _ => return None,
-        };
-        let (width, height) = ImageReader::with_format(Cursor::new(bytes), format)
-            .into_dimensions()
-            .ok()?;
-        return (width > 0 && height > 0 && width <= MAX_IMAGE_EDGE && height <= MAX_IMAGE_EDGE)
-            .then_some(content_type);
+        }
+        return Some(format.to_mime_type());
     }
     let mut svg = Reader::from_reader(bytes);
     svg.config_mut().trim_text(true);
@@ -259,18 +274,39 @@ fn image_type(bytes: &[u8]) -> Option<&'static str> {
         match svg.read_event().ok()? {
             Event::Decl(_) | Event::Comment(_) | Event::PI(_) => {}
             Event::Text(text) if text.is_empty() => {}
-            Event::Empty(element) if element.local_name().as_ref() == b"svg" => {
-                return Some("image/svg+xml")
-            }
+            Event::Empty(element) if element.local_name().as_ref() == b"svg" => break,
             Event::Start(element) if element.local_name().as_ref() == b"svg" => {
-                return svg
-                    .read_to_end(element.name())
-                    .ok()
-                    .map(|_| "image/svg+xml");
+                svg.read_to_end(element.name()).ok()?;
+                break;
             }
             _ => return None,
         }
     }
+    loop {
+        match svg.read_event().ok()? {
+            Event::Comment(_) | Event::PI(_) => {}
+            Event::Text(text) if text.is_empty() => {}
+            Event::Eof => return Some("image/svg+xml"),
+            _ => return None,
+        }
+    }
+}
+
+fn validate_png(bytes: &[u8]) -> Option<()> {
+    let limits = png::Limits {
+        bytes: MAX_DECODE_BYTES,
+    };
+    let mut decoder = png::Decoder::new_with_limits(Cursor::new(bytes), limits);
+    decoder.set_ignore_text_chunk(true);
+    let mut reader = decoder.read_info().ok()?;
+    let info = reader.info();
+    if info.width > MAX_IMAGE_EDGE || info.height > MAX_IMAGE_EDGE {
+        return None;
+    }
+    let mut pixels = vec![0; reader.output_buffer_size()?];
+    reader.next_frame(&mut pixels).ok()?;
+    // next_frame reads the pixels. finish also checks the ending chunks and CRC.
+    reader.finish().ok()
 }
 
 fn valid_destination(url: &Url) -> bool {
@@ -375,6 +411,14 @@ mod tests {
                 "https://example.co.uk/",
             ]
         );
+        assert_eq!(
+            site_origins("https://api.region.example.co.uk.:8443/v1").unwrap(),
+            origins
+        );
+        assert_eq!(
+            site_origins("https://example.com./").unwrap(),
+            [Url::parse("https://example.com/").unwrap()]
+        );
         for base in [
             "https://co.uk/",
             "https://127.0.0.1/",
@@ -410,6 +454,39 @@ mod tests {
                 STANDARD.encode(SVG)
             ))
         );
+    }
+
+    #[tokio::test]
+    async fn skips_a_png_with_truncated_pixels_or_an_invalid_ending() {
+        let mut encoded = Cursor::new(Vec::new());
+        image::DynamicImage::new_rgba8(3, 2)
+            .write_to(&mut encoded, ImageFormat::Png)
+            .unwrap();
+        let png = encoded.into_inner();
+        assert_eq!(image_type(&png), Some("image/png"));
+        let data_offset = png.windows(4).position(|chunk| chunk == b"IDAT").unwrap() + 4;
+        let mut invalid_crc = png.clone();
+        *invalid_crc.last_mut().unwrap() ^= 1;
+        let origins = site_origins("https://api.example.com/v1").unwrap();
+        for broken in [&png[..data_offset], &png[..png.len() - 4], &invalid_crc] {
+            let icon = find_icon(&origins, |url, _, _| async move {
+                let bytes = match url.path() {
+                    "/api/status" => br#"{"success":true,"data":{"system_name":"Example Relay","logo":"/broken.png"}}"#.to_vec(),
+                    "/broken.png" => broken.to_vec(),
+                    "/" => br#"<head><link rel="icon" href="/brand.svg"></head>"#.to_vec(),
+                    "/brand.svg" => SVG.as_bytes().to_vec(),
+                    path => panic!("unexpected request for {path}"),
+                };
+                Some(Download { url, bytes })
+            }).await;
+            assert_eq!(
+                icon,
+                Some(format!(
+                    "data:image/svg+xml;base64,{}",
+                    STANDARD.encode(SVG)
+                ))
+            );
+        }
     }
 
     #[tokio::test]
