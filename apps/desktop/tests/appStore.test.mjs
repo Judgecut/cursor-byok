@@ -23,6 +23,7 @@ const defaults = {
   overview_calendar_chart_type: "heatmap",
   sidebar_collapsed: false,
   home_refresh_interval_seconds: 30,
+  calls_refresh_interval_seconds: 5,
 };
 
 function deferred()
@@ -79,7 +80,7 @@ async function setup()
       },
       getLocalePreference: () => locale,
     },
-    "../api": { api },
+    "../api": { api, DEFAULT_CALLS_REFRESH_INTERVAL_SECONDS: 5, MIN_CALLS_REFRESH_INTERVAL_SECONDS: 5, MAX_CALLS_REFRESH_INTERVAL_SECONDS: 60 },
     "../theme/theme": {
       applyTheme: (value) =>
       {

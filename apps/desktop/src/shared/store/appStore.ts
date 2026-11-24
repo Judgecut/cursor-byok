@@ -6,6 +6,9 @@ import {
 } from "../../i18n/store";
 import {
   api,
+  DEFAULT_CALLS_REFRESH_INTERVAL_SECONDS,
+  MAX_CALLS_REFRESH_INTERVAL_SECONDS,
+  MIN_CALLS_REFRESH_INTERVAL_SECONDS,
   type CursorHarnessStatus,
   type ExchangeRateSyncState,
   type InterfaceSettings,
@@ -63,6 +66,7 @@ const DEFAULT_INTERFACE_SETTINGS: InterfaceSettings = {
   overview_calendar_window: "year",
   overview_calendar_chart_type: "heatmap",
   home_refresh_interval_seconds: DEFAULT_HOME_REFRESH_INTERVAL_SECONDS,
+  calls_refresh_interval_seconds: DEFAULT_CALLS_REFRESH_INTERVAL_SECONDS,
 };
 
 export function parseHomeRefreshIntervalSeconds(raw: string): number | null {
@@ -107,6 +111,7 @@ export type AppSnapshot = {
   overviewCalendarWindow: OverviewCalendarWindow;
   overviewCalendarChartType: OverviewCalendarChartType;
   homeRefreshIntervalSeconds: number;
+  callsRefreshIntervalSeconds: number;
   refreshTick: number;
   pendingCallsFilter: CallsFilterHandoff | null;
   cursorHarness: CursorHarnessStatus | null;
@@ -190,6 +195,7 @@ let snapshot: AppSnapshot = {
   overviewCalendarWindow: DEFAULT_INTERFACE_SETTINGS.overview_calendar_window,
   overviewCalendarChartType: DEFAULT_INTERFACE_SETTINGS.overview_calendar_chart_type,
   homeRefreshIntervalSeconds: DEFAULT_INTERFACE_SETTINGS.home_refresh_interval_seconds,
+  callsRefreshIntervalSeconds: DEFAULT_INTERFACE_SETTINGS.calls_refresh_interval_seconds,
   refreshTick: 0,
   pendingCallsFilter: null,
   cursorHarness: null,
@@ -225,6 +231,7 @@ function applyInterfaceSettings(
     overviewCalendarWindow: next.overview_calendar_window,
     overviewCalendarChartType: next.overview_calendar_chart_type,
     homeRefreshIntervalSeconds: next.home_refresh_interval_seconds,
+    callsRefreshIntervalSeconds: next.calls_refresh_interval_seconds,
     ...options?.extra,
   });
 }
@@ -844,6 +851,15 @@ export const appStore = {
     }
     const saved = await persistInterfacePatch({ home_refresh_interval_seconds: parsed }, { optimistic: false });
     return saved?.home_refresh_interval_seconds ?? null;
+  },
+  async saveCallsRefreshIntervalSeconds(interval: number): Promise<boolean>
+  {
+    if (!Number.isInteger(interval) || interval < MIN_CALLS_REFRESH_INTERVAL_SECONDS || interval > MAX_CALLS_REFRESH_INTERVAL_SECONDS)
+    {
+      return false;
+    }
+    const saved = await persistInterfacePatch({ calls_refresh_interval_seconds: interval }, { optimistic: false });
+    return saved !== null;
   },
   handoffCallsFilter(filter: Omit<CallsFilterHandoff, "nonce">) {
     handoffSeed += 1;

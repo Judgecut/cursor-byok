@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useKeepAliveContext } from "keepalive-for-react";
 import { useI18n } from "../../i18n/store";
 import {
   api,
@@ -17,10 +18,10 @@ import { CallTable } from "./CallTable";
 import styles from "./CallsPage.module.scss";
 
 const DEFAULT_CALLS_PAGE_SIZE = 100;
-const CALL_REFRESH_INTERVAL_MS = 2_000;
 
 export function CallsPage() {
-  const { overview, plugins, pendingCallsFilter, refreshTick } = useAppStore();
+  const { overview, plugins, pendingCallsFilter, refreshTick, callsRefreshIntervalSeconds } = useAppStore();
+  const { active } = useKeepAliveContext();
   const { locale } = useI18n();
   const [preset, setPreset] = useState<OverviewRangePreset | "all">("all");
   const [quick, setQuick] = useState<QuickPreset | null>(null);
@@ -42,7 +43,7 @@ export function CallsPage() {
   const [error, setError] = useState<string | null>(null);
   const [supplierCatalog, setSupplierCatalog] = useState<OverviewFilterSupplier[]>([]);
   const [modelCatalog, setModelCatalog] = useState<OverviewFilterModel[]>([]);
-  const fetchSeq = useRef(0);
+  const [manualRefreshTick, setManualRefreshTick] = useState(0);
 
   const filterKey = useMemo(
     () => JSON.stringify({
@@ -84,8 +85,7 @@ export function CallsPage() {
     return resolveTimeRange(preset, quick, customRange) ?? undefined;
   }, [customRange, preset, quick]);
 
-  const loadCalls = useCallback((signal?: AbortSignal, showLoadingState = true) => {
-    const seq = ++fetchSeq.current;
+  const loadCalls = useCallback((signal: AbortSignal, showLoadingState: boolean) => {
     const requestFilterKey = filterKey;
     const requestPage = page;
     const requestPageSize = pageSize;
@@ -102,7 +102,10 @@ export function CallsPage() {
       limit: requestPageSize,
       offset: (requestPage - 1) * requestPageSize,
     }, { signal }).then((result) => {
-      if (seq !== fetchSeq.current) return;
+      if (signal.aborted)
+      {
+        return;
+      }
       setCallsResult({
         filterKey: requestFilterKey,
         page: requestPage,
@@ -112,32 +115,57 @@ export function CallsPage() {
       });
       setError(null);
     }).catch((cause) => {
-      if (seq !== fetchSeq.current || signal?.aborted) return;
+      if (signal.aborted)
+      {
+        return;
+      }
       setError(cause instanceof Error ? cause.message : String(cause));
     }).finally(() => {
-      if (seq === fetchSeq.current) setLoading(false);
+      if (!signal.aborted)
+      {
+        setLoading(false);
+      }
     });
   }, [appliedModels, customRange, filterKey, page, pageSize, preset, quick, selectedSuppliers]);
 
-  useEffect(() => {
+  useEffect(() =>
+  {
+    if (!active)
+    {
+      return;
+    }
     const controller = new AbortController();
-    void loadCalls(controller.signal, true);
+    let pending = false;
 
-    const refreshIfVisible = () => {
-      if (document.visibilityState === "visible") {
-        void loadCalls(undefined, false);
+    const refresh = async (showLoading: boolean) =>
+    {
+      if (pending)
+      {
+        return;
+      }
+      pending = true;
+      await loadCalls(controller.signal, showLoading);
+      pending = false;
+    };
+    const refreshIfVisible = () =>
+    {
+      if (document.visibilityState === "visible")
+      {
+        void refresh(false);
       }
     };
-    const interval = window.setInterval(refreshIfVisible, CALL_REFRESH_INTERVAL_MS);
+    void refresh(true);
+    const interval = window.setInterval(refreshIfVisible, callsRefreshIntervalSeconds * 1_000);
     window.addEventListener("focus", refreshIfVisible);
     document.addEventListener("visibilitychange", refreshIfVisible);
-    return () => {
+    return () =>
+    {
       controller.abort();
       window.clearInterval(interval);
       window.removeEventListener("focus", refreshIfVisible);
       document.removeEventListener("visibilitychange", refreshIfVisible);
     };
-  }, [loadCalls, refreshTick]);
+  }, [active, callsRefreshIntervalSeconds, loadCalls, manualRefreshTick, refreshTick]);
 
   const supplierOptions = useMemo(
     () => buildSupplierFilterOptions(
@@ -185,8 +213,9 @@ export function CallsPage() {
     setPreset("custom");
     setCustomOpen(false);
     setPage(1);
-    if (filterUnchanged) {
-      void loadCalls(undefined, true);
+    if (filterUnchanged)
+    {
+      setManualRefreshTick((tick) => tick + 1);
     }
   };
 

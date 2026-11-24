@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { api, type ProxySettings, type ProxySettingsInput, type StatisticsStorage, type StatisticsStorageScope, type TabSettings } from "../../shared/api";
+import { api, MAX_CALLS_REFRESH_INTERVAL_SECONDS, MIN_CALLS_REFRESH_INTERVAL_SECONDS, type ProxySettings, type ProxySettingsInput, type StatisticsStorage, type StatisticsStorageScope, type TabSettings } from "../../shared/api";
 import { PageContent } from "../../shell/layout/PageContent";
 import { LegacyModelImport } from "../models/LegacyModelImport";
 import { AppLifecycleSettingsCard } from "./AppLifecycleSettingsCard";
@@ -30,6 +30,57 @@ function themeLabel(id: ThemeId): string {
   if (id === "system") return t("跟随系统");
   if (id === "default-dark") return t("默认暗色");
   return t("默认亮色");
+}
+
+function CallsRefreshSetting()
+{
+  const { callsRefreshIntervalSeconds } = useAppStore();
+  const message = useMessage();
+  const inputId = useId();
+  const hintId = useId();
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () =>
+  {
+    if (saving || draft === null)
+    {
+      return;
+    }
+    setSaving(true);
+    try
+    {
+      if (await appStore.saveCallsRefreshIntervalSeconds(Number(draft)))
+      {
+        setDraft(null);
+        message(t("调用详细自动刷新间隔已保存"));
+      }
+    }
+    finally
+    {
+      setSaving(false);
+    }
+  };
+
+  return <div className={styles.refreshIntervalSection}>
+    <div className={styles.refreshIntervalRow}>
+      <div className={styles.refreshIntervalText}>
+        <label htmlFor={inputId}>{t("调用详细自动刷新间隔（秒）")}</label>
+        <small id={hintId}>{t("可设置为 {min}–{max} 秒，仅在调用详细页可见时自动刷新。", { min: MIN_CALLS_REFRESH_INTERVAL_SECONDS, max: MAX_CALLS_REFRESH_INTERVAL_SECONDS })}</small>
+      </div>
+      <form className={styles.refreshIntervalForm} onSubmit={(event) =>
+      {
+        event.preventDefault();
+        void save();
+      }}>
+        <div className={styles.intervalInputWrap}>
+          <TextInput id={inputId} aria-describedby={hintId} type="number" required min={MIN_CALLS_REFRESH_INTERVAL_SECONDS} max={MAX_CALLS_REFRESH_INTERVAL_SECONDS} step={1} value={draft ?? String(callsRefreshIntervalSeconds)} disabled={saving} onChange={(event) => setDraft(event.target.value)} />
+        </div>
+        <span className={styles.intervalUnit}>{t("秒")}</span>
+        <Button variant="primary" size="small" type="submit" disabled={saving || draft === null}>{saving ? t("保存中…") : t("保存")}</Button>
+      </form>
+    </div>
+  </div>;
 }
 
 export function SettingsPage() {
@@ -230,6 +281,7 @@ export function SettingsPage() {
             onChange={(checked) => void appStore.updateDetailed(checked)}
           />
         </div>
+        <CallsRefreshSetting />
       </TitledCard>
       <TitledCard title={t("数据概览")}>
         <div className={styles.refreshIntervalSection}>

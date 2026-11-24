@@ -17,6 +17,8 @@ const INTERFACE_SETTINGS_KEY: &str = "interface_settings";
 const EXCHANGE_RATE_SYNC_KEY: &str = "exchange_rate_sync";
 
 pub const DEFAULT_HOME_REFRESH_INTERVAL_SECONDS: u64 = 30;
+const MIN_CALLS_REFRESH_INTERVAL_SECONDS: u64 = 5;
+const MAX_CALLS_REFRESH_INTERVAL_SECONDS: u64 = 60;
 
 /// Embedded default system prompts for commit message generation.
 pub const DEFAULT_COMMIT_PROMPT_ZH_CN: &str = include_str!("../../prompt/cursor/commit/zh-CN.md");
@@ -306,6 +308,8 @@ pub struct InterfaceSettings {
     pub overview_calendar_chart_type: OverviewCalendarChartType,
     #[serde(default = "default_home_refresh_interval_seconds")]
     pub home_refresh_interval_seconds: u64,
+    #[serde(default = "default_calls_refresh_interval_seconds")]
+    pub calls_refresh_interval_seconds: u64,
 }
 
 impl Default for InterfaceSettings {
@@ -327,6 +331,7 @@ impl Default for InterfaceSettings {
             overview_calendar_window: OverviewCalendarWindow::default(),
             overview_calendar_chart_type: OverviewCalendarChartType::default(),
             home_refresh_interval_seconds: DEFAULT_HOME_REFRESH_INTERVAL_SECONDS,
+            calls_refresh_interval_seconds: default_calls_refresh_interval_seconds(),
         }
     }
 }
@@ -365,10 +370,17 @@ pub struct InterfaceSettingsPatch {
     pub overview_calendar_chart_type: Option<OverviewCalendarChartType>,
     #[serde(default)]
     pub home_refresh_interval_seconds: Option<u64>,
+    #[serde(default)]
+    pub calls_refresh_interval_seconds: Option<u64>,
 }
 
 fn default_home_refresh_interval_seconds() -> u64 {
     DEFAULT_HOME_REFRESH_INTERVAL_SECONDS
+}
+
+fn default_calls_refresh_interval_seconds() -> u64
+{
+    MIN_CALLS_REFRESH_INTERVAL_SECONDS
 }
 
 fn deserialize_optional_nullable_string<'de, D>(
@@ -808,6 +820,14 @@ impl Store {
             }
             settings.home_refresh_interval_seconds = interval;
         }
+        if let Some(interval) = patch.calls_refresh_interval_seconds
+        {
+            if !(MIN_CALLS_REFRESH_INTERVAL_SECONDS..=MAX_CALLS_REFRESH_INTERVAL_SECONDS).contains(&interval)
+            {
+                return Err(crate::Error::Config("calls refresh interval must be between 5 and 60 seconds".into()));
+            }
+            settings.calls_refresh_interval_seconds = interval;
+        }
         for (rate, change) in [
             (&mut settings.cny_rate, patch.cny_rate),
             (&mut settings.eur_rate, patch.eur_rate),
@@ -1066,6 +1086,7 @@ mod tests {
                 overview_calendar_window: OverviewCalendarWindow::Year,
                 overview_calendar_chart_type: OverviewCalendarChartType::Heatmap,
                 home_refresh_interval_seconds: DEFAULT_HOME_REFRESH_INTERVAL_SECONDS,
+                calls_refresh_interval_seconds: 5,
             }
         );
 

@@ -32,6 +32,7 @@ import type {
   SupplierPricingView,
   TabSettings,
 } from "../shared/api";
+import { DEFAULT_CALLS_REFRESH_INTERVAL_SECONDS, MAX_CALLS_REFRESH_INTERVAL_SECONDS, MIN_CALLS_REFRESH_INTERVAL_SECONDS } from "../shared/api";
 import { CURRENCY_SYMBOLS, exchangeRateKey, normalizeExchangeRate, type DisplayCurrency } from "../shared/utils/costFormat";
 
 const API_ROOT = "/__byok-api__/api";
@@ -336,6 +337,7 @@ let interfaceSettings: InterfaceSettings = {
   overview_calendar_window: "year",
   overview_calendar_chart_type: "heatmap",
   home_refresh_interval_seconds: 30,
+  calls_refresh_interval_seconds: DEFAULT_CALLS_REFRESH_INTERVAL_SECONDS,
 };
 
 let exchangeRateSync: ExchangeRateSyncState = { auto_sync_enabled: false, snapshot: null, last_attempted_at_ms: null, last_synced_at_ms: null, last_error: null, syncing: false };
@@ -1256,6 +1258,15 @@ function applyDemoInterfacePatch(
       return { error: "home refresh interval must be at least 1 second" };
     }
     next.home_refresh_interval_seconds = patch.home_refresh_interval_seconds;
+  }
+  const callsRefreshInterval = patch.calls_refresh_interval_seconds;
+  if (callsRefreshInterval !== undefined)
+  {
+    if (!Number.isInteger(callsRefreshInterval) || callsRefreshInterval < MIN_CALLS_REFRESH_INTERVAL_SECONDS || callsRefreshInterval > MAX_CALLS_REFRESH_INTERVAL_SECONDS)
+    {
+      return { error: "calls refresh interval must be between 5 and 60 seconds" };
+    }
+    next.calls_refresh_interval_seconds = callsRefreshInterval;
   }
   for (const currency of Object.keys(CURRENCY_SYMBOLS) as DisplayCurrency[])
   {

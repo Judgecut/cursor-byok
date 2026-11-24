@@ -99,6 +99,44 @@ test("saves settings, reads them after reload, and applies translated modules", 
   await expect(page.getByRole("textbox", { name: "主页自动刷新间隔（秒）", exact: true })).toHaveValue("45");
 });
 
+test("refreshes call history at the saved interval while the page is active", async ({ page, management }) =>
+{
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1_000));
+  await page.goto("#/settings");
+  const interval = page.getByRole("spinbutton", { name: "Call history auto-refresh interval (seconds)", exact: true });
+  await expect(interval).toHaveValue("5");
+  await interval.fill("4");
+  await interval.press("Enter");
+  expect(management.writes).toEqual([]);
+  await interval.fill("10");
+  await interval.press("Enter");
+  await expect.poll(() => management.settings.calls_refresh_interval_seconds).toBe(10);
+  await expect(page.getByText("Call history auto-refresh interval saved", { exact: true })).toBeVisible();
+
+  let callsRequests = 0;
+  page.on("requestfinished", (request) =>
+  {
+    if (new URL(request.url()).pathname.endsWith("/api/llm-calls"))
+    {
+      callsRequests += 1;
+    }
+  });
+  await page.goto("#/calls");
+  await expect.poll(() => callsRequests).toBe(1);
+  await page.clock.runFor(9_999);
+  expect(callsRequests).toBe(1);
+  await page.clock.runFor(1);
+  await expect.poll(() => callsRequests).toBe(2);
+
+  await page.goto("#/settings");
+  await expect(interval).toBeVisible();
+  await page.clock.runFor(10_000);
+  expect(callsRequests).toBe(2);
+  await page.reload();
+  await expect(interval).toHaveValue("10");
+});
+
 test("stores each display currency rate independently and shares selection with the overview", async ({ page, management }) =>
 {
   await page.goto("#/settings");

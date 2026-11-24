@@ -88,7 +88,8 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
             "overview_calendar_window": "year",
             "overview_calendar_chart_type": "heatmap",
             "sidebar_collapsed": false,
-            "home_refresh_interval_seconds": 30
+            "home_refresh_interval_seconds": 30,
+            "calls_refresh_interval_seconds": 5
         })
     );
 
@@ -123,6 +124,12 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
+    for interval in [4, 61]
+    {
+        let (status, _) = send(router.clone(), "PUT", "/__byok-api__/api/settings/interface", Some(json!({ "calls_refresh_interval_seconds": interval }))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
     // Saves theme and rate, then switches currency & chart preferences in separate patches.
     let (status, updated) = send(
         router.clone(),
@@ -150,7 +157,8 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
             "overview_calendar_window": "month",
             "overview_calendar_chart_type": "bar",
             "sidebar_collapsed": true,
-            "home_refresh_interval_seconds": 45
+            "home_refresh_interval_seconds": 45,
+            "calls_refresh_interval_seconds": 60
         })),
     )
     .await;
@@ -173,7 +181,8 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
             "overview_calendar_window": "month",
             "overview_calendar_chart_type": "bar",
             "sidebar_collapsed": true,
-            "home_refresh_interval_seconds": 45
+            "home_refresh_interval_seconds": 45,
+            "calls_refresh_interval_seconds": 60
         })
     );
 
@@ -217,7 +226,8 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
             "overview_calendar_window": "month",
             "overview_calendar_chart_type": "bar",
             "sidebar_collapsed": true,
-            "home_refresh_interval_seconds": 45
+            "home_refresh_interval_seconds": 45,
+            "calls_refresh_interval_seconds": 60
         })
     );
 }
