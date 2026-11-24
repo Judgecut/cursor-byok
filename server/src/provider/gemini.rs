@@ -1,4 +1,6 @@
 //! Implements the Gemini Developer API streaming provider.
+mod function_call;
+
 use std::collections::HashMap;
 
 use async_stream::try_stream;
@@ -8,6 +10,7 @@ use futures_util::StreamExt;
 use serde_json::{json, Map, Value};
 use tokio_util::sync::CancellationToken;
 
+use self::function_call::FunctionCalls;
 use crate::{
     config::ProviderConfig,
     model::{
@@ -69,6 +72,7 @@ impl Provider for GeminiProvider {
                 recorder.as_ref(),
             ).await?;
             let Attempt::Response(response) = attempt else { return };
+            let http_status = response.status().as_u16();
             yield ModelEvent::Start { model_call_id: invocation.call_id };
 
             let chunk_recorder = recorder.clone();
@@ -88,8 +92,11 @@ impl Provider for GeminiProvider {
             let mut parts = Vec::new();
             let mut active_thought = None;
             let mut tool_count = 0;
+            let mut function_calls = FunctionCalls::default();
+            let mut pending_part_index = None;
             let mut usage = Map::new();
             let mut finish = None;
+            let mut failure = None;
 
             while let Some(event) = tokio::select! {
                 _ = cancellation.cancelled() => return,
@@ -98,25 +105,51 @@ impl Provider for GeminiProvider {
             {
                 let event = event.map_err(|error| map_sse_error("Gemini", error))?;
                 let value: Value = serde_json::from_str(&event.data)?;
-                if let Some(error) = provider_event_error("Gemini", &value)
-                {
-                    Err(error)?;
-                }
                 if let Some(update) = value.get("usageMetadata").and_then(Value::as_object)
                 {
                     usage.extend(update.clone());
                 }
+                if let Some(error) = provider_event_error("Gemini", &value)
+                {
+                    failure = Some(error);
+                    break;
+                }
                 if let Some(reason) = value.pointer("/promptFeedback/blockReason").and_then(Value::as_str).filter(|reason| *reason != "BLOCK_REASON_UNSPECIFIED")
                 {
-                    Err(upstream_finish_error(reason))?;
+                    let detail = value.pointer("/promptFeedback/blockReasonMessage").and_then(Value::as_str);
+                    failure = Some(upstream_finish_error(http_status, reason, detail));
+                    break;
                 }
                 let Some(candidate) = value.pointer("/candidates/0") else { continue };
+                match candidate.get("finishReason").and_then(Value::as_str)
+                {
+                    Some("STOP") => finish = Some(FinishReason::Stop),
+                    Some("MAX_TOKENS") => finish = Some(FinishReason::Length),
+                    None | Some("" | "FINISH_REASON_UNSPECIFIED") => {}
+                    Some(reason) =>
+                    {
+                        let detail = candidate.get("finishMessage").and_then(Value::as_str);
+                        failure = Some(upstream_finish_error(http_status, reason, detail));
+                        break;
+                    }
+                }
                 if let Some(chunk_parts) = candidate.pointer("/content/parts").and_then(Value::as_array)
                 {
                     for part in chunk_parts
                     {
-                        if let Some(call) = part.get("functionCall")
+                        if part.get("functionCall").is_some()
                         {
+                            let Some(completed_part) = function_calls.push(part)? else
+                            {
+                                if pending_part_index.is_none()
+                                {
+                                    // Preserve the first fragment's position in the replay.
+                                    pending_part_index = Some(parts.len());
+                                    parts.push(Value::Null);
+                                }
+                                continue;
+                            };
+                            let call = &completed_part["functionCall"];
                             let name = call.get("name").and_then(Value::as_str).filter(|name| !name.is_empty()).ok_or_else(|| Error::Provider("Gemini function call has no name".into()))?;
                             let arguments = call.get("args").cloned().unwrap_or_else(|| json!({}));
                             if !arguments.is_object()
@@ -132,8 +165,17 @@ impl Provider for GeminiProvider {
                             yield ModelEvent::ToolCallStart { index, call_id: format!("gemini_{}", uuid::Uuid::new_v4().simple()), name: name.into() };
                             yield ModelEvent::ToolCallArgumentsDelta { index, delta: serde_json::to_string(&arguments)? };
                             yield ModelEvent::ToolCallEnd { index };
+                            if let Some(index) = pending_part_index.take()
+                            {
+                                parts[index] = completed_part;
+                            }
+                            else
+                            {
+                                parts.push(completed_part);
+                            }
+                            continue;
                         }
-                        else if let Some(text) = part.get("text").and_then(Value::as_str).filter(|text| !text.is_empty())
+                        if let Some(text) = part.get("text").and_then(Value::as_str).filter(|text| !text.is_empty())
                         {
                             let thought = part.get("thought").and_then(Value::as_bool).unwrap_or(false);
                             if active_thought != Some(thought)
@@ -149,21 +191,19 @@ impl Provider for GeminiProvider {
                         append_replay_part(&mut parts, part);
                     }
                 }
-                match candidate.get("finishReason").and_then(Value::as_str)
-                {
-                    Some("STOP") => finish = Some(FinishReason::Stop),
-                    Some("MAX_TOKENS") => finish = Some(FinishReason::Length),
-                    None | Some("" | "FINISH_REASON_UNSPECIFIED") => {}
-                    Some(reason) => Err(upstream_finish_error(reason))?,
-                }
             }
 
-            let finish = finish.ok_or_else(|| Error::Provider("Gemini stream ended without a finish reason".into()))?;
+            let finish = match failure
+            {
+                Some(error) => Err(error),
+                None if pending_part_index.is_some() => Err(Error::Provider("Gemini stream ended with an incomplete function call".into())),
+                None => finish.ok_or_else(|| Error::Provider("Gemini stream ended without a finish reason".into())),
+            };
             if let Some(thought) = active_thought
             {
                 yield end_block(thought);
             }
-            if !parts.is_empty()
+            if finish.is_ok() && !parts.is_empty()
             {
                 yield ModelEvent::ProviderReplayState(ProviderReplayState { provider_kind: REPLAY_KIND.into(), value: json!({"parts": parts}) });
             }
@@ -171,6 +211,7 @@ impl Provider for GeminiProvider {
             {
                 yield ModelEvent::Usage(gemini_usage(&Value::Object(usage)));
             }
+            let finish = finish?;
             yield ModelEvent::Done(if tool_count > 0 && finish == FinishReason::Stop { FinishReason::ToolUse } else { finish });
         })
     }
@@ -184,11 +225,18 @@ fn end_block(thought: bool) -> ModelEvent {
     }
 }
 
-fn upstream_finish_error(reason: &str) -> Error {
+fn upstream_finish_error(http_status: u16, reason: &str, detail: Option<&str>) -> Error
+{
+    let mut message = format!("Gemini generation stopped: {reason}");
+    if let Some(detail) = detail.map(str::trim).filter(|detail| !detail.is_empty())
+    {
+        message.push_str(": ");
+        message.push_str(detail);
+    }
     Error::Upstream {
-        status: None,
+        status: Some(http_status),
         code: Some(reason.into()),
-        message: format!("Gemini generation stopped: {reason}"),
+        message,
     }
 }
 
