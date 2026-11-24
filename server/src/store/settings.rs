@@ -276,16 +276,14 @@ pub enum OverviewCalendarChartType {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum HomeMotionMode
-{
+pub enum HomeMotionMode {
     #[default]
     System,
     On,
     Off,
 }
 
-fn default_home_auto_refresh_enabled() -> bool
-{
+fn default_home_auto_refresh_enabled() -> bool {
     true
 }
 
@@ -403,8 +401,7 @@ fn default_home_refresh_interval_seconds() -> u64 {
     DEFAULT_HOME_REFRESH_INTERVAL_SECONDS
 }
 
-fn default_calls_refresh_interval_seconds() -> u64
-{
+fn default_calls_refresh_interval_seconds() -> u64 {
     MIN_CALLS_REFRESH_INTERVAL_SECONDS
 }
 
@@ -837,12 +834,10 @@ impl Store {
         if let Some(overview_calendar_chart_type) = patch.overview_calendar_chart_type {
             settings.overview_calendar_chart_type = overview_calendar_chart_type;
         }
-        if let Some(mode) = patch.home_motion_mode
-        {
+        if let Some(mode) = patch.home_motion_mode {
             settings.home_motion_mode = mode;
         }
-        if let Some(enabled) = patch.home_auto_refresh_enabled
-        {
+        if let Some(enabled) = patch.home_auto_refresh_enabled {
             settings.home_auto_refresh_enabled = enabled;
         }
         if let Some(interval) = patch.home_refresh_interval_seconds {
@@ -853,11 +848,13 @@ impl Store {
             }
             settings.home_refresh_interval_seconds = interval;
         }
-        if let Some(interval) = patch.calls_refresh_interval_seconds
-        {
-            if !(MIN_CALLS_REFRESH_INTERVAL_SECONDS..=MAX_CALLS_REFRESH_INTERVAL_SECONDS).contains(&interval)
+        if let Some(interval) = patch.calls_refresh_interval_seconds {
+            if !(MIN_CALLS_REFRESH_INTERVAL_SECONDS..=MAX_CALLS_REFRESH_INTERVAL_SECONDS)
+                .contains(&interval)
             {
-                return Err(crate::Error::Config("calls refresh interval must be between 5 and 60 seconds".into()));
+                return Err(crate::Error::Config(
+                    "calls refresh interval must be between 5 and 60 seconds".into(),
+                ));
             }
             settings.calls_refresh_interval_seconds = interval;
         }

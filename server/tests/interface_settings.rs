@@ -95,7 +95,10 @@ async fn provider_icons_round_trip_through_management_api() {
             "data:image/png;base64,{}",
             STANDARD.encode(&png_bytes[..33])
         ),
-        format!("data:image/png;base64,{}", STANDARD.encode(without_iend_crc)),
+        format!(
+            "data:image/png;base64,{}",
+            STANDARD.encode(without_iend_crc)
+        ),
         format!("data:image/png;base64,{}", STANDARD.encode(invalid_crc)),
         format!(
             "data:image/png;base64,{}",
@@ -192,9 +195,14 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    for interval in [4, 61]
-    {
-        let (status, _) = send(router.clone(), "PUT", "/__byok-api__/api/settings/interface", Some(json!({ "calls_refresh_interval_seconds": interval }))).await;
+    for interval in [4, 61] {
+        let (status, _) = send(
+            router.clone(),
+            "PUT",
+            "/__byok-api__/api/settings/interface",
+            Some(json!({ "calls_refresh_interval_seconds": interval })),
+        )
+        .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 

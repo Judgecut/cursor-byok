@@ -52,18 +52,19 @@ async fn generate(
     assert_eq!(headers["x-goog-api-key"], "test-key");
     assert_eq!(headers["x-shared"], "test-gateway");
     assert!(!headers.contains_key("authorization"));
-    let fail_generation = body.pointer("/contents/0/parts/0/text").and_then(Value::as_str) == Some("fail-generation");
+    let fail_generation = body
+        .pointer("/contents/0/parts/0/text")
+        .and_then(Value::as_str)
+        == Some("fail-generation");
     let first_tool_round =
         body.get("tools").is_some() && body["contents"].as_array().unwrap().len() == 1;
     requests.send(body).unwrap();
-    let mut chunks = if fail_generation
-    {
+    let mut chunks = if fail_generation {
         vec![
             json!({"candidates": [{"content": {"parts": [{"thought": true, "text": "Thinking"}, {"functionCall": {"name": "read_file", "willContinue": true}}]}}], "usageMetadata": {"promptTokenCount": 4200, "cachedContentTokenCount": 4000}}),
             json!({"candidates": [{"content": {"parts": [{"functionCall": {"partialArgs": "broken"}}]}, "finishReason": "MALFORMED_RESPONSE", "finishMessage": "Could not produce an answer"}], "usageMetadata": {"thoughtsTokenCount": 40, "totalTokenCount": 4240}}),
         ]
-    }
-    else if first_tool_round {
+    } else if first_tool_round {
         vec![
             json!({"candidates": [{"content": {"parts": [{"thought": true, "text": "Thinking"}]}}]}),
             json!({"candidates": [{"content": {"parts": [{"text": "Next "}]}}]}),
@@ -83,8 +84,7 @@ async fn generate(
             json!({"candidates": [{"content": {"parts": [{"text": "Done"}, {"text": "", "thoughtSignature": "signed-text"}]}, "finishReason": "STOP"}]}),
         ]
     };
-    if !fail_generation
-    {
+    if !fail_generation {
         chunks.push(json!({"usageMetadata": {"promptTokenCount": 4200, "cachedContentTokenCount": 4000, "candidatesTokenCount": 9, "thoughtsTokenCount": 40, "totalTokenCount": 4249}}));
     }
     (
@@ -220,7 +220,10 @@ async fn discovers_and_routes_gemini_with_native_tool_and_thought_replay() {
         .unwrap();
     let first = received.try_recv().unwrap();
     assert_eq!(first["systemInstruction"]["parts"][0]["text"], "system");
-    assert_eq!(first["toolConfig"]["functionCallingConfig"]["streamFunctionCallArguments"], true);
+    assert_eq!(
+        first["toolConfig"]["functionCallingConfig"]["streamFunctionCallArguments"],
+        true
+    );
     assert_eq!(
         first["contents"][0]["parts"][1]["inlineData"]["data"],
         "AQID"
@@ -260,11 +263,16 @@ async fn discovers_and_routes_gemini_with_native_tool_and_thought_replay() {
                 index: *index,
                 call_id: call_id.clone(),
                 name: name.clone(),
-                arguments: events.iter().find_map(|event| match event
-                {
-                    ModelEvent::ToolCallArgumentsDelta { index: args_index, delta } if args_index == index => Some(serde_json::from_str(delta).unwrap()),
-                    _ => None,
-                }).unwrap(),
+                arguments: events
+                    .iter()
+                    .find_map(|event| match event {
+                        ModelEvent::ToolCallArgumentsDelta {
+                            index: args_index,
+                            delta,
+                        } if args_index == index => Some(serde_json::from_str(delta).unwrap()),
+                        _ => None,
+                    })
+                    .unwrap(),
             }),
             _ => None,
         })
@@ -275,8 +283,14 @@ async fn discovers_and_routes_gemini_with_native_tool_and_thought_replay() {
         index: 0,
         delta: json!({"path": "a.txt", "options": [{"line.count": 3}, true]}).to_string(),
     }));
-    assert_eq!(replay.value["parts"][2], json!({"functionCall": {"name": "read_file", "id": "native-a", "args": {"path": "a.txt", "options": [{"line.count": 3}, true]}}, "thoughtSignature": "signed-tool"}));
-    assert_eq!(replay.value["parts"][3], json!({"text": "", "thoughtSignature": "interleaved-signature"}));
+    assert_eq!(
+        replay.value["parts"][2],
+        json!({"functionCall": {"name": "read_file", "id": "native-a", "args": {"path": "a.txt", "options": [{"line.count": 3}, true]}}, "thoughtSignature": "signed-tool"})
+    );
+    assert_eq!(
+        replay.value["parts"][3],
+        json!({"text": "", "thoughtSignature": "interleaved-signature"})
+    );
     request.history.push(ProjectedMessage {
         message_id: "assistant".into(),
         role: Role::Assistant,
@@ -338,11 +352,27 @@ async fn discovers_and_routes_gemini_with_native_tool_and_thought_replay() {
     assert_eq!(stored.reasoning_tokens, Some(40));
 
     request.history.truncate(1);
-    request.history[0].content = ProjectedContent::Parts(vec![ContentPart::Text { text: "fail-generation".into() }]);
-    let events = provider_router.stream(invocation("gemini-failure", request), CancellationToken::new()).collect::<Vec<_>>().await;
-    assert!(events.iter().filter_map(|event| event.as_ref().ok()).all(|event| !matches!(event, ModelEvent::ToolCallStart { .. } | ModelEvent::Done(_))));
+    request.history[0].content = ProjectedContent::Parts(vec![ContentPart::Text {
+        text: "fail-generation".into(),
+    }]);
+    let events = provider_router
+        .stream(
+            invocation("gemini-failure", request),
+            CancellationToken::new(),
+        )
+        .collect::<Vec<_>>()
+        .await;
+    assert!(events
+        .iter()
+        .filter_map(|event| event.as_ref().ok())
+        .all(|event| !matches!(
+            event,
+            ModelEvent::ToolCallStart { .. } | ModelEvent::Done(_)
+        )));
     let error = events.into_iter().last().unwrap().unwrap_err();
-    assert!(matches!(error, cursor_server::Error::Upstream { status: Some(200), code: Some(code), message } if code == "MALFORMED_RESPONSE" && message.contains("Could not produce an answer")));
+    assert!(
+        matches!(error, cursor_server::Error::Upstream { status: Some(200), code: Some(code), message } if code == "MALFORMED_RESPONSE" && message.contains("Could not produce an answer"))
+    );
     let stored = store.llm_call("gemini-failure").await.unwrap().unwrap();
     assert_eq!(stored.http_status, Some(200));
     assert_eq!(stored.input_tokens, Some(4200));

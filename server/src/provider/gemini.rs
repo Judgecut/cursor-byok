@@ -225,11 +225,9 @@ fn end_block(thought: bool) -> ModelEvent {
     }
 }
 
-fn upstream_finish_error(http_status: u16, reason: &str, detail: Option<&str>) -> Error
-{
+fn upstream_finish_error(http_status: u16, reason: &str, detail: Option<&str>) -> Error {
     let mut message = format!("Gemini generation stopped: {reason}");
-    if let Some(detail) = detail.map(str::trim).filter(|detail| !detail.is_empty())
-    {
+    if let Some(detail) = detail.map(str::trim).filter(|detail| !detail.is_empty()) {
         message.push_str(": ");
         message.push_str(detail);
     }
