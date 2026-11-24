@@ -25,6 +25,7 @@ import type {
   PricingSource,
   PricingSyncState,
   Provider,
+  ProviderInput,
   ProxySettings,
   SaveSupplierPricingInput,
   SpeedAggregate,
@@ -84,6 +85,7 @@ let providers: Provider[] = [...new Map(models.map((model) => [
     provider_id: model.provider_id,
     sort_order: 0,
     name: model.provider_name,
+    icon: null,
     base_url: model.base_url,
     api_key: model.api_key,
     custom_headers_enabled: model.custom_headers_enabled,
@@ -373,7 +375,12 @@ export function installDemoApi(initialInterface?: Partial<Pick<InterfaceSettings
     }
     if (path === "/plugins" && method === "GET") return json([]);
     if (path === "/providers" && method === "GET") return json(providers);
-    if (path === "/providers" && method === "POST") return json(providers[0]);
+    if (path === "/providers" && method === "POST") {
+      const now = Date.now();
+      const provider: Provider = { ...body as ProviderInput, provider_id: `demo-${crypto.randomUUID()}`, created_at_ms: now, updated_at_ms: now };
+      providers = [...providers, provider];
+      return json(provider);
+    }
     if (path === "/providers/order" && method === "PUT") {
       const providerIds = readStringList(body, "provider_ids");
       const byId = new Map(providers.map((provider) => [provider.provider_id, provider]));
@@ -418,7 +425,15 @@ export function installDemoApi(initialInterface?: Partial<Pick<InterfaceSettings
       return json(models);
     }
     if (/^\/providers\/[^/]+$/.test(path)) {
-      return method === "DELETE" ? empty() : json(providers[0]);
+      if (method === "DELETE") return empty();
+      const providerId = decodeURIComponent(path.split("/")[2]);
+      const provider = providers.find((item) => item.provider_id === providerId);
+      if (!provider) return json({ message: `provider ${providerId} not found` }, 404);
+      if (method === "PUT") {
+        Object.assign(provider, body as ProviderInput, { updated_at_ms: Date.now() });
+        models = models.map((model) => model.provider_id === providerId ? { ...model, provider_name: provider.name, base_url: provider.base_url, api_key: provider.api_key, custom_headers_enabled: provider.custom_headers_enabled, custom_headers: provider.custom_headers } : model);
+      }
+      return json(provider);
     }
     if (path === "/models" && method === "GET") return json(models);
     if (path === "/models" && method === "POST") return json(models);

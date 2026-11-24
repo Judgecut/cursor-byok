@@ -383,6 +383,31 @@ mod tests {
 
     use super::*;
 
+    #[tokio::test]
+    async fn migration_0017_defaults_existing_provider_icons_to_automatic() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        let migrations = migrator_with_line_endings(MigrationLineEndings::Lf);
+        let previous = Migrator {
+            migrations: Cow::Owned(migrations.iter().take(16).cloned().collect()),
+            ..Migrator::DEFAULT
+        };
+        previous.run(&pool).await.unwrap();
+        sqlx::query("INSERT INTO provider_configs (provider_id, name, base_url, api_key, created_at_ms, updated_at_ms) VALUES ('existing', 'Existing', 'https://api.deepseek.com', 'test-key', 1, 2)").execute(&pool).await.unwrap();
+
+        migrations.run(&pool).await.unwrap();
+        let row: (String, i64, Option<String>) = sqlx::query_as(
+            "SELECT name, updated_at_ms, icon FROM provider_configs WHERE provider_id = 'existing'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row, ("Existing".into(), 2, None));
+    }
+
     #[test]
     fn normalized_checksums_match_the_published_lf_and_windows_crlf_migrations() {
         let lf = migrator_with_line_endings(MigrationLineEndings::Lf);

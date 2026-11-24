@@ -1372,6 +1372,7 @@ impl Provider for FakeProvider {
 
 fn provider_input() -> ProviderConfigInput {
     ProviderConfigInput {
+        icon: None,
         sort_order: 1,
         name: "example.com".into(),
         base_url: "https://example.com/v1".into(),

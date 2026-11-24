@@ -44,6 +44,7 @@ async fn model_test(events: Vec<(u64, &'static str)>) -> (ModelConnectivityResul
     });
     let provider = store
         .create_provider(&ProviderConfigInput {
+            icon: None,
             sort_order: 0,
             name: "test-provider".into(),
             base_url: format!("http://{address}"),

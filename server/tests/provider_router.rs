@@ -105,6 +105,7 @@ async fn recorded_reasoning_effort_matches_the_effective_request() {
     .unwrap();
     let provider_cfg = store
         .create_provider(&ProviderConfigInput {
+            icon: None,
             sort_order: 0,
             name: "Shared gateway".into(),
             base_url: format!("http://{address}"),

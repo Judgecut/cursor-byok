@@ -385,6 +385,7 @@ async fn irreducibly_oversized_current_input_fails_before_provider_dispatch() {
 
 fn test_provider_input() -> ProviderConfigInput {
     ProviderConfigInput {
+        icon: None,
         sort_order: 0,
         name: "example.com".into(),
         base_url: "https://example.com/v1".into(),

@@ -349,6 +349,7 @@ fn parse_legacy_entry(model: LegacyModel) -> Result<ParsedLegacyEntry> {
 
     Ok(ParsedLegacyEntry {
         provider: ProviderConfigInput {
+            icon: None,
             sort_order: model.sort.max(0),
             name: host_label(&base_url),
             base_url,

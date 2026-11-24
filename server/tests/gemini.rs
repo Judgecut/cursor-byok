@@ -111,6 +111,7 @@ async fn discovers_and_routes_gemini_with_native_tool_and_thought_replay() {
     });
     let provider = store
         .create_provider(&ProviderConfigInput {
+            icon: None,
             sort_order: 0,
             name: "Gateway".into(),
             base_url: format!("http://{address}/edge"),

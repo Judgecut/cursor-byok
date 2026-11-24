@@ -26,6 +26,7 @@ use tower::ServiceExt;
 
 fn provider_input(name: &str, base_url: &str) -> ProviderConfigInput {
     ProviderConfigInput {
+        icon: None,
         sort_order: 0,
         name: name.into(),
         base_url: base_url.into(),

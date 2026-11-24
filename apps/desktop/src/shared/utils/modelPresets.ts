@@ -1,10 +1,6 @@
 import type { RequestFormat } from "../api";
-import deepseekIcon from "../assets/provider-icons/deepseek.svg";
-import huoshanIcon from "../assets/provider-icons/huoshan.png";
-import kimiIcon from "../assets/provider-icons/kimi.svg";
-import minimaxIcon from "../assets/provider-icons/minimax.svg";
-import zhipuIcon from "../assets/provider-icons/zhipu.svg";
 import { defaultCustomHeaders } from "./modelDefaults";
+import type { ProviderIconKey } from "./providerIcons";
 
 export interface ModelPresetEntry {
   model_id: string;
@@ -20,9 +16,8 @@ export interface ModelPresetEndpoint {
 }
 
 export interface ModelPreset {
-  key: string;
+  key: ProviderIconKey;
   name: string;
-  icon: string;
   keyHint: string;
   endpoints: ModelPresetEndpoint[];
   models: ModelPresetEntry[];
@@ -54,7 +49,6 @@ export const modelPresets: ModelPreset[] = [
   {
     key: "zhipu",
     name: "智谱 GLM",
-    icon: zhipuIcon,
     keyHint: "bigmodel.cn → GLM Coding Plan → API Key（套餐 Key 与普通 Key 不通用）",
     endpoints: [
       anthropic("https://open.bigmodel.cn/api/anthropic"),
@@ -69,7 +63,6 @@ export const modelPresets: ModelPreset[] = [
   {
     key: "kimi",
     name: "Kimi (Moonshot)",
-    icon: kimiIcon,
     keyHint: "Kimi Code 编程套餐页获取 API Key（api.kimi.com/coding 端点）",
     endpoints: [
       anthropic("https://api.kimi.com/coding"),
@@ -83,7 +76,6 @@ export const modelPresets: ModelPreset[] = [
   {
     key: "deepseek",
     name: "DeepSeek",
-    icon: deepseekIcon,
     keyHint: "platform.deepseek.com → API Keys",
     endpoints: [
       anthropic("https://api.deepseek.com/anthropic"),
@@ -97,7 +89,6 @@ export const modelPresets: ModelPreset[] = [
   {
     key: "volcengine",
     name: "火山引擎方舟",
-    icon: huoshanIcon,
     keyHint: "火山方舟 Coding Plan（ark-code-latest 路由多款代码模型）",
     endpoints: [
       anthropic("https://ark.cn-beijing.volces.com/api/coding"),
@@ -108,7 +99,6 @@ export const modelPresets: ModelPreset[] = [
   {
     key: "minimax",
     name: "MiniMax",
-    icon: minimaxIcon,
     keyHint: "platform.minimaxi.com → 订阅 Coding Plan → API Key",
     endpoints: [
       anthropic("https://api.minimaxi.com/anthropic"),

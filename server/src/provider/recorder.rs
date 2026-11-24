@@ -588,6 +588,7 @@ mod tests {
         .unwrap();
         let provider = store
             .create_provider(&ProviderConfigInput {
+                icon: None,
                 sort_order: 0,
                 name: "example.com".into(),
                 base_url: "https://example.com/v1".into(),

@@ -109,7 +109,14 @@
 }
 
 .groupLabel {
+  gap: 8px;
   padding: 7px 8px 3px;
+
+  > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .optionRow {

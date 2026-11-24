@@ -1083,6 +1083,7 @@ async fn injected_user_context_interrupts_automatic_compaction() {
     let (_directory, store) = fixtures::temp_store().await;
     let provider_cfg = store
         .create_provider(&ProviderConfigInput {
+            icon: None,
             sort_order: 0,
             name: "example.com".into(),
             base_url: "https://example.com/v1".into(),

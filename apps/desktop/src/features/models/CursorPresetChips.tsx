@@ -1,4 +1,6 @@
 import { modelPresets, requestFormatLabels, trimTrailingSlash, type ModelPreset, type ModelPresetEndpoint } from "../../shared/utils/modelPresets";
+import { resolveProviderIcon } from "../../shared/utils/providerIcons";
+import { Icon } from "../../shared/ui/Icon";
 import styles from "./CursorPresetChips.module.scss";
 
 export function CursorPresetChips({ baseUrl, onPick }: { baseUrl: string; onPick: (preset: ModelPreset, endpoint: ModelPresetEndpoint) => void }) {
@@ -14,7 +16,7 @@ export function CursorPresetChips({ baseUrl, onPick }: { baseUrl: string; onPick
           title={preset.keyHint}
           onClick={() => onPick(preset, endpoint)}
         >
-          <img className={styles.icon} src={preset.icon} alt="" />
+          <Icon {...resolveProviderIcon(preset.key).visual} size="1.16em" />
           {preset.name} · {requestFormatLabels[endpoint.format]}
         </button>;
       }))}

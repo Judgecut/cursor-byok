@@ -9,6 +9,7 @@ use axum::{
     body::{to_bytes, Body},
     http::{header, Request, StatusCode},
 };
+use base64::{engine::general_purpose::STANDARD, Engine};
 use cursor_server::{
     control,
     network::NetworkClients,
@@ -53,6 +54,71 @@ async fn send(
     let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
     let parsed = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     (status, parsed)
+}
+
+#[tokio::test]
+async fn provider_icons_round_trip_through_management_api() {
+    let directory = tempfile::tempdir().unwrap();
+    let url = format!("sqlite://{}", directory.path().join("test.db").display());
+    let store = Store::connect(&url).await.unwrap();
+    let (router, _runtime) = setup_router(store).await;
+    let providers = "/__byok-api__/api/providers";
+    let mut input = json!({ "name": "Provider", "base_url": "https://api.deepseek.com", "api_key": "test-key", "icon": "openai" });
+    let (status, created) = send(router.clone(), "POST", providers, Some(input.clone())).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(created["icon"], "openai");
+    let provider = format!("{providers}/{}", created["provider_id"].as_str().unwrap());
+
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::new_rgba8(96, 96)
+        .write_to(&mut png, image::ImageFormat::Png)
+        .unwrap();
+    let custom_icon = format!("data:image/png;base64,{}", STANDARD.encode(png.get_ref()));
+    input["icon"] = json!(custom_icon);
+    let (status, updated) = send(router.clone(), "PUT", &provider, Some(input.clone())).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(updated["icon"], custom_icon);
+
+    let mut oversized = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::new_rgba8(97, 96)
+        .write_to(&mut oversized, image::ImageFormat::Png)
+        .unwrap();
+    let png_bytes = png.get_ref();
+    let without_iend_crc = &png_bytes[..png_bytes.len() - 4];
+    let mut invalid_crc = png_bytes.clone();
+    *invalid_crc.last_mut().unwrap() ^= 1;
+    for invalid_icon in [
+        "https://example.com/logo.png".to_owned(),
+        "file:///logo.png".to_owned(),
+        "data:image/svg+xml;base64,AAAA".to_owned(),
+        format!(
+            "data:image/png;base64,{}",
+            STANDARD.encode(&png_bytes[..33])
+        ),
+        format!("data:image/png;base64,{}", STANDARD.encode(without_iend_crc)),
+        format!("data:image/png;base64,{}", STANDARD.encode(invalid_crc)),
+        format!(
+            "data:image/png;base64,{}",
+            STANDARD.encode(oversized.get_ref())
+        ),
+        format!("data:image/png;base64,{}", "AAAA".repeat(23_000)),
+    ] {
+        input["icon"] = json!(invalid_icon);
+        let (status, _) = send(router.clone(), "PUT", &provider, Some(input.clone())).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    drop(router);
+    let reopened = Store::connect(&url).await.unwrap();
+    let (router, _runtime) = setup_router(reopened).await;
+    let (status, listed) = send(router.clone(), "GET", providers, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(listed[0]["icon"], custom_icon);
+
+    input["icon"] = Value::Null;
+    let (status, reset) = send(router, "PUT", &provider, Some(input)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(reset["icon"], Value::Null);
 }
 
 #[tokio::test]

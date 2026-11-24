@@ -17,7 +17,7 @@ use crate::{
 use super::{now_ms, Store};
 
 const PROVIDER_COLUMNS: &str = r#"
-    provider_id, sort_order, name, base_url, api_key,
+    provider_id, sort_order, name, icon, base_url, api_key,
     custom_headers_enabled, custom_headers_json, created_at_ms, updated_at_ms
 "#;
 
@@ -91,13 +91,14 @@ impl Store {
         }
         let result = sqlx::query(
             r#"UPDATE provider_configs SET
-                sort_order = ?, name = ?, base_url = ?, api_key = ?,
+                sort_order = ?, name = ?, icon = ?, base_url = ?, api_key = ?,
                 custom_headers_enabled = ?, custom_headers_json = ?,
                 updated_at_ms = ?
             WHERE provider_id = ?"#,
         )
         .bind(input.sort_order)
         .bind(&input.name)
+        .bind(&input.icon)
         .bind(&input.base_url)
         .bind(&input.api_key)
         .bind(input.custom_headers_enabled)
@@ -464,9 +465,9 @@ pub(super) async fn insert_provider_with_conflict(
 ) -> Result<bool> {
     let mut statement = String::from(
         r#"INSERT INTO provider_configs(
-            provider_id, sort_order, name, base_url, api_key,
+            provider_id, sort_order, name, icon, base_url, api_key,
             custom_headers_enabled, custom_headers_json, created_at_ms, updated_at_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
     );
     if ignore_existing {
         statement.push_str(" ON CONFLICT(provider_id) DO NOTHING");
@@ -475,6 +476,7 @@ pub(super) async fn insert_provider_with_conflict(
         .bind(provider_id)
         .bind(input.sort_order)
         .bind(&input.name)
+        .bind(&input.icon)
         .bind(&input.base_url)
         .bind(&input.api_key)
         .bind(input.custom_headers_enabled)
@@ -542,6 +544,7 @@ fn provider_from_row(row: sqlx::sqlite::SqliteRow) -> Result<ProviderConfig> {
         provider_id: row.try_get("provider_id")?,
         sort_order: row.try_get("sort_order")?,
         name: row.try_get("name")?,
+        icon: row.try_get("icon")?,
         base_url: row.try_get("base_url")?,
         api_key: row.try_get("api_key")?,
         custom_headers_enabled: row.try_get("custom_headers_enabled")?,
@@ -602,6 +605,7 @@ mod tests {
 
     fn provider_input(name: &str) -> ProviderConfigInput {
         ProviderConfigInput {
+            icon: None,
             sort_order: 0,
             name: name.into(),
             base_url: "https://example.com/v1".into(),

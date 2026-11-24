@@ -1,0 +1,47 @@
+@use "../../styles/typography" as type;
+
+.field,
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label {
+  font-size: type.$font-size-base;
+}
+
+.preview,
+.actions,
+.presets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preview {
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-xs;
+}
+
+.choices {
+  padding: 10px;
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 6px;
+
+  button[aria-pressed="true"] {
+    border-color: var(--vscode-focusBorder);
+  }
+}
+
+.presets button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.error {
+  color: var(--vscode-errorForeground);
+  font-size: type.$font-size-xs;
+}

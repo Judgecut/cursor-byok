@@ -6,10 +6,16 @@ import { checkIcon, chevronDownIcon, windowCloseIcon } from "./icons";
 import { VirtualList } from "../virtual/VirtualList";
 import styles from "./ModelSelect.module.scss";
 
+type ModelSelectGroup = {
+  key: string;
+  label: string;
+  visual?: Pick<IconProps, "icon" | "src">;
+};
+
 export type ModelSelectOption = {
   value: string;
   label: string;
-  group: string;
+  group: ModelSelectGroup;
   icon?: IconProps["icon"];
   iconSrc?: string;
 };
@@ -24,24 +30,31 @@ type ModelSelectProps = {
 );
 
 type MenuItem =
-  | { kind: "group"; key: string; label: string; options: ModelSelectOption[] }
+  | { kind: "group"; key: string; group: ModelSelectGroup; options: ModelSelectOption[] }
   | { kind: "option"; key: string; option: ModelSelectOption };
 
 function groupedItems(options: ModelSelectOption[]): MenuItem[] {
-  const groups = new Map<string, ModelSelectOption[]>();
-  for (const option of options) {
-    const group = groups.get(option.group);
-    if (group) group.push(option);
-    else groups.set(option.group, [option]);
+  const groups = new Map<string, { group: ModelSelectGroup; options: ModelSelectOption[] }>();
+  for (const option of options)
+  {
+    const entry = groups.get(option.group.key);
+    if (entry)
+    {
+      entry.options.push(option);
+    }
+    else
+    {
+      groups.set(option.group.key, { group: option.group, options: [option] });
+    }
   }
-  return [...groups].flatMap(([group, groupOptions]) => [
-    { kind: "group" as const, key: `group:${group}`, label: group, options: groupOptions },
+  return [...groups.values()].flatMap(({ group, options: groupOptions }) => [
+    { kind: "group" as const, key: `group:${group.key}`, group, options: groupOptions },
     ...groupOptions.map((option) => ({ kind: "option" as const, key: `option:${option.value}`, option })),
   ]);
 }
 
-function GroupCheckbox({ label, options, selected, onChange }: {
-  label: string;
+function GroupCheckbox({ group, options, selected, onChange }: {
+  group: ModelSelectGroup;
   options: ModelSelectOption[];
   selected: Set<string>;
   onChange: (checked: boolean) => void;
@@ -66,7 +79,8 @@ function GroupCheckbox({ label, options, selected, onChange }: {
     <span className={styles.checkbox} data-indeterminate={indeterminate || undefined} aria-hidden="true">
       {checked && <Icon icon={checkIcon} size="0.875em" />}
     </span>
-    <span>{label}</span>
+    {group.visual && <Icon {...group.visual} />}
+    <span>{group.label}</span>
   </label>;
 }
 
@@ -195,12 +209,12 @@ export function ModelSelect(props: ModelSelectProps) {
         >{(item, index) => item.kind === "group"
           ? mode === "multiple"
             ? <GroupCheckbox
-                label={item.label}
+                group={item.group}
                 options={item.options}
                 selected={selected}
                 onChange={(checked) => toggleGroup(item.options, checked)}
               />
-            : <div className={styles.groupLabel}>{item.label}</div>
+            : <div className={styles.groupLabel}>{item.group.visual && <Icon {...item.group.visual} />}<span>{item.group.label}</span></div>
           : <label
               ref={index === 1 ? firstOption : undefined}
               className={styles.optionRow}

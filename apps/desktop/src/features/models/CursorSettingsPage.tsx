@@ -76,7 +76,7 @@ export function CursorSettingsPage() {
     setProviderDraft(providerDraftFrom(provider));
   };
   const saveProvider = async () => {
-    if (!providerDraft || savingProvider) return;
+    if (!providerDraft || providerDraft.uploadingIcon || savingProvider) return;
     setSavingProvider(true);
     try {
       const input = providerDraftInput(providerDraft);
@@ -373,11 +373,12 @@ export function CursorSettingsPage() {
       open={providerDraft !== null}
       title={editingProvider ? t("编辑供应商") : t("添加供应商")}
       busy={cursorBusy || savingProvider}
+      submitDisabled={providerDraft?.uploadingIcon}
       onClose={() => { setProviderDraft(null); setEditingProvider(null); }}
       onSubmit={() => void saveProvider()}
       submitLabel={t("保存")}
     >
-      {providerDraft && <CursorProviderEditor draft={providerDraft} onChange={setProviderDraft} />}
+      {providerDraft && <CursorProviderEditor draft={providerDraft} saving={cursorBusy || savingProvider} onChange={(update) => setProviderDraft((current) => current && update(current))} />}
     </Modal>
     <Modal fullHeight open={draft !== null} title={editing ? t("编辑模型") : t("添加模型")} banner={draft && (editorTesting || editorTestState) ? <CursorModelTestResult state={editorTestState} testing={editorTesting} /> : undefined} busy={cursorBusy || savingAndTesting} onClose={() => { if (editing && editorTesting) void cancelModelTest(editing.model_hash); setDraft(null); setEditing(null); }} onSubmit={() => void save()} submitLabel={t("保存")} secondaryAction={<button type="button" className={controls.secondary} disabled={cursorBusy || savingAndTesting || (batchTesting && !editorTesting)} onClick={() => void (editorTesting && editing ? cancelModelTest(editing.model_hash) : saveAndTest())}>{savingAndTesting ? t("处理中…") : editorTesting ? t("取消测试") : t("保存并测试")}</button>}>
       {draft && <CursorModelEditor draft={draft} providers={providers} modelOptions={activeModelOptions} discovering={discovering} onChange={setDraft} onDiscover={discover} />}

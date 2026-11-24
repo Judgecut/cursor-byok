@@ -1,5 +1,150 @@
+import type { Locator } from "@playwright/test";
 import type { OverviewModelSummary } from "../../src/shared/api";
 import { test, expect } from "./fixtures";
+
+async function selectProviderIcon(input: Locator, name: string, content: number | number[] | string)
+{
+  await input.evaluate((element, { name, content }) =>
+  {
+    const bytes = typeof content === "number" ? new Uint8Array(content) : Uint8Array.from(typeof content === "string" ? Array.from(atob(content), (character) => character.charCodeAt(0)) : content);
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([bytes], name, { type: "image/png" }));
+    (element as HTMLInputElement).files = transfer.files;
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  }, { name, content });
+}
+
+test("previews, stores, and resets provider icons across model views", async ({ page, management }) =>
+{
+  await page.goto("#/harness/cursor");
+  await page.getByTitle("Add provider", { exact: true }).click();
+  const add = page.getByRole("dialog", { name: "Add provider", exact: true });
+  const address = add.getByLabel("Server address", { exact: true });
+  await add.getByLabel("Provider name", { exact: true }).fill("Gateway");
+  await add.getByPlaceholder("sk-xxxxxx", { exact: true }).fill("test-placeholder");
+  await address.fill("https://api.deepseek.com.example");
+  await expect(add.getByText("Auto-match · Generic icon")).toBeVisible();
+  await address.fill("https://api.deepseek.com/v1");
+  await expect(add.getByText("Auto-match · DeepSeek")).toBeVisible();
+  await add.getByRole("button", { name: "Change icon" }).click();
+  await add.getByRole("button", { name: "OpenAI", exact: true }).press("Escape");
+  await expect(add.getByRole("button", { name: "Change icon" })).toBeFocused();
+  await add.getByRole("button", { name: "Change icon" }).click();
+  await add.getByRole("button", { name: "OpenAI", exact: true }).click();
+  await address.fill("https://api.anthropic.com");
+  await expect(add.getByText("OpenAI", { exact: true })).toBeVisible();
+  await add.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(add).toBeHidden();
+  expect(management.providers[0].icon).toBe("openai");
+
+  const providerCard = page.locator('[data-provider-id="smoke-provider"]');
+  const editProvider = providerCard.getByRole("button", { name: "Add model", exact: true }).locator("..").getByRole("button", { name: "Edit", exact: true });
+  await editProvider.click();
+  const edit = page.getByRole("dialog", { name: "Edit provider", exact: true });
+  await edit.getByRole("button", { name: "Change icon" }).click();
+  await edit.getByRole("button", { name: "Use automatic matching" }).click();
+  await expect(edit.getByText("Auto-match · Anthropic (Claude)")).toBeVisible();
+  await edit.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(management.providers[0].icon).toBe("openai");
+
+  await editProvider.click();
+  await edit.getByRole("button", { name: "Change icon" }).click();
+  const file = edit.locator('input[type="file"]');
+  await selectProviderIcon(file, "oversized.png", 2 * 1024 * 1024 + 1);
+  await expect(edit.getByRole("alert")).toHaveText("The image must be 2 MB or smaller");
+  await selectProviderIcon(file, "invalid.png", [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+  await expect(edit.getByRole("alert")).toHaveText("Could not read the image");
+  await expect(edit.getByText("OpenAI", { exact: true }).first()).toBeVisible();
+
+  const image = await page.evaluate(() =>
+  {
+    const decode = window.createImageBitmap.bind(window);
+    window.createImageBitmap = async (source) =>
+    {
+      await new Promise<void>((resolve) => window.addEventListener("release-provider-icon", () => resolve(), { once: true }));
+      return decode(source);
+    };
+    const canvas = document.createElement("canvas");
+    canvas.width = 16;
+    canvas.height = 8;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "#f00";
+    context.fillRect(0, 0, 16, 8);
+    return canvas.toDataURL().split(",")[1];
+  });
+  await selectProviderIcon(file, "logo.png", image);
+  await expect(edit.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+  const providerName = edit.getByLabel("Provider name", { exact: true });
+  await providerName.fill("Renamed gateway");
+  await page.evaluate(() => window.dispatchEvent(new Event("release-provider-icon")));
+  await expect(edit.getByText("Custom icon", { exact: true })).toBeVisible();
+  await expect(providerName).toBeFocused();
+
+  const providerRoute = "**/api/providers/smoke-provider";
+  let releaseSave!: () => void;
+  const pendingSave = new Promise<void>((resolve) => { releaseSave = resolve; });
+  await page.route(providerRoute, async (route) => {
+    await pendingSave;
+    await route.fallback();
+  });
+  try
+  {
+    await edit.getByRole("button", { name: "Change icon" }).click();
+    await edit.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(edit.getByRole("button", { name: "Processing…", exact: true })).toBeDisabled();
+    await expect(edit.getByRole("button", { name: "Change icon" })).toBeDisabled();
+    await expect(edit.getByRole("button", { name: "Use automatic matching" })).toBeDisabled();
+    await expect(edit.getByRole("button", { name: "OpenAI", exact: true })).toBeDisabled();
+    await expect(edit.getByRole("button", { name: "Upload image", exact: true })).toBeDisabled();
+    await expect(file).toBeDisabled();
+  }
+  finally
+  {
+    releaseSave();
+  }
+  await expect(edit).toBeHidden();
+  await page.unroute(providerRoute);
+  const saved = management.providers[0];
+  expect(saved.name).toBe("Renamed gateway");
+  expect(saved.icon).toMatch(/^data:image\/png;base64,/);
+  const png = new DataView(Uint8Array.from(atob(saved.icon!.split(",")[1]), (character) => character.charCodeAt(0)).buffer);
+  expect([png.getUint32(16), png.getUint32(20)]).toEqual([96, 96]);
+
+  await page.reload();
+  await expect(providerCard.locator("img")).toHaveAttribute("src", saved.icon!);
+  await providerCard.getByRole("button", { name: "Add model", exact: true }).click();
+  const model = page.getByRole("dialog", { name: "Add model", exact: true });
+  await expect(model.getByRole("button", { name: "Provider", exact: true }).locator("img")).toHaveAttribute("src", saved.icon!);
+  await model.getByRole("button", { name: "Request format", exact: true }).click();
+  await page.getByRole("option", { name: "Anthropic Messages", exact: true }).click();
+  await model.getByPlaceholder("claude-opus-4-6", { exact: true }).fill("custom-model");
+  await model.getByLabel("Display name", { exact: true }).fill("Custom model");
+  await model.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(model).toBeHidden();
+
+  management.providers.push({ ...saved, provider_id: "second-provider", icon: "gemini" });
+  management.models.push({ ...management.models[0], provider_id: "second-provider", model_hash: "second-model", display_name: "Second model", model_id: "second-model" });
+  management.settings.theme = "default-light";
+  await page.goto("#/settings");
+  await page.reload();
+  const commit = page.getByText("Commit Message Model Settings", { exact: true }).locator("xpath=ancestor::section[1]");
+  await commit.getByRole("button", { name: "Edit", exact: true }).click();
+  await commit.getByRole("button", { name: /Generation model/ }).click();
+  const models = page.getByRole("listbox", { name: "Generation model", exact: true });
+  await expect(models.getByRole("option").first()).toHaveText("Direct");
+  await expect(models.getByText("Renamed gateway", { exact: true })).toHaveCount(2);
+  await expect(models.locator("img").first()).toHaveAttribute("src", saved.icon!);
+  await expect(models.locator("img").nth(1)).toHaveAttribute("src", /gemini/);
+  await page.keyboard.press("Escape");
+
+  await page.goto("#/harness/cursor");
+  await editProvider.click();
+  await edit.getByRole("button", { name: "Change icon" }).click();
+  await edit.getByRole("button", { name: "Use automatic matching" }).click();
+  await edit.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(edit).toBeHidden();
+  expect(management.providers[0].icon).toBeNull();
+});
 
 test("creates a provider and model through the real forms and reloads them", async ({ page, management }) =>
 {

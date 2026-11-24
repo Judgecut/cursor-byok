@@ -73,6 +73,13 @@ export const test = base.extend<{ management: ManagementState }>({
         state.providers.push(provider);
         response = provider;
       }
+      else if (/^\/providers\/[^/]+$/.test(path) && method === "PUT")
+      {
+        const provider = state.providers.find((item) => item.provider_id === decodeURIComponent(path.split("/")[2]));
+        expect(provider).toBeDefined();
+        Object.assign(provider!, body);
+        response = provider;
+      }
       else if (path === "/models" && method === "POST")
       {
         const inputs = (body as { models: ModelInput[] }).models;
@@ -80,7 +87,8 @@ export const test = base.extend<{ management: ManagementState }>({
         {
           const provider = state.providers.find((item) => item.provider_id === input.provider_id);
           expect(provider).toBeDefined();
-          return { ...provider!, ...input, model_hash: `smoke-model-${state.models.length + index}`, provider_name: provider!.name, created_at_ms: 1, updated_at_ms: 1 };
+          const { icon: _icon, ...providerFields } = provider!;
+          return { ...providerFields, ...input, model_hash: `smoke-model-${state.models.length + index}`, provider_name: providerFields.name, created_at_ms: 1, updated_at_ms: 1 };
         });
         state.models.push(...created);
         response = created;

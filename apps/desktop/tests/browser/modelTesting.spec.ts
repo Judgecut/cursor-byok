@@ -5,7 +5,7 @@ const result: ModelConnectivityResult = { duration_ms: 2000, generation_ms: 1000
 
 test.beforeEach(async ({ management }) =>
 {
-  const provider: Provider = { provider_id: "batch-provider", sort_order: 0, name: "Batch provider", base_url: "https://provider.example", api_key: "test-key", custom_headers_enabled: false, custom_headers: {}, created_at_ms: 1, updated_at_ms: 1 };
+  const provider: Provider = { provider_id: "batch-provider", sort_order: 0, name: "Batch provider", icon: null, base_url: "https://provider.example", api_key: "test-key", custom_headers_enabled: false, custom_headers: {}, created_at_ms: 1, updated_at_ms: 1 };
   management.providers.push(provider);
   for (const [sort_order, model_hash] of ["first", "second", "third"].entries())
   {

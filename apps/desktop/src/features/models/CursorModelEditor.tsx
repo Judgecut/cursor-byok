@@ -2,6 +2,7 @@ import { useRef } from "react";
 import geminiIconUrl from "../../shared/assets/provider-icons/gemini.png";
 import type { Model, ModelInput, RequestFormat, Provider } from "../../shared/api";
 import { modelPresets, requestFormatLabels, trimTrailingSlash } from "../../shared/utils/modelPresets";
+import { resolveProviderIcon } from "../../shared/utils/providerIcons";
 import { Button } from "../../shared/ui/Button";
 import { FormField, TextInput } from "../../shared/ui/FormControls";
 import { Combobox, Select, type ComboboxHandle } from "../../shared/ui/Select";
@@ -133,10 +134,10 @@ export function CursorModelEditor({ draft, providers, modelOptions, discovering,
       ...(presetModel && draft.model.max_output_tokens == null ? { max_output_tokens: presetModel.max_output_tokens } : {}),
     });
   };
-  const providerOptions = providers.map((provider) => ({
-    value: provider.provider_id,
-    label: provider.name,
-  }));
+  const providerOptions = providers.map((provider) => {
+    const { visual } = resolveProviderIcon(provider.icon, provider.base_url);
+    return { value: provider.provider_id, label: provider.name, icon: visual.icon, iconSrc: visual.src };
+  });
 
   return <div className={styles.editor}>
     <div className={styles.grid}>

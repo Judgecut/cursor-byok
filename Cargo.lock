@@ -1237,6 +1237,7 @@ dependencies = [
  "json5",
  "parking_lot",
  "pem",
+ "png",
  "prost",
  "prost-build",
  "prost-types",

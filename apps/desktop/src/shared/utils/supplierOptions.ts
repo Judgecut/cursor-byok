@@ -47,17 +47,20 @@ export function buildModelFilterOptions(
   locale: Locale,
 ): ModelSelectOption[] {
   const pluginGroups = buildPluginLabelMap(plugins, locale);
-  return models.map((item) => ({
-    value: item.supplier_key,
-    label: item.active ? item.label : t("{label}（历史）", { label: item.label }),
-    group: (item.source_kind === "plugin" ? pluginGroups.get(item.endpoint_key) : undefined) || item.group,
-    iconSrc: item.plugin_icon || undefined,
-    icon: item.plugin_icon
-      ? undefined
-      : item.provider_type === "anthropic"
-        ? claudeIcon
-        : (item.source_kind === "plugin" || item.provider_type === "gemini")
-          ? flatColorOrganizationIcon
-          : openAiIcon,
-  }));
+  return models.map((item) => {
+    const groupLabel = (item.source_kind === "plugin" ? pluginGroups.get(item.endpoint_key) : undefined) || item.group;
+    return {
+      value: item.supplier_key,
+      label: item.active ? item.label : t("{label}（历史）", { label: item.label }),
+      group: { key: groupLabel, label: groupLabel },
+      iconSrc: item.plugin_icon || undefined,
+      icon: item.plugin_icon
+        ? undefined
+        : item.provider_type === "anthropic"
+          ? claudeIcon
+          : (item.source_kind === "plugin" || item.provider_type === "gemini")
+            ? flatColorOrganizationIcon
+            : openAiIcon,
+    };
+  });
 }

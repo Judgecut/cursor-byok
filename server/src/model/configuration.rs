@@ -1,6 +1,7 @@
 //! Defines model and provider configuration.
-use std::{fmt, str::FromStr};
+use std::{fmt, io::Cursor, str::FromStr};
 
+use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -115,6 +116,7 @@ pub struct ProviderConfigInput {
     #[serde(default)]
     pub sort_order: i64,
     pub name: String,
+    pub icon: Option<String>,
     pub base_url: String,
     pub api_key: String,
     #[serde(default)]
@@ -128,6 +130,7 @@ pub struct ProviderConfig {
     pub provider_id: String,
     pub sort_order: i64,
     pub name: String,
+    pub icon: Option<String>,
     pub base_url: String,
     pub api_key: String,
     pub custom_headers_enabled: bool,
@@ -244,14 +247,57 @@ pub fn normalize_provider_input(input: &ProviderConfigInput) -> Result<ProviderC
     let base_url = normalize_request_url(&input.base_url)?;
     let api_key = required(&input.api_key, "provider API key")?;
     validate_headers(&input.custom_headers)?;
+    if let Some(icon) = input.icon.as_deref() {
+        validate_provider_icon(icon)?;
+    }
     Ok(ProviderConfigInput {
         sort_order: input.sort_order.max(0),
         name,
+        icon: input.icon.clone(),
         base_url,
         api_key,
         custom_headers_enabled: input.custom_headers_enabled,
         custom_headers: input.custom_headers.clone(),
     })
+}
+
+fn validate_provider_icon(icon: &str) -> Result<()> {
+    const PNG_PREFIX: &str = "data:image/png;base64,";
+    const PNG_MAX_BYTES: usize = 64 * 1024;
+    const PNG_SIZE: u32 = 96;
+
+    if let Some(encoded) = icon.strip_prefix(PNG_PREFIX) {
+        let invalid = || Error::Config("invalid provider icon PNG".into());
+        if encoded.len() > PNG_MAX_BYTES.div_ceil(3) * 4 {
+            return Err(invalid());
+        }
+        let bytes = STANDARD.decode(encoded).map_err(|_| invalid())?;
+        if bytes.len() > PNG_MAX_BYTES {
+            return Err(invalid());
+        }
+        let limits = png::Limits { bytes: 1024 * 1024 };
+        let mut decoder = png::Decoder::new_with_limits(Cursor::new(bytes), limits);
+        decoder.set_ignore_text_chunk(true);
+        let mut reader = decoder.read_info().map_err(|_| invalid())?;
+        let info = reader.info();
+        if info.width != PNG_SIZE || info.height != PNG_SIZE || info.animation_control.is_some() {
+            return Err(invalid());
+        }
+        let mut pixels = vec![0; reader.output_buffer_size().ok_or_else(invalid)?];
+        reader.next_frame(&mut pixels).map_err(|_| invalid())?;
+        reader.finish().map_err(|_| invalid())?;
+        return Ok(());
+    }
+
+    let valid_key = icon.len() <= 32
+        && icon.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
+        && icon
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-');
+    if !valid_key {
+        return Err(Error::Config("invalid provider icon key".into()));
+    }
+    Ok(())
 }
 
 pub fn normalize_model_input(input: &ModelConfigInput) -> Result<ModelConfigInput> {

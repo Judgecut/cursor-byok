@@ -46,6 +46,7 @@ async fn create_test_model(
 ) -> ModelConfig {
     let provider = store
         .create_provider(&ProviderConfigInput {
+            icon: None,
             sort_order: 0,
             name: group_name
                 .map(str::to_owned)
@@ -262,6 +263,7 @@ async fn same_model_across_suppliers_aggregates_cleanly_and_shares_identity_acro
         .update_provider(
             &openai_model.provider_id,
             &ProviderConfigInput {
+                icon: None,
                 sort_order: 0,
                 name: "renamed-group".into(),
                 base_url: "https://api.openai.com/v1".into(),

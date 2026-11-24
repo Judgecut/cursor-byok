@@ -1,9 +1,9 @@
-import type { IconifyIcon } from "@iconify/react/offline";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Sortable from "sortablejs";
 import type { Model, PluginModelDescriptor, Provider, RequestFormat } from "../../shared/api";
+import { resolveProviderIcon } from "../../shared/utils/providerIcons";
 import { Card } from "../../shared/ui/Card";
-import { Icon } from "../../shared/ui/Icon";
+import { Icon, type IconProps } from "../../shared/ui/Icon";
 import { addIcon, chevronDownIcon, chevronRightIcon, claudeIcon, dragIcon, editIcon, openAiIcon, trashIcon } from "../../shared/ui/icons";
 import { TruncatedButton } from "../../shared/ui/TruncatedButton";
 import { CursorModelTestResult, type CursorModelTestState } from "./CursorModelTestResult";
@@ -173,7 +173,7 @@ export function CursorModelCards(props: CursorModelCardsProps) {
     {pluginGroups(props.pluginModels).map((group) => <CollapsibleGroup
       key={group.pluginId}
       label={group.pluginName}
-      iconSrc={group.icon}
+      visual={group.icon ? { src: group.icon } : undefined}
       defaultOpen={pluginsDefaultOpen}
     >
       {group.models.map((model) => <PluginModelRow
@@ -213,6 +213,7 @@ function ProviderGroupsList({
       className={styles.providerCard}
       providerId={group.provider.provider_id}
       label={group.label}
+      visual={resolveProviderIcon(group.provider.icon, group.provider.base_url).visual}
       defaultOpen
       dragHandle={canSortProviders ? <SortHandle className={styles.providerSortHandle} disabled={props.disabled} /> : undefined}
       actions={<ProviderActionButtons
@@ -249,7 +250,7 @@ function TypeGroupCard({ group, props }: { group: CursorModelGroup; props: Curso
 
   return <CollapsibleGroup
     label={group.label}
-    icon={group.protocol === "gemini" ? undefined : group.protocol === "anthropic" ? claudeIcon : openAiIcon}
+    visual={group.protocol === "gemini" ? undefined : { icon: group.protocol === "anthropic" ? claudeIcon : openAiIcon }}
     defaultOpen
   >
     {providersInType.length > 0 && <TypeProviderSubgroups
@@ -306,6 +307,7 @@ function TypeProviderSubgroups({
         <div className={styles.providerSubheader}>
           {canSortProviders && <SortHandle className={styles.providerSortHandle} disabled={props.disabled} />}
           <div className={styles.providerSubheaderTitle}>
+            <Icon {...resolveProviderIcon(provider.icon, provider.base_url).visual} size="1.1em" />
             <span className={styles.providerSubheaderName}>{provider.name}</span>
           </div>
           <ProviderActionButtons
@@ -421,10 +423,9 @@ function pluginGroups(models: PluginModelDescriptor[]) {
   return groups;
 }
 
-function CollapsibleGroup({ label, icon, iconSrc, defaultOpen = true, className, providerId, dragHandle, actions, children }: {
+function CollapsibleGroup({ label, visual, defaultOpen = true, className, providerId, dragHandle, actions, children }: {
   label: string;
-  icon?: IconifyIcon;
-  iconSrc?: string;
+  visual?: Pick<IconProps, "icon" | "src">;
   defaultOpen?: boolean;
   className?: string;
   providerId?: string;
@@ -442,8 +443,7 @@ function CollapsibleGroup({ label, icon, iconSrc, defaultOpen = true, className,
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        {icon && <Icon icon={icon} size="1.1em" />}
-        {iconSrc && <Icon src={iconSrc} size="1.1em" />}
+        {visual && <Icon {...visual} size="1.1em" />}
         <span className={styles.groupLabel}>{label}</span>
       </button>
       {actions}

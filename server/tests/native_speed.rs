@@ -92,6 +92,7 @@ async fn native_stream(protocol: &str, thinking_first: bool) {
         .unwrap();
     let provider = store
         .create_provider(&ProviderConfigInput {
+            icon: None,
             sort_order: 0,
             name: protocol.into(),
             base_url: format!("http://{address}"),

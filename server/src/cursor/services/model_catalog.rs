@@ -829,6 +829,7 @@ mod tests {
 
     fn test_provider_input(name: &str) -> crate::model::ProviderConfigInput {
         crate::model::ProviderConfigInput {
+            icon: None,
             sort_order: 0,
             name: name.into(),
             base_url: "https://provider.example/v1".into(),

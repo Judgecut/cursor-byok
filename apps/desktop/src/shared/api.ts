@@ -9,6 +9,7 @@ export interface Provider {
   provider_id: string;
   sort_order: number;
   name: string;
+  icon: string | null;
   base_url: string;
   api_key: string;
   custom_headers_enabled: boolean;
@@ -20,6 +21,7 @@ export interface Provider {
 export interface ProviderInput {
   sort_order: number;
   name: string;
+  icon: string | null;
   base_url: string;
   api_key: string;
   custom_headers_enabled: boolean;

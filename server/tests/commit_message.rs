@@ -45,6 +45,7 @@ async fn create_model(
 ) -> cursor_server::model::ModelConfig {
     let provider = store
         .create_provider(&ProviderConfigInput {
+            icon: None,
             sort_order: 1,
             name: "example.com".into(),
             base_url: "https://example.com/v1".into(),

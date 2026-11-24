@@ -6,11 +6,12 @@ import { useAppStore } from "../../shared/store/appStore";
 import { Button } from "../../shared/ui/Button";
 import { Modal } from "../../shared/ui/Modal";
 import { ModelSelect, type ModelSelectOption } from "../../shared/ui/ModelSelect";
-import { claudeIcon, flatColorOrganizationIcon, openAiIcon } from "../../shared/ui/icons";
+import { flatColorOrganizationIcon } from "../../shared/ui/icons";
 import { TitledCard } from "../../shared/ui/TitledCard";
 import { useMessage } from "../../shared/ui/message";
 import controls from "../../shared/ui/Controls.module.scss";
 import { modelProviderName } from "../../shared/utils/modelProvider";
+import { resolveProviderIcon } from "../../shared/utils/providerIcons";
 import styles from "./CommitSettingsCard.module.scss";
 
 function errorText(cause: unknown) {
@@ -18,7 +19,7 @@ function errorText(cause: unknown) {
 }
 
 export function CommitSettingsCard() {
-  const { models, plugins } = useAppStore();
+  const { models, plugins, providers } = useAppStore();
   const { locale } = useI18n();
   const message = useMessage();
   const [view, setView] = useState<CommitSettingsView | null>(null);
@@ -56,7 +57,13 @@ export function CommitSettingsCard() {
   }, [locale, message]);
 
   const modelOptions = useMemo(() => {
-    const options: ModelSelectOption[] = [{ value: "", label: t("直连"), group: "Cursor" }];
+    const cursorGroup = { key: "cursor", label: "Cursor" };
+    const options: ModelSelectOption[] = [{ value: "", label: t("直连"), group: cursorGroup }];
+    const providerGroups = new Map(providers.map((provider) => [provider.provider_id, {
+      key: `builtin:${provider.provider_id}`,
+      label: provider.name,
+      visual: resolveProviderIcon(provider.icon, provider.base_url).visual,
+    }]));
     const seen = new Set<string>();
     for (const model of models) {
       seen.add(model.model_hash);
@@ -65,14 +72,13 @@ export function CommitSettingsCard() {
         label: model.display_name && model.display_name !== model.model_id
           ? `${model.display_name}（${model.model_id}）`
           : model.display_name || model.model_id,
-        group: modelProviderName(model),
-        icon: model.request_format === "gemini" ? undefined : model.request_format === "anthropic" ? claudeIcon : openAiIcon,
+        group: providerGroups.get(model.provider_id) ?? { key: `builtin:${model.provider_id}`, label: modelProviderName(model) },
       });
     }
     for (const plugin of plugins) {
       for (const provider of plugin.providers) {
         if (!provider.configured) continue;
-        const group = pluginText(provider.displayName, locale) || plugin.name;
+        const group = { key: `plugin://${plugin.id}/${provider.id}`, label: pluginText(provider.displayName, locale) || plugin.name };
         for (const model of provider.models.filter((model) => model.enabled)) {
           seen.add(model.id);
           options.push({
@@ -86,10 +92,10 @@ export function CommitSettingsCard() {
       }
     }
     if (view?.model_id && !seen.has(view.model_id)) {
-      options.push({ value: view.model_id, label: view.model_id, group: "Cursor" });
+      options.push({ value: view.model_id, label: view.model_id, group: cursorGroup });
     }
     return options;
-  }, [locale, models, plugins, view]);
+  }, [locale, models, plugins, providers, view]);
 
   const persist = useCallback(
     async (modelId: string, prompt: string) => {
