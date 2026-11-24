@@ -154,6 +154,8 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
             "overview_calendar_window": "year",
             "overview_calendar_chart_type": "heatmap",
             "sidebar_collapsed": false,
+            "home_motion_mode": "system",
+            "home_auto_refresh_enabled": true,
             "home_refresh_interval_seconds": 30,
             "calls_refresh_interval_seconds": 5
         })
@@ -223,6 +225,8 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
             "overview_calendar_window": "month",
             "overview_calendar_chart_type": "bar",
             "sidebar_collapsed": true,
+            "home_motion_mode": "off",
+            "home_auto_refresh_enabled": false,
             "home_refresh_interval_seconds": 45,
             "calls_refresh_interval_seconds": 60
         })),
@@ -247,6 +251,8 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
             "overview_calendar_window": "month",
             "overview_calendar_chart_type": "bar",
             "sidebar_collapsed": true,
+            "home_motion_mode": "off",
+            "home_auto_refresh_enabled": false,
             "home_refresh_interval_seconds": 45,
             "calls_refresh_interval_seconds": 60
         })
@@ -292,6 +298,8 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
             "overview_calendar_window": "month",
             "overview_calendar_chart_type": "bar",
             "sidebar_collapsed": true,
+            "home_motion_mode": "off",
+            "home_auto_refresh_enabled": false,
             "home_refresh_interval_seconds": 45,
             "calls_refresh_interval_seconds": 60
         })

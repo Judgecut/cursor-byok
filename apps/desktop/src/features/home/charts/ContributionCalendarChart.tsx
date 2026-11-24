@@ -23,6 +23,8 @@ export type { ContributionDay };
 
 type ContributionCalendarChartProps = {
   data: ContributionDay[];
+  animate: boolean;
+  filterKey: string;
   windowMode: ContributionWindow;
   onWindowModeChange: (value: ContributionWindow) => void;
   chartType: OverviewCalendarChartType;
@@ -248,15 +250,16 @@ function buildSeriesChartOption({
         },
         data: [{ yAxis: series.averageActiveTokens }],
       }
-    : undefined;
+    : { data: [] };
 
   const barSeries: EChartsCoreOption[] = [
     ...(series.maxTokens > 0
       ? [{
+          id: "empty",
           name: t("无用量"),
           type: "bar",
           stack: "empty-placeholder",
-          data: series.points.map((point) => (point.tokens === 0 ? axisMaximum : 0)),
+          data: series.points.map((point) => ({ id: point.date, value: point.tokens === 0 ? axisMaximum : 0 })),
           barMaxWidth: 18,
           silent: true,
           z: 0,
@@ -265,11 +268,13 @@ function buildSeriesChartOption({
         }]
       : []),
     {
+      id: "tokens-bar",
       name: t("Token 用量"),
       type: "bar",
       barMaxWidth: 18,
       barGap: "-100%",
       data: series.points.map((point) => ({
+        id: point.date,
         value: point.tokens,
         itemStyle: {
           color: CONTRIBUTION_LEVEL_COLORS[point.level],
@@ -283,8 +288,9 @@ function buildSeriesChartOption({
   const lineSeries: EChartsCoreOption[] = [
     {
       name: t("Token 用量"),
+      id: "tokens-line",
       type: "line",
-      data: series.points.map((point) => point.tokens),
+      data: series.points.map((point) => ({ id: point.date, value: point.tokens })),
       smooth: true,
       smoothMonotone: "x",
       clip: true,
@@ -311,8 +317,6 @@ function buildSeriesChartOption({
   ];
 
   return {
-    animationDuration: 450,
-    animationEasing: "cubicOut",
     grid: { top: 12, right: 10, bottom: 24, left: 8, containLabel: true },
     tooltip: {
       trigger: "axis",
@@ -421,6 +425,8 @@ function resolveHeaderLabels(chartType: OverviewCalendarChartType, windowMode: C
 
 export function ContributionCalendarChart({
   data,
+  animate,
+  filterKey,
   windowMode,
   onWindowModeChange,
   chartType,
@@ -607,8 +613,8 @@ export function ContributionCalendarChart({
       const current = cellRects.get(cell.date);
 
       if (current) {
+        const levelChanged = (current.extra as CellExtra).level !== cell.level;
         current.extra = extra;
-        current.stopAnimation();
         if (
           current.shape.width !== shape.width
           || current.shape.height !== shape.height
@@ -616,8 +622,13 @@ export function ContributionCalendarChart({
           || current.shape.y !== shape.y
           || current.shape.r !== shape.r
         ) {
+          current.stopAnimation();
           current.attr({ shape, style: { fill: CONTRIBUTION_LEVEL_COLORS[cell.level] } });
-        } else {
+        } else if (!animate) {
+          current.stopAnimation();
+          current.attr({ style: { fill: CONTRIBUTION_LEVEL_COLORS[cell.level] } });
+        } else if (levelChanged) {
+          current.stopAnimation();
           current.animateTo(
             { style: { fill: CONTRIBUTION_LEVEL_COLORS[cell.level] } },
             { duration: CALENDAR_CONFIG.resizeTransitionMs, easing: "cubicOut" },
@@ -640,7 +651,7 @@ export function ContributionCalendarChart({
       chart.add(rect);
     }
     hideTooltip();
-  }, [geometry, hideTooltip, isHeatmap, layout]);
+  }, [animate, geometry, hideTooltip, isHeatmap, layout]);
 
   const { title: windowTitle, sectionAriaLabel, chartAriaLabel } = resolveHeaderLabels(chartType, windowMode);
 
@@ -842,6 +853,7 @@ export function ContributionCalendarChart({
               <div className={styles.seriesFrame} role="img" aria-label={chartAriaLabel}>
                 <EChart
                   option={seriesOption}
+                  transition={{ viewKey: JSON.stringify([filterKey, chartType, windowMode]), data, enabled: animate }}
                   className={styles.echart}
                   onMouseEnter={() => setSeriesHovered(true)}
                   onMouseLeave={() => setSeriesHovered(false)}

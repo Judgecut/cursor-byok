@@ -26,9 +26,17 @@ import type { VirtualPageSection } from "../../shell/layout/VirtualPage";
 import { ContributionCalendarChart } from "./charts/ContributionCalendarChart";
 import { DailyTokenUsageChart } from "./charts/DailyTokenUsageChart";
 import { HomeMetrics } from "./metrics/HomeMetrics";
+import { useMetricChanges } from "./metrics/useMetricChanges";
 import { OverviewTabs, type OverviewTabId } from "./overview/OverviewTabs";
 import { OverviewTimeRangeFilter } from "./overview/OverviewTimeRangeFilter";
 import styles from "./HomePage.module.scss";
+
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+function keepEqualSeries<T>(previous: T[] | undefined, next: T[]): T[]
+{
+  return previous && JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
+}
 
 const DEFAULT_HOME_CALLS_PAGE_SIZE = 20;
 const REFRESH_TIMER_CHUNK_MS = 2_000_000_000;
@@ -36,13 +44,14 @@ const REFRESH_TIMER_CHUNK_MS = 2_000_000_000;
 export function HomePage() {
   const {
     overview,
-    busy,
     plugins,
     overviewRangePreset,
     overviewChartMode,
     overviewChartType,
     overviewCalendarWindow,
     overviewCalendarChartType,
+    homeMotionMode,
+    homeAutoRefreshEnabled,
     homeRefreshIntervalSeconds,
     refreshTick,
   } = useAppStore();
@@ -64,9 +73,21 @@ export function HomePage() {
   const [selectedSuppliers, setSelectedSuppliers] = useState<string[]>([]);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [appliedModels, setAppliedModels] = useState<string[]>([]);
+  const [systemReducesMotion, setSystemReducesMotion] = useState(() => window.matchMedia(REDUCED_MOTION_QUERY).matches);
+  const animate = homeMotionMode === "on" || (homeMotionMode === "system" && !systemReducesMotion);
+  useEffect(() =>
+  {
+    if (homeMotionMode !== "system") return;
+    const media = window.matchMedia(REDUCED_MOTION_QUERY);
+    const sync = () => setSystemReducesMotion(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, [homeMotionMode]);
+
   const [manualRefreshing, setManualRefreshing] = useState(false);
 
-  const [rangeState, setRangeState] = useState<{ filterKey: string; overview: Overview } | null>(null);
+  const [rangeState, setRangeState] = useState<{ filterKey: string; day: string; resetChanges: boolean; overview: Overview } | null>(null);
   const [rangeBusy, setRangeBusy] = useState(true);
   const [overviewErrorState, setOverviewErrorState] = useState<{ filterKey: string; message: string } | null>(null);
   const [supplierCatalog, setSupplierCatalog] = useState<OverviewFilterSupplier[]>([]);
@@ -167,7 +188,7 @@ export function HomePage() {
   const wasInactiveRef = useRef(false);
   const hasInitializedMountRef = useRef(false);
   const prevRefreshTickRef = useRef(refreshTick);
-  const manualRefreshPendingTickRef = useRef<number | null>(null);
+  const resetChangesOnSuccess = useRef(false);
   const lastRefreshErrorToastRef = useRef<{ message: string; at: number } | null>(null);
 
   const reportRefreshFailure = useCallback((errorMessage: string) => {
@@ -277,7 +298,11 @@ export function HomePage() {
       supplierKeys: currentModels,
     }, { signal: controller.signal }).then((next) => {
       if (seq !== overviewSeq.current || controller.signal.aborted) return;
-      const nextState = { filterKey: requestFilterKey, overview: next };
+      const previous = rangeStateRef.current?.overview;
+      next.token_usage_series = keepEqualSeries(previous?.token_usage_series, next.token_usage_series);
+      next.activity_series = keepEqualSeries(previous?.activity_series, next.activity_series);
+      const nextState = { filterKey: requestFilterKey, day: new Date(range.endMs).toDateString(), resetChanges: resetChangesOnSuccess.current, overview: next };
+      resetChangesOnSuccess.current = false;
       rangeStateRef.current = nextState;
       setRangeState(nextState);
       setOverviewErrorState((current) => (current?.filterKey === requestFilterKey ? null : current));
@@ -487,6 +512,7 @@ export function HomePage() {
   useEffect(() => {
     if (!isHomeActive) {
       wasInactiveRef.current = true;
+      resetChangesOnSuccess.current = true;
       abortAllQueries();
       return;
     }
@@ -495,9 +521,15 @@ export function HomePage() {
     const resumed = wasInactiveRef.current;
     wasInactiveRef.current = false;
 
-    if (resumed) {
+    if (resumed && (homeAutoRefreshEnabled || rangeStateRef.current?.filterKey !== filterKey)) {
       void refreshHomeData({ notifyOnRefreshError: true });
       return;
+    }
+
+    const savedCalls = callsStateRef.current;
+    if (resumed && (savedCalls?.filterKey !== filterKey || savedCalls.page !== callsPage || savedCalls.pageSize !== callsPageSize))
+    {
+      lastCallsFetchKeyRef.current = null;
     }
 
     const overviewChanged = lastOverviewFetchKeyRef.current !== filterKey;
@@ -521,11 +553,11 @@ export function HomePage() {
         );
     lastCallsFetchKeyRef.current = callsQueryKey;
     void fetchCalls({ range: paginationRange });
-  }, [abortAllQueries, callsQueryKey, fetchCalls, filterKey, isHomeActive, refreshHomeData]);
+  }, [abortAllQueries, callsPage, callsPageSize, callsQueryKey, fetchCalls, filterKey, homeAutoRefreshEnabled, isHomeActive, refreshHomeData]);
 
   // Manage a single route- and visibility-aware auto-refresh timer without blur pauses or drift pileups.
   useEffect(() => {
-    if (!isHomeActive) return;
+    if (!isHomeActive || !homeAutoRefreshEnabled) return;
     let disposed = false;
     let timerId: number | null = null;
     const intervalMs = Math.max(1, homeRefreshIntervalSeconds) * 1000;
@@ -553,17 +585,13 @@ export function HomePage() {
       disposed = true;
       if (timerId !== null) window.clearTimeout(timerId);
     };
-  }, [homeRefreshIntervalSeconds, isHomeActive, refreshHomeData]);
+  }, [homeAutoRefreshEnabled, homeRefreshIntervalSeconds, isHomeActive, refreshHomeData]);
 
   // Propagate external store refreshes (e.g. model pricing changes or storage clear).
   useEffect(() => {
     if (refreshTick === prevRefreshTickRef.current) return;
     const previousTick = prevRefreshTickRef.current;
     prevRefreshTickRef.current = refreshTick;
-    if (manualRefreshPendingTickRef.current === refreshTick) {
-      manualRefreshPendingTickRef.current = null;
-      return;
-    }
     if (previousTick === 0 && refreshTick === 1 && hasInitializedMountRef.current) {
       return;
     }
@@ -604,8 +632,10 @@ export function HomePage() {
       : 0;
   const callsTableLoading = !hasMatchingCallsPage && !effectiveCallsError && (callsLoading || keepPreviousCalls);
 
+  const usageSeries = filteredOverview?.token_usage_series;
+  const activitySeries = filteredOverview?.activity_series;
   const dailyTokenUsage = useMemo(
-    () => (filteredOverview?.token_usage_series ?? []).map((bucket) => ({
+    () => (usageSeries ?? []).map((bucket) => ({
       bucketStartMs: bucket.bucket_start_ms,
       inputTokens: bucket.input_tokens,
       cacheReadTokens: bucket.cache_read_tokens,
@@ -624,17 +654,21 @@ export function HomePage() {
       assumedCacheCost: bucket.assumed_cache_cost,
       estimatedCacheReadTokens: bucket.estimated_cache_read_tokens,
     })),
-    [filteredOverview],
+    [usageSeries],
   );
 
   const contribution = useMemo(
-    () => (filteredOverview?.activity_series ?? []).map((day) => ({
+    () => (activitySeries ?? []).map((day) => ({
       date: day.date,
       tokens: day.token_usage,
     })),
-    [filteredOverview],
+    [activitySeries],
   );
 
+  const metricSample = useMemo(() => hasMatchingOverview
+    ? { filterKey, day: rangeState.day, metrics: rangeState.overview.metrics }
+    : null, [filterKey, hasMatchingOverview, rangeState]);
+  const metricChanges = useMetricChanges(metricSample, isHomeActive, `${currency}:${exchangeRate?.rate ?? ""}`, rangeState?.resetChanges ?? false);
   const metrics = filteredOverview ? {
     llmCalls: filteredOverview.metrics.llm_calls,
     successfulCalls: filteredOverview.metrics.successful_calls,
@@ -702,17 +736,10 @@ export function HomePage() {
   };
 
   const refresh = async () => {
-    const tickBefore = appStore.getSnapshot().refreshTick;
     setManualRefreshing(true);
     try {
-      manualRefreshPendingTickRef.current = tickBefore + 1;
-      const homePromise = refreshHomeData({ notifyOnRefreshError: true });
-      const storePromise = appStore.getSnapshot().busy ? Promise.resolve() : appStore.refresh();
-      await Promise.all([homePromise, storePromise]);
+      await refreshHomeData({ notifyOnRefreshError: true });
     } finally {
-      if (appStore.getSnapshot().refreshTick <= tickBefore) {
-        manualRefreshPendingTickRef.current = null;
-      }
       setManualRefreshing(false);
     }
   };
@@ -752,6 +779,8 @@ export function HomePage() {
       estimatedHeight: 124,
       content: <HomeMetrics
         data={effectiveOverviewError ? null : metrics}
+        changes={metricChanges}
+        animate={animate}
         currency={currency}
         exchangeRate={exchangeRate}
         loading={rangeBusy && !hasMatchingOverview}
@@ -763,6 +792,8 @@ export function HomePage() {
       estimatedHeight: 244,
       content: <DailyTokenUsageChart
         data={dailyTokenUsage}
+        animate={animate}
+        filterKey={filterKey}
         granularity={filteredOverview?.token_usage_granularity ?? "day"}
         mode={overviewChartMode}
         chartType={overviewChartType}
@@ -777,6 +808,8 @@ export function HomePage() {
       estimatedHeight: 210,
       content: <ContributionCalendarChart
         data={contribution}
+        animate={animate}
+        filterKey={filterKey}
         windowMode={overviewCalendarWindow}
         onWindowModeChange={(value) => appStore.selectOverviewCalendarWindow(value)}
         chartType={overviewCalendarChartType}
@@ -792,6 +825,7 @@ export function HomePage() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         calls={callsItems}
+        animate={animate}
         callsTotal={callsTotal}
         callsReady={hasMatchingCallsFilter && !effectiveCallsError}
         callsQueryKey={callsQueryKey}
@@ -876,10 +910,10 @@ export function HomePage() {
           type="button"
           className={controls.iconButton}
           aria-label={t("刷新")}
-          disabled={busy || manualRefreshing}
+          disabled={manualRefreshing}
           onClick={() => void refresh()}
         >
-          <Icon className={(busy || manualRefreshing) ? controls.spin : ""} icon={refreshIcon} size="1.1em" />
+          <Icon className={(animate && manualRefreshing) ? controls.spin : ""} icon={refreshIcon} size="1.1em" />
         </button>
       </TooltipTrigger>
     </PageActions>

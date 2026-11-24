@@ -81,12 +81,17 @@ function resolveChartOption(option: EChartsCoreOption, node: HTMLDivElement): EC
 
 type EChartProps = {
   option: EChartsCoreOption;
+  transition?: { viewKey: string; data: unknown; enabled: boolean };
   className?: string;
   onMouseEnter?: MouseEventHandler<HTMLDivElement>;
   onMouseLeave?: MouseEventHandler<HTMLDivElement>;
 };
 
-export function EChart({ option, className = styles.root, onMouseEnter, onMouseLeave }: EChartProps) {
+export function EChart({ option, transition, className = styles.root, onMouseEnter, onMouseLeave }: EChartProps) {
+  const previous = useRef<EChartProps["transition"]>(undefined);
+  const viewKey = transition?.viewKey;
+  const data = transition?.data;
+  const enabled = transition?.enabled;
   const element = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -110,13 +115,33 @@ export function EChart({ option, className = styles.root, onMouseEnter, onMouseL
       window.removeEventListener("scroll", handleScroll, { capture: true });
       observer.disconnect();
       chart.dispose();
+      previous.current = undefined;
     };
   }, []);
 
   useEffect(() => {
     const node = element.current;
-    if (node) getInstanceByDom(node)?.setOption(resolveChartOption(option, node), { notMerge: true });
-  }, [option]);
+    if (!node) return;
+    const chart = getInstanceByDom(node);
+    const resolved = resolveChartOption(option, node);
+    if (viewKey === undefined)
+    {
+      chart?.setOption(resolved, { notMerge: true });
+      return;
+    }
+
+    const last = previous.current;
+    const sameView = last?.viewKey === viewKey && last.enabled === enabled;
+    const animateUpdate = Boolean(enabled && sameView && last.data !== data);
+    chart?.setOption({
+      ...resolved,
+      animation: Boolean(enabled),
+      animationDuration: 0,
+      animationDurationUpdate: animateUpdate ? 300 : 0,
+      animationEasingUpdate: "cubicOut",
+    }, sameView ? { replaceMerge: ["series"] } : { notMerge: true });
+    previous.current = { viewKey, data, enabled: Boolean(enabled) };
+  }, [data, enabled, option, viewKey]);
 
   return <div ref={element} className={className} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
 }

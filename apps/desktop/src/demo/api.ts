@@ -338,6 +338,8 @@ let interfaceSettings: InterfaceSettings = {
   overview_chart_type: "bar",
   overview_calendar_window: "year",
   overview_calendar_chart_type: "heatmap",
+  home_motion_mode: "system",
+  home_auto_refresh_enabled: true,
   home_refresh_interval_seconds: 30,
   calls_refresh_interval_seconds: DEFAULT_CALLS_REFRESH_INTERVAL_SECONDS,
 };
@@ -1264,6 +1266,22 @@ function applyDemoInterfacePatch(
       return { error: "invalid overview calendar chart type" };
     }
     next.overview_calendar_chart_type = patch.overview_calendar_chart_type;
+  }
+  if (patch.home_motion_mode !== undefined)
+  {
+    if (patch.home_motion_mode !== "system" && patch.home_motion_mode !== "on" && patch.home_motion_mode !== "off")
+    {
+      return { error: "invalid home motion mode" };
+    }
+    next.home_motion_mode = patch.home_motion_mode;
+  }
+  if (patch.home_auto_refresh_enabled !== undefined)
+  {
+    if (typeof patch.home_auto_refresh_enabled !== "boolean")
+    {
+      return { error: "invalid home auto refresh setting" };
+    }
+    next.home_auto_refresh_enabled = patch.home_auto_refresh_enabled;
   }
   if (patch.home_refresh_interval_seconds !== undefined) {
     if (

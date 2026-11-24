@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { SpeedAggregate } from "../../../shared/api";
 import {
   addUsdStrings,
@@ -13,6 +14,7 @@ import { aggregateTooltip, formatFirstOutput, formatSpeed } from "../../../share
 import { Icon } from "../../../shared/ui/Icon";
 import { useTooltip, type TooltipAnchor } from "../../../shared/ui/Tooltip";
 import { informationOutlineIcon } from "../../../shared/ui/icons";
+import type { MetricChanges } from "./useMetricChanges";
 import styles from "./HomeMetrics.module.scss";
 
 export type HomeMetricsData = {
@@ -77,14 +79,24 @@ function InfoTooltip({ content }: { content: string }) {
   ><Icon icon={informationOutlineIcon} size="1.1em" /></button>;
 }
 
+function SignedChange({ value, timestamp, animate }: { value: string; timestamp: number; animate: boolean })
+{
+  const [elapsed] = useState(() => Date.now() - timestamp);
+  return <span className={styles.change} data-animate={animate} style={{ animationDelay: `-${Math.max(0, elapsed)}ms` }} title={t("较上次刷新")}>{value}</span>;
+}
+
 export function HomeMetrics({
   data,
+  changes,
+  animate,
   currency,
   exchangeRate,
   loading = false,
   error = null,
 }: {
   data: HomeMetricsData | null;
+  changes: MetricChanges | null;
+  animate: boolean;
   currency: DisplayCurrency;
   exchangeRate: DisplayExchangeRate | null;
   loading?: boolean;
@@ -259,6 +271,12 @@ export function HomeMetrics({
           })
         : t("缓存读写 {cost}", { cost: formatDisplayCost(cacheCost, currency, exchangeRate) });
 
+  const callsChange = changes?.calls ? `${changes.calls > 0 ? "+" : "−"}${formatCompactInteger(Math.abs(changes.calls))}` : null;
+  const tokensChange = changes?.tokens ? `${changes.tokens > 0 ? "+" : "−"}${formatCompactInteger(Math.abs(changes.tokens))}` : null;
+  const costChange = changes && changes.cost !== "0"
+    ? `${changes.cost.startsWith("-") ? "−" : "+"}${formatDisplayCost(changes.cost.replace(/^-/, ""), currency, exchangeRate)}`
+    : null;
+
   const costValueTitle = conversionNote
     ? `${formatDisplayCostExact(data.totalCost, currency, exchangeRate)}\n${t("原美元金额：{cost}", { cost: formatUsdExact(data.totalCost) })}\n${conversionNote}`
     : formatUsdExact(data.totalCost);
@@ -272,7 +290,7 @@ export function HomeMetrics({
       </div>
     </article>
     <article className={styles.metric}>
-      <div className={styles.label}>{t("LLM 调用")}<InfoTooltip content={callsTooltip} /></div>
+      <div className={styles.label}>{t("LLM 调用")}<InfoTooltip content={callsTooltip} />{changes && callsChange && <SignedChange key={`${changes.timestamp}:${animate}`} value={callsChange} timestamp={changes.timestamp} animate={animate} />}</div>
       <div className={styles.body}>
         <div className={styles.value} title={formatInteger(data.llmCalls)}>{formatCompactInteger(data.llmCalls)}</div>
         <div className={styles.secondary}>{t("成功 {successful} / 异常 {failed}", {
@@ -296,14 +314,14 @@ export function HomeMetrics({
       </div>
     </article>
     <article className={styles.metric}>
-      <div className={styles.label}>{t("Token 消耗")}<InfoTooltip content={tokensTooltip} /></div>
+      <div className={styles.label}>{t("Token 消耗")}<InfoTooltip content={tokensTooltip} />{changes && tokensChange && <SignedChange key={`${changes.timestamp}:${animate}`} value={tokensChange} timestamp={changes.timestamp} animate={animate} />}</div>
       <div className={styles.body}>
         <div className={styles.value} title={formatInteger(data.tokenUsage)}>{formatCompactInteger(data.tokenUsage)}</div>
         <div className={styles.secondary}>{t("提示词 {tokens}", { tokens: formatCompactInteger(data.promptTokens) })}</div>
       </div>
     </article>
     <article className={styles.metric}>
-      <div className={styles.label}>{t("估算费用")}<InfoTooltip content={costTooltipLines.join("\n")} /></div>
+      <div className={styles.label}>{t("估算费用")}<InfoTooltip content={costTooltipLines.join("\n")} />{changes && costChange && <SignedChange key={`${changes.timestamp}:${animate}`} value={costChange} timestamp={changes.timestamp} animate={animate} />}</div>
       <div className={styles.body}>
         <div className={styles.value} title={costValueTitle}>{formatDisplayCost(data.totalCost, currency, exchangeRate)}</div>
         <div className={styles.secondary} title={costSecondary}>{costSecondary}</div>

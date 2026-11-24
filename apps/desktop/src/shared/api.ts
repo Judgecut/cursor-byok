@@ -217,6 +217,8 @@ export type OverviewChartType = "bar" | "line";
 export type OverviewCalendarWindow = "year" | "month" | "week";
 export type OverviewCalendarChartType = "heatmap" | "bar" | "line";
 
+export type HomeMotionMode = "system" | "on" | "off";
+
 export const MIN_CALLS_REFRESH_INTERVAL_SECONDS = 5;
 export const MAX_CALLS_REFRESH_INTERVAL_SECONDS = 60;
 export const DEFAULT_CALLS_REFRESH_INTERVAL_SECONDS = MIN_CALLS_REFRESH_INTERVAL_SECONDS;
@@ -231,6 +233,8 @@ export interface InterfaceSettings extends ExchangeRates {
   overview_chart_type: OverviewChartType;
   overview_calendar_window: OverviewCalendarWindow;
   overview_calendar_chart_type: OverviewCalendarChartType;
+  home_motion_mode: HomeMotionMode;
+  home_auto_refresh_enabled: boolean;
   home_refresh_interval_seconds: number;
   calls_refresh_interval_seconds: number;
 }
@@ -245,6 +249,8 @@ export interface InterfaceSettingsPatch extends Partial<ExchangeRates> {
   overview_chart_type?: OverviewChartType;
   overview_calendar_window?: OverviewCalendarWindow;
   overview_calendar_chart_type?: OverviewCalendarChartType;
+  home_motion_mode?: HomeMotionMode;
+  home_auto_refresh_enabled?: boolean;
   home_refresh_interval_seconds?: number;
   calls_refresh_interval_seconds?: number;
 }

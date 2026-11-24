@@ -122,6 +122,7 @@ function statusDotTitle(call: LlmCall): string
 
 export function CallTable({
   calls,
+  animate,
   queryKey,
   ready,
   onDetails,
@@ -130,6 +131,7 @@ export function CallTable({
   emptyText,
 }: {
   calls: LlmCall[];
+  animate?: boolean;
   queryKey: string;
   ready: boolean;
   onDetails: (call: LlmCall) => void;
@@ -138,14 +140,14 @@ export function CallTable({
   emptyText?: ReactNode;
 }) {
   const { currency, exchangeRate } = useCurrencyDisplay();
-  const rowRef = useCallHighlights(calls, queryKey, ready);
+  const rowRef = useCallHighlights(calls, queryKey, ready, animate);
   const columns: DataTableColumn<LlmCall>[] = [
     {
       key: "status",
       header: t("状态"),
       render: (call) => (
         <TooltipTrigger label={statusDotTitle(call)}>
-          <span className={styles.statusDot} data-status={call.status} role="img" aria-label={call.status} />
+          <span className={styles.statusDot} data-status={call.status} data-animate={animate} role="img" aria-label={call.status} />
         </TooltipTrigger>
       ),
     },

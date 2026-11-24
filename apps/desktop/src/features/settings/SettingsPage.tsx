@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { api, MAX_CALLS_REFRESH_INTERVAL_SECONDS, MIN_CALLS_REFRESH_INTERVAL_SECONDS, type ProxySettings, type ProxySettingsInput, type StatisticsStorage, type StatisticsStorageScope, type TabSettings } from "../../shared/api";
+import { api, MAX_CALLS_REFRESH_INTERVAL_SECONDS, MIN_CALLS_REFRESH_INTERVAL_SECONDS, type HomeMotionMode, type ProxySettings, type ProxySettingsInput, type StatisticsStorage, type StatisticsStorageScope, type TabSettings } from "../../shared/api";
 import { PageContent } from "../../shell/layout/PageContent";
 import { LegacyModelImport } from "../models/LegacyModelImport";
 import { AppLifecycleSettingsCard } from "./AppLifecycleSettingsCard";
@@ -84,7 +84,7 @@ function CallsRefreshSetting()
 }
 
 export function SettingsPage() {
-  const { detailed, ports, theme, homeRefreshIntervalSeconds } = useAppStore();
+  const { detailed, ports, theme, homeMotionMode, homeAutoRefreshEnabled, homeRefreshIntervalSeconds } = useAppStore();
   const { preference, locale } = useI18n();
   const message = useMessage();
   const [proxyPort, setProxyPort] = useState(String(ports.proxy_port));
@@ -284,6 +284,31 @@ export function SettingsPage() {
         <CallsRefreshSetting />
       </TitledCard>
       <TitledCard title={t("数据概览")}>
+        <div className={styles.settingRow}>
+          <div>
+            <strong>{t("主页动画")}</strong>
+            <small>{t("控制主页图表和更新提示的动画。")}</small>
+          </div>
+          <div className={styles.languageControl}>
+            <Select
+              value={homeMotionMode}
+              ariaLabel={t("主页动画")}
+              options={[
+                { value: "system", label: t("跟随系统") },
+                { value: "on", label: t("开启") },
+                { value: "off", label: t("关闭动画") },
+              ]}
+              onChange={(value) => appStore.selectHomeMotionMode(value as HomeMotionMode)}
+            />
+          </div>
+        </div>
+        <div className={styles.settingRow}>
+          <div>
+            <strong>{t("主页自动刷新")}</strong>
+            <small>{t("关闭后可通过主页刷新按钮更新统计数据。")}</small>
+          </div>
+          <Checkbox label={t("自动刷新")} checked={homeAutoRefreshEnabled} onChange={appStore.selectHomeAutoRefresh} />
+        </div>
         <div className={styles.refreshIntervalSection}>
           <div className={styles.refreshIntervalRow}>
             <div className={styles.refreshIntervalText}>
@@ -308,6 +333,7 @@ export function SettingsPage() {
                   type="text"
                   inputMode="numeric"
                   value={refreshIntervalDraft}
+                  disabled={!homeAutoRefreshEnabled}
                   aria-label={t("主页自动刷新间隔（秒）")}
                   aria-invalid={refreshIntervalError ? true : undefined}
                   placeholder={String(DEFAULT_HOME_REFRESH_INTERVAL_SECONDS)}
@@ -318,7 +344,7 @@ export function SettingsPage() {
                 />
               </div>
               <span className={styles.intervalUnit}>{t("秒")}</span>
-              <Button variant="primary" size="small" type="submit" disabled={savingRefreshInterval}>
+              <Button variant="primary" size="small" type="submit" disabled={savingRefreshInterval || !homeAutoRefreshEnabled}>
                 {savingRefreshInterval ? t("保存中…") : t("保存")}
               </Button>
             </form>

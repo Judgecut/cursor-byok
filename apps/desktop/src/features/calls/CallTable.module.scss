@@ -53,9 +53,14 @@
   }
 }
 
+.statusDot[data-status="running"][data-animate="false"]
+{
+  animation: none;
+}
+
 @media (prefers-reduced-motion: reduce)
 {
-  .statusDot[data-status="running"]
+  .statusDot[data-status="running"]:not([data-animate="true"])
   {
     animation: none;
   }

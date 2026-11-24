@@ -90,6 +90,8 @@ function totalTokens(day: DailyTokenUsage) {
 
 export function DailyTokenUsageChart({
   data,
+  animate,
+  filterKey,
   granularity,
   mode,
   chartType,
@@ -99,6 +101,8 @@ export function DailyTokenUsageChart({
   error = null,
 }: {
   data: DailyTokenUsage[];
+  animate: boolean;
+  filterKey: string;
   granularity: TokenUsageGranularity;
   mode: OverviewChartMode;
   chartType: OverviewChartType;
@@ -154,12 +158,14 @@ export function DailyTokenUsageChart({
       data: [{ yAxis: averageLevel }],
     };
 
+    const byBucket = (values: number[]) => data.map((bucket, index) => ({ id: String(bucket.bucketStartMs), value: values[index] }));
     const barSeries: EChartsCoreOption[] = [
       {
+        id: "empty",
         name: mode === "tokens" ? t("无用量") : t("无费用"),
         type: "bar",
         stack: "empty-placeholder",
-        data: totals.map((total) => total === 0 ? axisMaximum : 0),
+        data: byBucket(totals.map((total) => total === 0 ? axisMaximum : 0)),
         barMaxWidth: 18,
         silent: true,
         z: 0,
@@ -167,45 +173,49 @@ export function DailyTokenUsageChart({
         emphasis: { disabled: true },
       },
       {
+        id: "input",
         name: t("输入（非缓存）"),
         type: "bar",
         stack: "usage",
-        data: data.map((day) => mode === "tokens"
+        data: byBucket(data.map((day) => mode === "tokens"
           ? day.inputTokens
-          : convertUsdToDisplayNumber(day.inputCost, currency, exchangeRate)),
+          : convertUsdToDisplayNumber(day.inputCost, currency, exchangeRate))),
         barMaxWidth: 18,
         itemStyle: { color: seriesColors.input },
         ...seriesFocus,
       },
       {
+        id: "cache-read",
         name: t("缓存输入"),
         type: "bar",
         stack: "usage",
-        data: data.map((day) => mode === "tokens"
+        data: byBucket(data.map((day) => mode === "tokens"
           ? day.cacheReadTokens
-          : convertUsdToDisplayNumber(day.cacheReadCost, currency, exchangeRate)),
+          : convertUsdToDisplayNumber(day.cacheReadCost, currency, exchangeRate))),
         barMaxWidth: 18,
         itemStyle: { color: seriesColors.cacheRead },
         ...seriesFocus,
       },
       {
+        id: "cache-write",
         name: t("缓存写入"),
         type: "bar",
         stack: "usage",
-        data: data.map((day) => mode === "tokens"
+        data: byBucket(data.map((day) => mode === "tokens"
           ? day.cacheWriteTokens
-          : convertUsdToDisplayNumber(day.cacheWriteCost, currency, exchangeRate)),
+          : convertUsdToDisplayNumber(day.cacheWriteCost, currency, exchangeRate))),
         barMaxWidth: 18,
         itemStyle: { color: seriesColors.cacheWrite },
         ...seriesFocus,
       },
       {
+        id: "output",
         name: t("模型输出"),
         type: "bar",
         stack: "usage",
-        data: data.map((day) => mode === "tokens"
+        data: byBucket(data.map((day) => mode === "tokens"
           ? day.outputTokens
-          : convertUsdToDisplayNumber(day.outputCost, currency, exchangeRate)),
+          : convertUsdToDisplayNumber(day.outputCost, currency, exchangeRate))),
         barMaxWidth: 18,
         barGap: "-100%",
         itemStyle: { color: seriesColors.output, borderRadius: [2, 2, 0, 0] },
@@ -216,9 +226,10 @@ export function DailyTokenUsageChart({
 
     const lineSeries: EChartsCoreOption[] = [
       {
+        id: "total",
         name: mode === "tokens" ? t("总 Token") : t("总费用"),
         type: "line",
-        data: totals,
+        data: byBucket(totals),
         smooth: 0.35,
         smoothMonotone: "x",
         clip: true,
@@ -245,8 +256,6 @@ export function DailyTokenUsageChart({
     ];
 
     return {
-      animationDuration: 450,
-      animationEasing: "cubicOut",
       grid: { top: 10, right: 8, bottom: 26, left: 8, containLabel: true },
       tooltip: {
         trigger: "axis",
@@ -353,6 +362,7 @@ export function DailyTokenUsageChart({
         ? <div className={styles.state}>{loading ? t("正在加载趋势数据…") : t("当前筛选范围内暂无趋势数据")}</div>
         : <EChart
             option={option}
+            transition={{ viewKey: JSON.stringify([filterKey, chartType, mode, granularity, mode === "cost" && currency, mode === "cost" && exchangeRate?.rate]), data, enabled: animate }}
             className={styles.root}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}

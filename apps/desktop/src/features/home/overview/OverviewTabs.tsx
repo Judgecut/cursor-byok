@@ -18,6 +18,7 @@ export function OverviewTabs({
   activeTab,
   onTabChange,
   calls,
+  animate,
   callsTotal,
   callsReady,
   callsQueryKey,
@@ -40,6 +41,7 @@ export function OverviewTabs({
   activeTab: OverviewTabId;
   onTabChange: (tab: OverviewTabId) => void;
   calls: LlmCall[];
+  animate: boolean;
   callsTotal: number;
   callsReady: boolean;
   callsQueryKey: string;
@@ -66,6 +68,7 @@ export function OverviewTabs({
       badge: callsReady ? callsTotal : undefined,
       content: <CallTable
         calls={calls}
+        animate={animate}
         queryKey={callsQueryKey}
         ready={callsPageReady}
         onDetails={onCallDetails}

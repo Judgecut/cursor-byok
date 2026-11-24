@@ -274,8 +274,27 @@ pub enum OverviewCalendarChartType {
     Line,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HomeMotionMode
+{
+    #[default]
+    System,
+    On,
+    Off,
+}
+
+fn default_home_auto_refresh_enabled() -> bool
+{
+    true
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct InterfaceSettings {
+    #[serde(default)]
+    pub home_motion_mode: HomeMotionMode,
+    #[serde(default = "default_home_auto_refresh_enabled")]
+    pub home_auto_refresh_enabled: bool,
     #[serde(default)]
     pub sidebar_collapsed: bool,
     #[serde(default)]
@@ -330,6 +349,8 @@ impl Default for InterfaceSettings {
             overview_chart_type: OverviewChartType::default(),
             overview_calendar_window: OverviewCalendarWindow::default(),
             overview_calendar_chart_type: OverviewCalendarChartType::default(),
+            home_motion_mode: HomeMotionMode::default(),
+            home_auto_refresh_enabled: default_home_auto_refresh_enabled(),
             home_refresh_interval_seconds: DEFAULT_HOME_REFRESH_INTERVAL_SECONDS,
             calls_refresh_interval_seconds: default_calls_refresh_interval_seconds(),
         }
@@ -370,6 +391,10 @@ pub struct InterfaceSettingsPatch {
     pub overview_calendar_chart_type: Option<OverviewCalendarChartType>,
     #[serde(default)]
     pub home_refresh_interval_seconds: Option<u64>,
+    #[serde(default)]
+    pub home_motion_mode: Option<HomeMotionMode>,
+    #[serde(default)]
+    pub home_auto_refresh_enabled: Option<bool>,
     #[serde(default)]
     pub calls_refresh_interval_seconds: Option<u64>,
 }
@@ -812,6 +837,14 @@ impl Store {
         if let Some(overview_calendar_chart_type) = patch.overview_calendar_chart_type {
             settings.overview_calendar_chart_type = overview_calendar_chart_type;
         }
+        if let Some(mode) = patch.home_motion_mode
+        {
+            settings.home_motion_mode = mode;
+        }
+        if let Some(enabled) = patch.home_auto_refresh_enabled
+        {
+            settings.home_auto_refresh_enabled = enabled;
+        }
         if let Some(interval) = patch.home_refresh_interval_seconds {
             if interval == 0 {
                 return Err(crate::Error::Config(
@@ -1085,6 +1118,8 @@ mod tests {
                 overview_chart_type: OverviewChartType::Bar,
                 overview_calendar_window: OverviewCalendarWindow::Year,
                 overview_calendar_chart_type: OverviewCalendarChartType::Heatmap,
+                home_motion_mode: super::HomeMotionMode::System,
+                home_auto_refresh_enabled: true,
                 home_refresh_interval_seconds: DEFAULT_HOME_REFRESH_INTERVAL_SECONDS,
                 calls_refresh_interval_seconds: 5,
             }

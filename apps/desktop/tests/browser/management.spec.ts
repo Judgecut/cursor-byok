@@ -314,6 +314,71 @@ test("saves settings, reads them after reload, and applies translated modules", 
   await expect(page.getByRole("textbox", { name: "主页自动刷新间隔（秒）", exact: true })).toHaveValue("45");
 });
 
+test("controls overview polling independently of update animations", async ({ page, management }) =>
+{
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1_000));
+  await page.goto("#/settings");
+
+  const motion = page.getByRole("button", { name: "Overview animations", exact: true });
+  const autoRefresh = page.getByRole("checkbox", { name: "Auto-refresh", exact: true });
+  const interval = page.getByRole("textbox", { name: "Overview auto-refresh interval (seconds)", exact: true });
+  await motion.click();
+  await page.getByRole("option", { name: "Off", exact: true }).click();
+  await autoRefresh.press("Space");
+  await expect.poll(() => management.settings.home_motion_mode).toBe("off");
+  await expect.poll(() => management.settings.home_auto_refresh_enabled).toBe(false);
+  await expect(interval).toBeDisabled();
+
+  await page.reload();
+  await expect(autoRefresh).not.toBeChecked();
+  await expect(interval).toHaveValue("30");
+  let overviewRequests = 0;
+  page.on("requestfinished", (request) =>
+  {
+    const url = new URL(request.url());
+    if (url.pathname.endsWith("/api/overview") && url.searchParams.has("start_ms"))
+    {
+      overviewRequests += 1;
+    }
+  });
+
+  await page.goto("#/");
+  const calls = page.getByRole("article").filter({ hasText: "LLM calls" });
+  await expect(calls.getByText("1", { exact: true })).toBeVisible();
+  const initialRequests = overviewRequests;
+  management.overview.metrics.llm_calls = 4;
+  await page.clock.runFor(60_000);
+  expect(overviewRequests).toBe(initialRequests);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  const delta = calls.getByTitle("Since last refresh");
+  await expect(calls.getByText("4", { exact: true })).toBeVisible();
+  await expect(delta).toHaveText("+3");
+  await expect(delta).toHaveCSS("animation-name", "none");
+  await page.clock.runFor(4_000);
+  await expect(delta).toHaveCount(0);
+
+  await page.goto("#/settings");
+  await motion.click();
+  await page.getByRole("option", { name: "Follow system", exact: true }).click();
+  await autoRefresh.press("Space");
+  await expect.poll(() => management.settings.home_motion_mode).toBe("system");
+  await expect.poll(() => management.settings.home_auto_refresh_enabled).toBe(true);
+  await expect(interval).toBeEnabled();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+
+  const beforeReturn = overviewRequests;
+  await page.goto("#/");
+  await expect.poll(() => overviewRequests).toBeGreaterThan(beforeReturn);
+  await expect(delta).toHaveCount(0);
+  management.overview.metrics.llm_calls = 3;
+  await page.clock.runFor(30_000);
+  await expect(delta).toHaveText("−1");
+  await expect(delta).toHaveCSS("animation-name", "none");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect(delta).toHaveAttribute("data-animate", "true");
+});
+
 test("refreshes call history at the saved interval while the page is active", async ({ page, management }) =>
 {
   await page.clock.install();

@@ -16,10 +16,17 @@ type HighlightRow =
   highlightedAt: number | null;
   animatedAt: number | null;
   animation: Animation | null;
+  staticTimer: number | null;
 };
 
 function cancelAnimation(row: HighlightRow)
 {
+  if (row.staticTimer !== null)
+  {
+    window.clearTimeout(row.staticTimer);
+    row.staticTimer = null;
+    row.node?.style.removeProperty("--call-update-strength");
+  }
   row.animation?.cancel();
   row.animation = null;
   row.animatedAt = null;
@@ -44,14 +51,27 @@ function animateRow(row: HighlightRow, now: number, reducedMotion: boolean)
   }
 
   cancelAnimation(row);
-  // One inherited strength animates every cell, including sticky cells, together.
-  row.animation = row.node.animate([{ "--call-update-strength": 1 }, { "--call-update-strength": reducedMotion ? 1 : 0 }], { duration: HIGHLIGHT_DURATION_MS, easing: "linear" });
-  row.animation.currentTime = elapsed;
   row.animatedAt = row.highlightedAt;
+  if (reducedMotion)
+  {
+    const node = row.node;
+    node.style.setProperty("--call-update-strength", "1");
+    row.staticTimer = window.setTimeout(() =>
+    {
+      node.style.removeProperty("--call-update-strength");
+      row.staticTimer = null;
+    }, HIGHLIGHT_DURATION_MS - elapsed);
+    return;
+  }
+  // One inherited strength animates every cell, including sticky cells, together.
+  row.animation = row.node.animate([{ "--call-update-strength": 1 }, { "--call-update-strength": 0 }], { duration: HIGHLIGHT_DURATION_MS, easing: "linear" });
+  row.animation.currentTime = elapsed;
 }
 
-export function useCallHighlights(calls: LlmCall[], queryKey: string, ready: boolean): (call: LlmCall) => RefCallback<HTMLTableRowElement>
+export function useCallHighlights(calls: LlmCall[], queryKey: string, ready: boolean, animate?: boolean): (call: LlmCall) => RefCallback<HTMLTableRowElement>
 {
+  const motionPreference = useRef(animate);
+  motionPreference.current = animate;
   const rows = useRef(new Map<string, HighlightRow>());
   const snapshot = useRef<{ queryKey: string; signatures: Map<string, string> | null }>({ queryKey, signatures: null });
 
@@ -66,13 +86,14 @@ export function useCallHighlights(calls: LlmCall[], queryKey: string, ready: boo
         highlightedAt: null,
         animatedAt: null,
         animation: null,
+        staticTimer: null,
         ref: (node) =>
         {
           cancelAnimation(entry);
           entry.node = node;
           if (node)
           {
-            animateRow(entry, Date.now(), window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+            animateRow(entry, Date.now(), motionPreference.current === undefined ? window.matchMedia("(prefers-reduced-motion: reduce)").matches : !motionPreference.current);
           }
           return () =>
           {
@@ -121,7 +142,7 @@ export function useCallHighlights(calls: LlmCall[], queryKey: string, ready: boo
       snapshot.current.signatures = signatures;
     }
 
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reducedMotion = animate === undefined ? window.matchMedia("(prefers-reduced-motion: reduce)").matches : !animate;
     for (const row of rows.current.values())
     {
       animateRow(row, now, reducedMotion);
@@ -137,10 +158,11 @@ export function useCallHighlights(calls: LlmCall[], queryKey: string, ready: boo
       for (const row of rows.current.values())
       {
         cancelAnimation(row);
-        animateRow(row, now, media.matches);
+        animateRow(row, now, animate === undefined ? media.matches : !animate);
       }
     };
-    media.addEventListener("change", updateMotion);
+    updateMotion();
+    if (animate === undefined) media.addEventListener("change", updateMotion);
     const trackedRows = rows.current;
     return () =>
     {
@@ -150,7 +172,7 @@ export function useCallHighlights(calls: LlmCall[], queryKey: string, ready: boo
         cancelAnimation(row);
       }
     };
-  }, []);
+  }, [animate]);
 
   return rowRef;
 }

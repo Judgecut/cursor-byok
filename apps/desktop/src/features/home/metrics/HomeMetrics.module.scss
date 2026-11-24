@@ -31,6 +31,34 @@
   line-height: 1.2;
 }
 
+.change
+{
+  margin-inline-start: auto;
+  color: var(--vscode-textLink-foreground);
+  font-family: var(--oa-number-font);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  &[data-animate="true"]
+  {
+    animation: fade-change 4s linear both;
+  }
+}
+
+@keyframes fade-change
+{
+  0%, 92%
+  {
+    opacity: 1;
+  }
+
+  100%
+  {
+    opacity: 0;
+  }
+}
+
 .info {
   width: 16px;
   height: 16px;

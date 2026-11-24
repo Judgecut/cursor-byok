@@ -65,6 +65,8 @@ const DEFAULT_INTERFACE_SETTINGS: InterfaceSettings = {
   overview_chart_type: "bar",
   overview_calendar_window: "year",
   overview_calendar_chart_type: "heatmap",
+  home_motion_mode: "system",
+  home_auto_refresh_enabled: true,
   home_refresh_interval_seconds: DEFAULT_HOME_REFRESH_INTERVAL_SECONDS,
   calls_refresh_interval_seconds: DEFAULT_CALLS_REFRESH_INTERVAL_SECONDS,
 };
@@ -110,6 +112,8 @@ export type AppSnapshot = {
   overviewChartType: OverviewChartType;
   overviewCalendarWindow: OverviewCalendarWindow;
   overviewCalendarChartType: OverviewCalendarChartType;
+  homeMotionMode: InterfaceSettings["home_motion_mode"];
+  homeAutoRefreshEnabled: boolean;
   homeRefreshIntervalSeconds: number;
   callsRefreshIntervalSeconds: number;
   refreshTick: number;
@@ -194,6 +198,8 @@ let snapshot: AppSnapshot = {
   overviewChartType: DEFAULT_INTERFACE_SETTINGS.overview_chart_type,
   overviewCalendarWindow: DEFAULT_INTERFACE_SETTINGS.overview_calendar_window,
   overviewCalendarChartType: DEFAULT_INTERFACE_SETTINGS.overview_calendar_chart_type,
+  homeMotionMode: DEFAULT_INTERFACE_SETTINGS.home_motion_mode,
+  homeAutoRefreshEnabled: DEFAULT_INTERFACE_SETTINGS.home_auto_refresh_enabled,
   homeRefreshIntervalSeconds: DEFAULT_INTERFACE_SETTINGS.home_refresh_interval_seconds,
   callsRefreshIntervalSeconds: DEFAULT_INTERFACE_SETTINGS.calls_refresh_interval_seconds,
   refreshTick: 0,
@@ -230,6 +236,8 @@ function applyInterfaceSettings(
     overviewChartType: next.overview_chart_type,
     overviewCalendarWindow: next.overview_calendar_window,
     overviewCalendarChartType: next.overview_calendar_chart_type,
+    homeMotionMode: next.home_motion_mode,
+    homeAutoRefreshEnabled: next.home_auto_refresh_enabled,
     homeRefreshIntervalSeconds: next.home_refresh_interval_seconds,
     callsRefreshIntervalSeconds: next.calls_refresh_interval_seconds,
     ...options?.extra,
@@ -281,6 +289,14 @@ async function persistInterfacePatch(
     }
     if (patch.overview_calendar_chart_type !== undefined) {
       optimisticPatch.overviewCalendarChartType = patch.overview_calendar_chart_type;
+    }
+    if (patch.home_motion_mode !== undefined)
+    {
+      optimisticPatch.homeMotionMode = patch.home_motion_mode;
+    }
+    if (patch.home_auto_refresh_enabled !== undefined)
+    {
+      optimisticPatch.homeAutoRefreshEnabled = patch.home_auto_refresh_enabled;
     }
     if (patch.home_refresh_interval_seconds !== undefined) {
       optimisticPatch.homeRefreshIntervalSeconds = patch.home_refresh_interval_seconds;
@@ -756,6 +772,16 @@ export const appStore = {
     if (getLocalePreference() === locale && persistedInterface.locale === locale) return;
     void persistInterfacePatch({ locale }, { optimistic: true });
   },
+  selectHomeMotionMode(mode: InterfaceSettings["home_motion_mode"])
+  {
+    void persistInterfacePatch({ home_motion_mode: mode }, { optimistic: true });
+  },
+
+  selectHomeAutoRefresh(enabled: boolean)
+  {
+    void persistInterfacePatch({ home_auto_refresh_enabled: enabled }, { optimistic: true });
+  },
+
   selectTheme(theme: ThemeId) {
     if (snapshot.theme === theme && persistedInterface.theme === theme) return;
     void persistInterfacePatch({ theme }, { optimistic: true });

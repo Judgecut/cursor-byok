@@ -22,6 +22,8 @@ const defaults = {
   overview_calendar_window: "year",
   overview_calendar_chart_type: "heatmap",
   sidebar_collapsed: false,
+  home_motion_mode: "system",
+  home_auto_refresh_enabled: true,
   home_refresh_interval_seconds: 30,
   calls_refresh_interval_seconds: 5,
 };
