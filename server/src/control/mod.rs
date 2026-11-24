@@ -6,6 +6,7 @@ mod models;
 mod overview;
 mod plugins;
 mod pricing;
+mod provider_icons;
 mod service;
 mod settings;
 
@@ -129,6 +130,10 @@ pub fn api_router(service: ControlService) -> Router {
         .route(
             "/__byok-api__/api/providers/order",
             put(models::reorder_providers),
+        )
+        .route(
+            "/__byok-api__/api/providers/icon",
+            post(provider_icons::discover),
         )
         .route(
             "/__byok-api__/api/providers/{provider_id}",

@@ -27,14 +27,17 @@ eventsource-stream = "0.2"
 futures-util = "0.3"
 hex = "0.4"
 hudsucker = { version = "0.25", features = ["http2"] }
-image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
+image = { version = "0.25", default-features = false, features = ["gif", "ico", "jpeg", "png", "webp"] }
 include_dir = "0.7"
 json5 = "0.4"
 parking_lot = "0.12"
 pem = "3"
+percent-encoding = "2"
 png = "0.18"
 prost = "0.14"
 prost-types = "0.14"
+psl = "2"
+quick-xml = "0.41"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "brotli", "deflate", "gzip", "json", "native-tls", "socks", "stream", "system-proxy", "zstd"] }
 regex = "1"
 rcgen = { version = "0.14", features = ["aws_lc_rs", "pem", "x509-parser"] }

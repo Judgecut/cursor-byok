@@ -76,7 +76,7 @@ export function CursorSettingsPage() {
     setProviderDraft(providerDraftFrom(provider));
   };
   const saveProvider = async () => {
-    if (!providerDraft || providerDraft.uploadingIcon || savingProvider) return;
+    if (!providerDraft || providerDraft.processingIcon || savingProvider) return;
     setSavingProvider(true);
     try {
       const input = providerDraftInput(providerDraft);
@@ -373,7 +373,7 @@ export function CursorSettingsPage() {
       open={providerDraft !== null}
       title={editingProvider ? t("编辑供应商") : t("添加供应商")}
       busy={cursorBusy || savingProvider}
-      submitDisabled={providerDraft?.uploadingIcon}
+      submitDisabled={providerDraft?.processingIcon}
       onClose={() => { setProviderDraft(null); setEditingProvider(null); }}
       onSubmit={() => void saveProvider()}
       submitLabel={t("保存")}

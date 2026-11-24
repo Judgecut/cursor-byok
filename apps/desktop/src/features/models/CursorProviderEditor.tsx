@@ -11,7 +11,7 @@ import styles from "./CursorSettings.module.scss";
 export type CursorProviderDraft = {
   provider: ProviderInput;
   customHeadersText: string;
-  uploadingIcon: boolean;
+  processingIcon: boolean;
 };
 
 export const emptyCursorProviderDraft = (): CursorProviderDraft => ({
@@ -25,7 +25,7 @@ export const emptyCursorProviderDraft = (): CursorProviderDraft => ({
     custom_headers: {},
   },
   customHeadersText: defaultCustomHeadersText,
-  uploadingIcon: false,
+  processingIcon: false,
 });
 
 export function providerDraftFrom(provider: Provider): CursorProviderDraft {
@@ -33,7 +33,7 @@ export function providerDraftFrom(provider: Provider): CursorProviderDraft {
   return {
     provider: input,
     customHeadersText: JSON.stringify(provider.custom_headers, null, 2),
-    uploadingIcon: false,
+    processingIcon: false,
   };
 }
 
@@ -84,7 +84,7 @@ export function CursorProviderEditor({ draft, saving, onChange }: {
         <TextInput placeholder={t("例如：OpenAI 官方")} value={draft.provider.name} onChange={(event) => setProvider({ name: event.target.value })} />
       </FormField>
       <div className={styles.fullWidth}>
-        <ProviderIconField icon={draft.provider.icon} baseUrl={draft.provider.base_url} disabled={saving} uploading={draft.uploadingIcon} onChange={(icon) => setProvider({ icon })} onUploadingChange={(uploadingIcon) => onChange((current) => ({ ...current, uploadingIcon }))} />
+        <ProviderIconField icon={draft.provider.icon} baseUrl={draft.provider.base_url} disabled={saving} processing={draft.processingIcon} onChange={(icon) => setProvider({ icon })} onProcessingChange={(processingIcon) => onChange((current) => ({ ...current, processingIcon }))} />
       </div>
       <FormField label={t("服务器地址")} hint={t("系统会根据请求协议自动追加标准端点路径。")}>
         <TextInput placeholder="https://api.example.com" value={draft.provider.base_url} onChange={(event) => setProvider({ base_url: event.target.value })} />

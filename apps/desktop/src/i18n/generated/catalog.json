@@ -138,7 +138,7 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 79,
+          "line": 73,
           "column": 48
         },
         {
@@ -155,7 +155,7 @@
       "refs": [
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 402,
+          "line": 395,
           "column": 26
         },
         {
@@ -304,7 +304,7 @@
       "refs": [
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 62,
+          "line": 56,
           "column": 38
         }
       ]
@@ -348,7 +348,7 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 109,
+          "line": 103,
           "column": 18
         }
       ]
@@ -376,7 +376,7 @@
       "refs": [
         {
           "file": "features/models/ProviderIconField.tsx",
-          "line": 76,
+          "line": 99,
           "column": 7
         }
       ]
@@ -769,7 +769,7 @@
       "refs": [
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 461,
+          "line": 454,
           "column": 39
         }
       ]
@@ -781,7 +781,7 @@
       "refs": [
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 435,
+          "line": 428,
           "column": 24
         }
       ]
@@ -822,7 +822,7 @@
       "refs": [
         {
           "file": "features/models/ProviderIconField.tsx",
-          "line": 161,
+          "line": 222,
           "column": 107
         }
       ]
@@ -976,7 +976,7 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 136,
+          "line": 130,
           "column": 18
         }
       ]
@@ -1000,7 +1000,7 @@
       "refs": [
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 413,
+          "line": 406,
           "column": 68
         }
       ]
@@ -1014,6 +1014,18 @@
           "file": "features/home/charts/ContributionCalendarChart.tsx",
           "line": 400,
           "column": 11
+        }
+      ]
+    },
+    "1556dc8ede00e7bf": {
+      "source": "未找到可用的上游图标",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/models/ProviderIconField.tsx",
+          "line": 173,
+          "column": 25
         }
       ]
     },
@@ -1131,7 +1143,7 @@
       "refs": [
         {
           "file": "shared/utils/supplierOptions.ts",
-          "line": 54,
+          "line": 50,
           "column": 41
         }
       ]
@@ -1388,7 +1400,7 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 96,
+          "line": 90,
           "column": 24
         }
       ]
@@ -1557,12 +1569,12 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 135,
+          "line": 129,
           "column": 18
         },
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 399,
+          "line": 392,
           "column": 26
         },
         {
@@ -1703,22 +1715,22 @@
       "refs": [
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 464,
+          "line": 457,
           "column": 79
         },
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 472,
+          "line": 465,
           "column": 80
         },
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 480,
+          "line": 473,
           "column": 84
         },
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 488,
+          "line": 481,
           "column": 85
         }
       ]
@@ -2025,7 +2037,7 @@
         },
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 502,
+          "line": 495,
           "column": 24
         },
         {
@@ -2307,7 +2319,7 @@
       "refs": [
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 495,
+          "line": 488,
           "column": 22
         }
       ]
@@ -2481,7 +2493,7 @@
       "refs": [
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 444,
+          "line": 437,
           "column": 24
         }
       ]
@@ -2583,12 +2595,12 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 195,
+          "line": 185,
           "column": 24
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 207,
+          "line": 197,
           "column": 24
         }
       ]
@@ -2735,7 +2747,7 @@
       "refs": [
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 485,
+          "line": 478,
           "column": 39
         }
       ]
@@ -2759,7 +2771,7 @@
       "refs": [
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 499,
+          "line": 492,
           "column": 24
         }
       ]
@@ -2855,7 +2867,7 @@
       "refs": [
         {
           "file": "features/models/ProviderIconField.tsx",
-          "line": 14,
+          "line": 45,
           "column": 21
         }
       ]
@@ -2969,7 +2981,7 @@
       "refs": [
         {
           "file": "features/models/ProviderIconField.tsx",
-          "line": 140,
+          "line": 201,
           "column": 36
         }
       ]
@@ -3232,7 +3244,7 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 131,
+          "line": 125,
           "column": 18
         }
       ]
@@ -3663,7 +3675,7 @@
         },
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 454,
+          "line": 447,
           "column": 75
         },
         {
@@ -3894,7 +3906,7 @@
       "refs": [
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 469,
+          "line": 462,
           "column": 39
         }
       ]
@@ -4135,7 +4147,7 @@
       "refs": [
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 76,
+          "line": 70,
           "column": 51
         }
       ]
@@ -4676,7 +4688,7 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 879,
+          "line": 880,
           "column": 43
         }
       ]
@@ -4740,7 +4752,7 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 120,
+          "line": 114,
           "column": 18
         }
       ]
@@ -4836,6 +4848,18 @@
         }
       ]
     },
+    "66b599e6e3a6eeb8": {
+      "source": "从上游获取",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/models/ProviderIconField.tsx",
+          "line": 223,
+          "column": 169
+        }
+      ]
+    },
     "66f58ead4c7ec1ed": {
       "source": "仅统计成功、流式、有可见输出且生成时间不少于 200ms 的业务调用；模型测试不计入。",
       "kind": "text",
@@ -4928,7 +4952,7 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 98,
+          "line": 92,
           "column": 18
         }
       ]
@@ -4954,7 +4978,7 @@
       "refs": [
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 429,
+          "line": 422,
           "column": 29
         }
       ]
@@ -5230,7 +5254,7 @@
       "refs": [
         {
           "file": "features/models/ProviderIconField.tsx",
-          "line": 77,
+          "line": 100,
           "column": 29
         }
       ]
@@ -5436,7 +5460,7 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 874,
+          "line": 875,
           "column": 43
         }
       ]
@@ -5492,12 +5516,12 @@
       "refs": [
         {
           "file": "features/models/ProviderIconField.tsx",
-          "line": 76,
+          "line": 99,
           "column": 42
         },
         {
           "file": "features/models/ProviderIconField.tsx",
-          "line": 77,
+          "line": 100,
           "column": 42
         }
       ]
@@ -5514,7 +5538,7 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 85,
+          "line": 79,
           "column": 24
         }
       ]
@@ -5857,7 +5881,7 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 118,
+          "line": 112,
           "column": 24
         }
       ]
@@ -5909,7 +5933,7 @@
       "refs": [
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 69,
+          "line": 63,
           "column": 38
         }
       ]
@@ -6076,7 +6100,7 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 202,
+          "line": 192,
           "column": 20
         }
       ]
@@ -6678,7 +6702,7 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 87,
+          "line": 81,
           "column": 18
         }
       ]
@@ -6903,6 +6927,18 @@
         }
       ]
     },
+    "9ba680268eb131d9": {
+      "source": "正在获取上游图标…",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/models/ProviderIconField.tsx",
+          "line": 223,
+          "column": 152
+        }
+      ]
+    },
     "9c3c8c4848930a4e": {
       "source": "用于界面分组、模型徽章以及统计显示。",
       "kind": "text",
@@ -7102,12 +7138,12 @@
       "refs": [
         {
           "file": "features/models/ProviderIconField.tsx",
-          "line": 167,
-          "column": 40
+          "line": 229,
+          "column": 51
         },
         {
           "file": "features/models/ProviderIconField.tsx",
-          "line": 168,
+          "line": 230,
           "column": 122
         }
       ]
@@ -7244,7 +7280,7 @@
       "refs": [
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 438,
+          "line": 431,
           "column": 36
         }
       ]
@@ -7291,7 +7327,7 @@
         },
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 505,
+          "line": 498,
           "column": 43
         },
         {
@@ -7655,7 +7691,7 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 144,
+          "line": 138,
           "column": 24
         }
       ]
@@ -7715,7 +7751,7 @@
       "refs": [
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 169,
+          "line": 159,
           "column": 24
         }
       ]
@@ -7859,7 +7895,7 @@
       "refs": [
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 401,
+          "line": 394,
           "column": 26
         },
         {
@@ -7972,12 +8008,12 @@
       "refs": [
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 167,
+          "line": 157,
           "column": 74
         },
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 415,
+          "line": 408,
           "column": 72
         },
         {
@@ -8092,7 +8128,7 @@
       "refs": [
         {
           "file": "features/models/ProviderIconField.tsx",
-          "line": 159,
+          "line": 220,
           "column": 86
         }
       ]
@@ -8382,8 +8418,8 @@
       "refs": [
         {
           "file": "features/models/ProviderIconField.tsx",
-          "line": 167,
-          "column": 25
+          "line": 229,
+          "column": 36
         }
       ]
     },
@@ -8619,7 +8655,7 @@
       "refs": [
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 428,
+          "line": 421,
           "column": 29
         }
       ]
@@ -8727,6 +8763,18 @@
         }
       ]
     },
+    "bffd9d378d4d5b9c": {
+      "source": "服务器地址已更改，请重新获取图标",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/models/ProviderIconField.tsx",
+          "line": 187,
+          "column": 25
+        }
+      ]
+    },
     "c0b3fbff51ccc40b": {
       "source": "完成",
       "kind": "text",
@@ -8746,7 +8794,7 @@
       "refs": [
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 441,
+          "line": 434,
           "column": 24
         }
       ]
@@ -8832,7 +8880,7 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 129,
+          "line": 123,
           "column": 24
         }
       ]
@@ -8907,7 +8955,7 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 107,
+          "line": 101,
           "column": 24
         }
       ]
@@ -9260,7 +9308,7 @@
       "refs": [
         {
           "file": "features/models/ProviderIconField.tsx",
-          "line": 24,
+          "line": 55,
           "column": 21
         }
       ]
@@ -9349,7 +9397,7 @@
       "refs": [
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 69,
+          "line": 63,
           "column": 20
         }
       ]
@@ -9834,7 +9882,7 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 146,
+          "line": 140,
           "column": 18
         }
       ]
@@ -10444,7 +10492,7 @@
       "refs": [
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 413,
+          "line": 406,
           "column": 58
         }
       ]
@@ -10473,7 +10521,7 @@
         },
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 438,
+          "line": 431,
           "column": 48
         }
       ]
@@ -10533,7 +10581,7 @@
       "refs": [
         {
           "file": "features/models/ProviderIconField.tsx",
-          "line": 157,
+          "line": 218,
           "column": 11
         }
       ]
@@ -10722,7 +10770,7 @@
       "refs": [
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 477,
+          "line": 470,
           "column": 39
         }
       ]
@@ -10918,7 +10966,7 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 138,
+          "line": 132,
           "column": 18
         }
       ]
@@ -10983,13 +11031,23 @@
       "refs": [
         {
           "file": "features/models/ProviderIconField.tsx",
-          "line": 53,
+          "line": 19,
           "column": 21
         },
         {
           "file": "features/models/ProviderIconField.tsx",
-          "line": 119,
+          "line": 72,
+          "column": 21
+        },
+        {
+          "file": "features/models/ProviderIconField.tsx",
+          "line": 141,
           "column": 59
+        },
+        {
+          "file": "features/models/ProviderIconField.tsx",
+          "line": 183,
+          "column": 25
         }
       ]
     },
@@ -11221,12 +11279,12 @@
         },
         {
           "file": "features/home/suppliers/HomeSupplierBreakdown.tsx",
-          "line": 137,
+          "line": 131,
           "column": 18
         },
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 400,
+          "line": 393,
           "column": 26
         },
         {
@@ -11516,7 +11574,7 @@
         },
         {
           "file": "features/settings/ModelPricingCard.tsx",
-          "line": 505,
+          "line": 498,
           "column": 31
         },
         {

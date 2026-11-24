@@ -1,8 +1,5 @@
 //! Fetches and extracts web content.
-use std::{
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    time::Duration,
-};
+use std::time::Duration;
 
 use bytes::BytesMut;
 use dom_smoothie::{Config, Readability, TextMode};
@@ -15,7 +12,7 @@ use reqwest::{
 use tokio::{net::lookup_host, time::timeout};
 use url::{Host, Url};
 
-use crate::store::Store;
+use crate::{network::safe_web_resolution, store::Store};
 
 use super::{WebCache, WebCacheEntry};
 
@@ -118,7 +115,7 @@ impl WebFetch {
         let domain = matches!(url.host(), Some(Host::Domain(_)));
         if addresses
             .iter()
-            .any(|address| !safe_resolution(address.ip(), domain))
+            .any(|address| !safe_web_resolution(address.ip(), domain))
         {
             return Err(failure("URL resolves to a non-public address"));
         }
@@ -277,50 +274,6 @@ fn parse_url(value: &str) -> Result<Url, FetchError> {
         return Err(failure("URL is missing a host"));
     }
     Ok(url)
-}
-
-fn is_public(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(ip) => public_v4(ip),
-        IpAddr::V6(ip) => public_v6(ip),
-    }
-}
-
-fn safe_resolution(ip: IpAddr, domain: bool) -> bool {
-    is_public(ip) || (domain && is_benchmark_proxy_range(ip))
-}
-
-fn is_benchmark_proxy_range(ip: IpAddr) -> bool {
-    let IpAddr::V4(ip) = ip else {
-        return false;
-    };
-    u32::from(ip) >> 17 == u32::from(Ipv4Addr::new(198, 18, 0, 0)) >> 17
-}
-
-fn public_v4(ip: Ipv4Addr) -> bool {
-    let value = u32::from(ip);
-    ![
-        (0x0000_0000, 8),
-        (0x0a00_0000, 8),
-        (0x6440_0000, 10),
-        (0x7f00_0000, 8),
-        (0xa9fe_0000, 16),
-        (0xac10_0000, 12),
-        (0xc000_0000, 24),
-        (0xc000_0200, 24),
-        (0xc0a8_0000, 16),
-        (0xc612_0000, 15),
-        (0xc633_6400, 24),
-        (0xcb00_7100, 24),
-        (0xe000_0000, 3),
-    ]
-    .into_iter()
-    .any(|(network, prefix)| value >> (32 - prefix) == network >> (32 - prefix))
-}
-
-fn public_v6(ip: Ipv6Addr) -> bool {
-    let segments = ip.segments();
-    segments[0] & 0xe000 == 0x2000 && !(segments[0] == 0x2001 && segments[1] == 0x0db8)
 }
 
 fn failure(message: impl Into<String>) -> FetchError {

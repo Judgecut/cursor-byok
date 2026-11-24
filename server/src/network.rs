@@ -1,6 +1,10 @@
 //! Owns reusable outbound HTTP clients configured from persisted proxy settings.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    sync::Arc,
+    time::Duration,
+};
 
 use tokio::sync::RwLock;
 
@@ -124,6 +128,51 @@ fn custom_proxy(settings: &ProxySettingsSecret) -> Result<reqwest::Proxy> {
         proxy = proxy.basic_auth(&settings.username, &settings.password);
     }
     Ok(proxy)
+}
+
+fn is_public(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => public_v4(ip),
+        IpAddr::V6(ip) => public_v6(ip),
+    }
+}
+
+pub(crate) fn safe_web_resolution(ip: IpAddr, domain: bool) -> bool {
+    // TUN proxies can return a benchmark-range address for a DNS name.
+    is_public(ip) || (domain && is_benchmark_proxy_range(ip))
+}
+
+fn is_benchmark_proxy_range(ip: IpAddr) -> bool {
+    let IpAddr::V4(ip) = ip else {
+        return false;
+    };
+    u32::from(ip) >> 17 == u32::from(Ipv4Addr::new(198, 18, 0, 0)) >> 17
+}
+
+fn public_v4(ip: Ipv4Addr) -> bool {
+    let value = u32::from(ip);
+    ![
+        (0x0000_0000, 8),
+        (0x0a00_0000, 8),
+        (0x6440_0000, 10),
+        (0x7f00_0000, 8),
+        (0xa9fe_0000, 16),
+        (0xac10_0000, 12),
+        (0xc000_0000, 24),
+        (0xc000_0200, 24),
+        (0xc0a8_0000, 16),
+        (0xc612_0000, 15),
+        (0xc633_6400, 24),
+        (0xcb00_7100, 24),
+        (0xe000_0000, 3),
+    ]
+    .into_iter()
+    .any(|(network, prefix)| value >> (32 - prefix) == network >> (32 - prefix))
+}
+
+fn public_v6(ip: Ipv6Addr) -> bool {
+    let segments = ip.segments();
+    segments[0] & 0xe000 == 0x2000 && !(segments[0] == 0x2001 && segments[1] == 0x0db8)
 }
 
 pub fn reject_self_proxy(address: &str, local_proxy_port: u16) -> Result<()> {

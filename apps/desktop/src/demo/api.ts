@@ -375,6 +375,7 @@ export function installDemoApi(initialInterface?: Partial<Pick<InterfaceSettings
     }
     if (path === "/plugins" && method === "GET") return json([]);
     if (path === "/providers" && method === "GET") return json(providers);
+    if (path === "/providers/icon" && method === "POST") return json({ image: null });
     if (path === "/providers" && method === "POST") {
       const now = Date.now();
       const provider: Provider = { ...body as ProviderInput, provider_id: `demo-${crypto.randomUUID()}`, created_at_ms: now, updated_at_ms: now };

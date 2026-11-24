@@ -5,12 +5,12 @@ import { appStore, useAppStore } from "../../shared/store/appStore";
 import { Button } from "../../shared/ui/Button";
 import { FormField, TextInput } from "../../shared/ui/FormControls";
 import { Icon } from "../../shared/ui/Icon";
-import { claudeIcon, flatColorOrganizationIcon, openAiIcon } from "../../shared/ui/icons";
 import { Select } from "../../shared/ui/Select";
 import { Switch } from "../../shared/ui/Switch";
 import { TitledCard } from "../../shared/ui/TitledCard";
 import { useMessage } from "../../shared/ui/message";
 import { formatRatePerMillion, isValidCustomPriceInput } from "../../shared/utils/costFormat";
+import { resolveSupplierIcon } from "../../shared/utils/providerIcons";
 import { VirtualList } from "../../shared/virtual/VirtualList";
 import { PricingCatalogModal } from "./PricingCatalogModal";
 import styles from "./ModelPricingCard.module.scss";
@@ -388,13 +388,6 @@ export function ModelPricingCard() {
               const busy = savingKey === item.supplier_key;
               const isEditing = editingKey === item.supplier_key;
               const hasCustom = hasAnyRate(item.custom_rates);
-              const icon = item.plugin_icon
-                ? undefined
-                : item.provider_type === "anthropic"
-                  ? claudeIcon
-                  : (item.source_kind === "plugin" || item.provider_type === "gemini")
-                    ? flatColorOrganizationIcon
-                    : openAiIcon;
               const rates: Array<{ label: string; value: string | null; custom: boolean }> = [
                 { label: t("输入"), value: item.effective_rates.input_per_million, custom: item.custom_rates.input_per_million != null },
                 { label: t("输出"), value: item.effective_rates.output_per_million, custom: item.custom_rates.output_per_million != null },
@@ -406,7 +399,7 @@ export function ModelPricingCard() {
                 <div className={styles.itemTop}>
                   <div className={styles.itemIdentity}>
                     <div className={styles.itemTitle}>
-                      <Icon icon={icon} src={item.plugin_icon || undefined} size="1em" />
+                      <Icon {...resolveSupplierIcon(item)} />
                       <strong>{item.display_name}</strong>
                       <code>{item.model_id}</code>
                       <span className={styles.badge}>

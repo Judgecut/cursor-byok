@@ -1,5 +1,5 @@
 import type { Locator } from "@playwright/test";
-import type { OverviewModelSummary } from "../../src/shared/api";
+import type { OverviewFilterSupplier, OverviewModelSummary } from "../../src/shared/api";
 import { test, expect } from "./fixtures";
 
 async function selectProviderIcon(input: Locator, name: string, content: number | number[] | string)
@@ -144,6 +144,76 @@ test("previews, stores, and resets provider icons across model views", async ({ 
   await edit.getByRole("button", { name: "Save", exact: true }).click();
   await expect(edit).toBeHidden();
   expect(management.providers[0].icon).toBeNull();
+});
+
+test("uses the supplier endpoint for brand icons in overview statistics and filters", async ({ page, management }) =>
+{
+  const endpoint = "https://ark.cn-beijing.volces.com/api/coding/v1/messages";
+  const supplier: OverviewFilterSupplier = { supplier_id: `builtin::${endpoint}`, source_kind: "builtin", endpoint_key: endpoint, label: "Volcengine", provider_type: "anthropic", plugin_icon: null, active: true, model_count: 1 };
+  management.overview.suppliers = [{ ...management.overview.metrics, ...supplier, pricing_sources: [] }];
+  management.overview.available_suppliers = [supplier];
+  management.overview.available_models = [{ supplier_key: "ark-model", source_kind: supplier.source_kind, endpoint_key: endpoint, model_id: "ark-code-latest", label: "Ark Code", group: supplier.label, provider_type: supplier.provider_type, plugin_icon: null, active: true }];
+
+  await page.goto("#/");
+  await page.getByRole("tab", { name: /^Provider/ }).click();
+  const row = page.getByRole("table", { name: "Statistics by provider" }).getByRole("row").filter({ hasText: "Volcengine" });
+  await expect(row.locator("img")).toHaveAttribute("src", /huoshan/);
+
+  await page.getByRole("button", { name: /^Filter providers:/ }).click();
+  await expect(page.getByRole("option", { name: /Volcengine/ }).locator("img")).toHaveAttribute("src", /huoshan/);
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("button", { name: "Custom", exact: true }).click();
+  await page.getByRole("button", { name: /Filter.*Model/ }).click();
+  await expect(page.getByRole("option", { name: "Ark Code" }).locator("img")).toHaveAttribute("src", /huoshan/);
+});
+
+test("previews an upstream SVG as a local PNG and ignores a result for a changed address", async ({ page, management }) =>
+{
+  let finishLookup!: () => void;
+  const pendingLookup = new Promise<void>((resolve) => { finishLookup = resolve; });
+  const lookups: unknown[] = [];
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 32"><rect width="64" height="32" fill="red"/></svg>';
+  const image = 'data:image/svg+xml;base64,' + btoa(svg);
+  await page.route("**/api/providers/icon", async (route) => {
+    lookups.push(route.request().postDataJSON());
+    await pendingLookup;
+    await route.fulfill({ json: { image } });
+  });
+
+  await page.goto("#/harness/cursor");
+  await page.getByTitle("Add provider", { exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Add provider", exact: true });
+  const address = dialog.getByLabel("Server address", { exact: true });
+  await dialog.getByLabel("Provider name", { exact: true }).fill("Relay");
+  await dialog.getByPlaceholder("sk-xxxxxx", { exact: true }).fill("test-placeholder");
+  await address.fill("https://api.example.com/v1?example=value");
+  await dialog.getByRole("button", { name: "Change icon" }).click();
+  const fetchIcon = dialog.getByRole("button", { name: "Fetch from upstream" });
+  try
+  {
+    await fetchIcon.click();
+    await expect(dialog.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+    await address.fill("https://relay.example.org/openai/v1");
+  }
+  finally
+  {
+    finishLookup();
+  }
+  await expect(dialog.getByRole("alert")).toHaveText("The server address changed. Fetch the icon again.");
+  await fetchIcon.click();
+  await expect(dialog.getByText("Custom icon", { exact: true })).toBeVisible();
+  expect(lookups).toEqual([{ base_url: "https://api.example.com" }, { base_url: "https://relay.example.org" }]);
+  expect(management.providers).toHaveLength(0);
+
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  const saved = management.providers[0];
+  expect(saved.icon).toMatch(/^data:image\/png;base64,/);
+  const png = new DataView(Uint8Array.from(atob(saved.icon!.split(",")[1]), (character) => character.charCodeAt(0)).buffer);
+  expect([png.getUint32(16), png.getUint32(20)]).toEqual([96, 96]);
+  await page.reload();
+  await expect(page.locator('[data-provider-id="smoke-provider"] img')).toHaveAttribute("src", saved.icon!);
 });
 
 test("creates a provider and model through the real forms and reloads them", async ({ page, management }) =>

@@ -819,6 +819,7 @@ export const api = {
   },
   dismissAd: (id: string, reason: string) => request<void>(`/promotions/${encodeURIComponent(id)}/dismissals`, { method: "POST", body: JSON.stringify({ reason }) }),
   providers: () => request<Provider[]>("/providers"),
+  discoverProviderIcon: (baseUrl: string, signal?: AbortSignal) => request<{ image: string | null }>("/providers/icon", { method: "POST", body: JSON.stringify({ base_url: baseUrl }), signal }),
   createProvider: (provider: ProviderInput) => request<Provider>("/providers", { method: "POST", body: JSON.stringify(provider) }),
   updateProvider: (providerId: string, provider: ProviderInput) => request<Provider>(`/providers/${encodeURIComponent(providerId)}`, { method: "PUT", body: JSON.stringify(provider) }),
   deleteProvider: (providerId: string) => request<void>(`/providers/${encodeURIComponent(providerId)}`, { method: "DELETE" }),

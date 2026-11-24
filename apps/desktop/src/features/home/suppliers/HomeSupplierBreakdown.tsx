@@ -3,9 +3,9 @@ import { useI18n } from "../../../i18n/store";
 import type { OverviewSupplierBreakdown, PluginDescriptor } from "../../../shared/api";
 import { Card } from "../../../shared/ui/Card";
 import { Icon } from "../../../shared/ui/Icon";
-import { claudeIcon, flatColorOrganizationIcon, openAiIcon } from "../../../shared/ui/icons";
 import { formatDisplayCost, type DisplayCurrency, type DisplayExchangeRate } from "../../../shared/utils/costFormat";
 import { formatCompactInteger, formatInteger } from "../../../shared/utils/numberFormat";
+import { resolveSupplierIcon } from "../../../shared/utils/providerIcons";
 import { aggregateTooltip, formatFirstOutput, formatSpeed } from "../../../shared/utils/speedFormat";
 import { buildPluginLabelMap } from "../../../shared/utils/supplierOptions";
 import { ScrollableContent } from "../../../shared/virtual/ScrollableContent";
@@ -27,12 +27,6 @@ import {
   type BreakdownSortKey,
 } from "../breakdown/breakdownShared";
 import styles from "../breakdown/BreakdownTable.module.scss";
-
-function supplierIcon(sourceKind: string, providerType: string) {
-  if (providerType === "anthropic") return claudeIcon;
-  if (sourceKind === "plugin" || providerType === "gemini") return flatColorOrganizationIcon;
-  return openAiIcon;
-}
 
 export function HomeSupplierBreakdown({
   suppliers,
@@ -158,11 +152,7 @@ export function HomeSupplierBreakdown({
               <td className={styles.stickyName}>
                 <div className={styles.entityCell}>
                   <div className={styles.entityMain}>
-                    <Icon
-                      icon={supplier.plugin_icon ? undefined : supplierIcon(supplier.source_kind, supplier.provider_type)}
-                      src={supplier.plugin_icon || undefined}
-                      size="1em"
-                    />
+                    <Icon {...resolveSupplierIcon(supplier)} />
                     <span className={styles.entityName} title={label}>{label}</span>
                     {!supplier.active && <span className={styles.badge}>{t("历史")}</span>}
                     {supplier.model_count > 1 && <span className={styles.badge}>

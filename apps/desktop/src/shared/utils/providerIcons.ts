@@ -65,3 +65,8 @@ export function resolveProviderIcon(icon: string | null, baseUrl = ""): { visual
   const preset = icon === null ? presetForHost(baseUrl) : providerIconPresets.find((candidate) => candidate.key === icon);
   return preset ? { visual: preset.visual, name: preset.name } : { visual: { icon: flatColorOrganizationIcon } };
 }
+
+export function resolveSupplierIcon({ endpoint_key, plugin_icon }: { endpoint_key: string; plugin_icon: string | null }): IconVisual
+{
+  return plugin_icon ? { src: plugin_icon } : resolveProviderIcon(null, endpoint_key).visual;
+}

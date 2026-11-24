@@ -1,8 +1,8 @@
 import type { Locale } from "../../i18n/runtime";
 import { pluginText, type OverviewFilterModel, type OverviewFilterSupplier, type PluginDescriptor } from "../api";
-import { claudeIcon, flatColorOrganizationIcon, openAiIcon } from "../ui/icons";
 import type { ModelSelectOption } from "../ui/ModelSelect";
 import type { SupplierFilterOption } from "../ui/SupplierFilter";
+import { resolveSupplierIcon } from "./providerIcons";
 
 export function buildPluginLabelMap(plugins: PluginDescriptor[], locale: Locale): Map<string, string> {
   const labels = new Map<string, string>();
@@ -24,19 +24,14 @@ export function buildSupplierFilterOptions(
   return suppliers.map((supplier) => {
     const label = (supplier.source_kind === "plugin" ? pluginLabels.get(supplier.endpoint_key) : undefined)
       || supplier.label;
+    const { icon, src } = resolveSupplierIcon(supplier);
     return {
       value: supplier.supplier_id,
       label,
       endpointKey: supplier.endpoint_key,
       active: supplier.active,
-      iconSrc: supplier.plugin_icon || undefined,
-      icon: supplier.plugin_icon
-        ? undefined
-        : supplier.provider_type === "anthropic"
-          ? claudeIcon
-          : (supplier.source_kind === "plugin" || supplier.provider_type === "gemini")
-            ? flatColorOrganizationIcon
-            : openAiIcon,
+      iconSrc: src,
+      icon,
     };
   });
 }
@@ -49,18 +44,13 @@ export function buildModelFilterOptions(
   const pluginGroups = buildPluginLabelMap(plugins, locale);
   return models.map((item) => {
     const groupLabel = (item.source_kind === "plugin" ? pluginGroups.get(item.endpoint_key) : undefined) || item.group;
+    const { icon, src } = resolveSupplierIcon(item);
     return {
       value: item.supplier_key,
       label: item.active ? item.label : t("{label}（历史）", { label: item.label }),
       group: { key: groupLabel, label: groupLabel },
-      iconSrc: item.plugin_icon || undefined,
-      icon: item.plugin_icon
-        ? undefined
-        : item.provider_type === "anthropic"
-          ? claudeIcon
-          : (item.source_kind === "plugin" || item.provider_type === "gemini")
-            ? flatColorOrganizationIcon
-            : openAiIcon,
+      iconSrc: src,
+      icon,
     };
   });
 }
