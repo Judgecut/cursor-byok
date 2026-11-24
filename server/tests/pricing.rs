@@ -23,10 +23,7 @@ use cursor_server::{
     },
     network::NetworkClients,
     plugin::{PluginRegistry, PluginRuntime},
-    pricing::{
-        canonical_supplier_id, canonical_supplier_identity, BindingMode, PricingRates,
-        PricingService, SourceKind,
-    },
+    pricing::{canonical_supplier_identity, BindingMode, PricingRates, PricingService, SourceKind},
     provider::ProviderRouter,
     store::{CallFinish, ExternalApiSettings, LlmCallFilter, SaveSupplierPricingInput},
 };
@@ -426,8 +423,9 @@ async fn same_model_across_suppliers_aggregates_cleanly_and_shares_identity_acro
     let openai_summary = overview
         .suppliers
         .iter()
-        .find(|p| p.endpoint_key == "https://api.openai.com/v1/responses")
+        .find(|p| p.endpoint_key == "https://api.openai.com/v1")
         .unwrap();
+    assert_eq!(openai_summary.label, "renamed-group");
     assert!(!openai_summary.active);
     assert_eq!(openai_summary.llm_calls, 2);
     assert_eq!(openai_summary.total_cost, "9.125");
@@ -436,7 +434,7 @@ async fn same_model_across_suppliers_aggregates_cleanly_and_shares_identity_acro
     let or_summary = overview
         .suppliers
         .iter()
-        .find(|p| p.endpoint_key == "https://openrouter.ai/api/v1/chat/completions")
+        .find(|p| p.endpoint_key == "https://openrouter.ai/api/v1")
         .unwrap();
     assert!(or_summary.active);
     assert_eq!(or_summary.llm_calls, 1);
@@ -444,8 +442,7 @@ async fn same_model_across_suppliers_aggregates_cleanly_and_shares_identity_acro
     assert_eq!(or_summary.model_count, 1);
 
     // Deleted supplier stays available in overview.available_suppliers and overview.available_models for filtering!
-    let openai_supplier_id =
-        canonical_supplier_id(SourceKind::Builtin, "https://api.openai.com/v1/responses");
+    let openai_supplier_id = format!("builtin::provider::{}", openai_model.provider_id);
     assert!(overview
         .available_suppliers
         .iter()
@@ -1869,7 +1866,6 @@ async fn overview_and_calls_api_apply_supplier_and_time_filters_before_paginatio
 
     let ep_a = "https://supplier-a.example.com/v1/chat/completions";
     let ep_b = "https://supplier-b.example.com/v1/chat/completions";
-    let sid_a = canonical_supplier_id(SourceKind::Builtin, ep_a);
 
     // Custom pricing for gpt-4o on supplier A; catalog pricing for gpt-4o on supplier B; unpriced custom-unpriced on A.
     store
@@ -1998,9 +1994,24 @@ async fn overview_and_calls_api_apply_supplier_and_time_filters_before_paginatio
     assert_eq!(items[0]["call_id"], "a-3");
     assert_eq!(items[1]["call_id"], "a-2");
 
+    // Overview groups the unconfigured endpoints by host name.
+    let (status, all_overview) =
+        send(router.clone(), "GET", "/__byok-api__/api/overview", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let sid_a = all_overview["suppliers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["endpoint_key"] == "https://supplier-a.example.com")
+        .unwrap()["supplier_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(sid_a, "builtin::host::supplier-a.example.com");
+
     // Supplier filter selects all models of supplier A before limit/offset and drops cursor_official.
     let encoded_suppliers = url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("suppliers", &json!([sid_a]).to_string())
+        .append_pair("suppliers", &json!([sid_a.clone()]).to_string())
         .append_pair("limit", "1")
         .append_pair("offset", "1")
         .finish();
@@ -2018,9 +2029,6 @@ async fn overview_and_calls_api_apply_supplier_and_time_filters_before_paginatio
     assert_eq!(f_items[0]["call_id"], "a-2");
 
     // Overview endpoint reports mixed pricing_sources without flattening to one source.
-    let (status, all_overview) =
-        send(router.clone(), "GET", "/__byok-api__/api/overview", None).await;
-    assert_eq!(status, StatusCode::OK);
     let gpt4o = all_overview["models"]
         .as_array()
         .unwrap()
@@ -2032,7 +2040,7 @@ async fn overview_and_calls_api_apply_supplier_and_time_filters_before_paginatio
         .as_array()
         .unwrap()
         .iter()
-        .find(|s| s["supplier_id"] == sid_a)
+        .find(|s| s["supplier_id"].as_str() == Some(sid_a.as_str()))
         .unwrap();
     assert_eq!(sup_a["pricing_sources"], json!(["custom", "unpriced"]));
     assert_eq!(sup_a["model_count"], 2);

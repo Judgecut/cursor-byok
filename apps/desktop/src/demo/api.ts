@@ -124,12 +124,8 @@ function catalogEntry(
   return { provider_id, provider_name, provider_api, model_id, model_name, rates, synced_at_ms: DEMO_NOW - 30 * MINUTE_MS };
 }
 
-function supplierIdForEndpoint(sourceKind: "builtin" | "plugin", endpointKey: string): string {
-  return `${sourceKind}::${endpointKey}`;
-}
-
 function supplierIdForModel(model: Model): string {
-  return supplierIdForEndpoint("builtin", model.base_url);
+  return `builtin::provider::${model.provider_id}`;
 }
 
 function supplierKeyFor(model: Model): string {
@@ -137,9 +133,12 @@ function supplierKeyFor(model: Model): string {
 }
 
 function supplierIdOfCall(call: LlmCall): string {
-  const sourceKind = call.provider_type === "plugin" || call.endpoint_key?.startsWith("plugin://") ? "plugin" : "builtin";
-  const endpointKey = call.endpoint_key || call.provider_url;
-  return supplierIdForEndpoint(sourceKind, endpointKey);
+  const endpointKey = call.endpoint_key || call.request_url || call.provider_url;
+  if (call.provider_type === "plugin" || endpointKey.startsWith("plugin://")) {
+    return `plugin::${endpointKey}`;
+  }
+  const model = models.find((item) => item.model_hash === call.model_hash);
+  return model ? supplierIdForModel(model) : `builtin::host::${endpointLabel(endpointKey)}`;
 }
 
 function endpointLabel(endpointKey: string): string {
@@ -947,9 +946,10 @@ function createOverview(params: URLSearchParams): Overview {
     } else {
       supplierMeta.set(supplierId, {
         supplier_id: supplierId,
+        provider_id: model.provider_id,
         source_kind: "builtin",
         endpoint_key: model.base_url,
-        label: endpointLabel(model.base_url),
+        label: model.provider_name,
         provider_type: model.request_format,
         plugin_icon: null,
         active: true,
@@ -975,6 +975,7 @@ function createOverview(params: URLSearchParams): Overview {
       const sample = supplierCalls[0];
       return {
         supplier_id: supplierId,
+        provider_id: meta?.provider_id ?? null,
         source_kind: meta?.source_kind ?? "builtin",
         endpoint_key: meta?.endpoint_key ?? (sample.endpoint_key || sample.provider_url),
         label: meta?.label ?? endpointLabel(sample.endpoint_key || sample.provider_url),
@@ -1014,7 +1015,7 @@ function createOverview(params: URLSearchParams): Overview {
     endpoint_key: model.base_url,
     model_id: model.model_id,
     label: model.display_name,
-    group: endpointLabel(model.base_url),
+    group: model.provider_name,
     provider_type: model.request_format,
     plugin_icon: null,
     active: true,

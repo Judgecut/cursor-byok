@@ -8,6 +8,7 @@ import openrouterIcon from "../assets/provider-icons/openrouter.svg";
 import qwenIcon from "../assets/provider-icons/qwen-color.svg";
 import xaiIcon from "../assets/provider-icons/xai.svg";
 import zhipuIcon from "../assets/provider-icons/zhipu.svg";
+import type { OverviewFilterSupplier } from "../api";
 import type { IconProps } from "../ui/Icon";
 import { claudeIcon, flatColorOrganizationIcon, openAiIcon } from "../ui/icons";
 
@@ -66,7 +67,16 @@ export function resolveProviderIcon(icon: string | null, baseUrl = ""): { visual
   return preset ? { visual: preset.visual, name: preset.name } : { visual: { icon: flatColorOrganizationIcon } };
 }
 
-export function resolveSupplierIcon({ endpoint_key, plugin_icon }: { endpoint_key: string; plugin_icon: string | null }): IconVisual
+export function resolveSupplierIcon({ endpoint_key, plugin_icon }: { endpoint_key: string; plugin_icon: string | null }, configuredIcon: string | null = null): IconVisual
 {
-  return plugin_icon ? { src: plugin_icon } : resolveProviderIcon(null, endpoint_key).visual;
+  return plugin_icon ? { src: plugin_icon } : resolveProviderIcon(configuredIcon, endpoint_key).visual;
+}
+
+export function historicalSupplierBrand(supplier: Pick<OverviewFilterSupplier, "active" | "provider_id" | "source_kind" | "endpoint_key">): string | undefined
+{
+  if (supplier.active || supplier.provider_id || supplier.source_kind !== "builtin")
+  {
+    return undefined;
+  }
+  return presetForHost(supplier.endpoint_key)?.name;
 }

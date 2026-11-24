@@ -15,6 +15,7 @@ mod runs;
 mod settings;
 mod sqlite;
 mod storage;
+mod supplier_groups;
 mod tool_rounds;
 mod writer;
 

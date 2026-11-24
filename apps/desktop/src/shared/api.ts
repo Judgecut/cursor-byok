@@ -583,6 +583,7 @@ export interface OverviewActivityDay {
 
 export interface OverviewFilterSupplier {
   supplier_id: string;
+  provider_id: string | null;
   source_kind: SourceKind;
   endpoint_key: string;
   label: string;
@@ -594,6 +595,7 @@ export interface OverviewFilterSupplier {
 
 export interface OverviewSupplierBreakdown {
   supplier_id: string;
+  provider_id: string | null;
   source_kind: SourceKind;
   endpoint_key: string;
   label: string;

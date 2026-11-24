@@ -2,10 +2,7 @@
 //! annual activity series, cross-model supplier breakdowns, model summaries,
 //! and complete filter candidate lists.
 
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
-    str::FromStr,
-};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use chrono::{Days, Utc};
 use sqlx::Row;
@@ -13,18 +10,18 @@ use sqlx::Row;
 use crate::{
     model::{
         Overview, OverviewActivityDay, OverviewFilterModel, OverviewFilterSupplier,
-        OverviewMetrics, OverviewModelSummary, OverviewSupplierBreakdown, ProviderType,
-        SpeedAggregate, SpeedTotals, TokenUsageBucket, TokenUsageGranularity,
+        OverviewMetrics, OverviewModelSummary, OverviewSupplierBreakdown, SpeedAggregate,
+        SpeedTotals, TokenUsageBucket, TokenUsageGranularity,
     },
     plugin::PluginModelDescriptor,
-    pricing::{
-        canonical_supplier_id, canonical_supplier_identity, divide_nano_round_half_up,
-        endpoint_host, format_nano_usd, source_kind_for, SourceKind,
-    },
+    pricing::{divide_nano_round_half_up, endpoint_host, format_nano_usd, SourceKind},
     Error, Result,
 };
 
-use super::Store;
+use super::{
+    supplier_groups::{endpoint_origin, plugin_group_id, SupplierGroups},
+    Store,
+};
 
 const OVERVIEW_DAYS: u64 = 365;
 const MAX_RANGE_BUCKETS: i64 = 60;
@@ -57,7 +54,10 @@ impl Store {
     ) -> Result<Overview> {
         let supplier_keys_json = normalize_string_array_filter(supplier_keys, "supplier_keys")?;
         let suppliers_json = normalize_string_array_filter(suppliers, "suppliers")?;
-        let supplier_id_expr = supplier_id_sql();
+        let providers = self.providers().await?;
+        let models = self.models().await?;
+        let groups = SupplierGroups::new(&providers, &models);
+        let supplier_group_expr = groups.expr();
 
         let summary_row = sqlx::query(&format!(
             "SELECT
@@ -83,7 +83,7 @@ impl Store {
                AND (? IS NULL OR created_at_ms >= ?)
                AND (? IS NULL OR created_at_ms < ?)
                AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
-               AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))",
+               AND (? IS NULL OR {supplier_group_expr} IN (SELECT value FROM json_each(?)))",
             fresh_input = fresh_input_sql(),
             cache_estimation_cols = cache_estimation_aggregate_sql(),
         ))
@@ -125,6 +125,7 @@ impl Store {
                 end_ms,
                 supplier_keys_json.as_deref(),
                 suppliers_json.as_deref(),
+                supplier_group_expr,
             )
             .await?;
 
@@ -179,7 +180,7 @@ impl Store {
                AND created_at_ms >= ?
                AND (? IS NULL OR created_at_ms < ?)
                AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
-               AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))
+               AND (? IS NULL OR {supplier_group_expr} IN (SELECT value FROM json_each(?)))
              GROUP BY bucket_start_ms
              ORDER BY bucket_start_ms",
             fresh_input = fresh_input_sql(),
@@ -251,11 +252,15 @@ impl Store {
             .collect();
 
         let activity_series = self
-            .load_activity_series(supplier_keys_json.as_deref(), suppliers_json.as_deref())
+            .load_activity_series(
+                supplier_keys_json.as_deref(),
+                suppliers_json.as_deref(),
+                supplier_group_expr,
+            )
             .await?;
 
         let (supplier_meta, available_suppliers, available_models) =
-            self.load_supplier_metadata(plugin_models).await?;
+            self.load_supplier_metadata(plugin_models, &groups).await?;
 
         let suppliers = self
             .load_supplier_breakdowns(
@@ -263,6 +268,7 @@ impl Store {
                 end_ms,
                 supplier_keys_json.as_deref(),
                 suppliers_json.as_deref(),
+                supplier_group_expr,
                 &supplier_meta,
             )
             .await?;
@@ -273,6 +279,7 @@ impl Store {
                 end_ms,
                 supplier_keys_json.as_deref(),
                 suppliers_json.as_deref(),
+                supplier_group_expr,
             )
             .await?;
 
@@ -292,6 +299,7 @@ impl Store {
         &self,
         supplier_keys_json: Option<&str>,
         suppliers_json: Option<&str>,
+        supplier_group_expr: &str,
     ) -> Result<Vec<OverviewActivityDay>> {
         let today = Utc::now().date_naive();
         let start_date = today
@@ -305,7 +313,6 @@ impl Store {
             .and_hms_opt(0, 0, 0)
             .map(|dt| dt.and_utc().timestamp_millis().saturating_add(DAY_MS))
             .unwrap_or(i64::MAX);
-        let supplier_id_expr = supplier_id_sql();
 
         let rows = sqlx::query(&format!(
             "SELECT
@@ -319,7 +326,7 @@ impl Store {
                AND created_at_ms >= ?
                AND created_at_ms < ?
                AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
-               AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))
+               AND (? IS NULL OR {supplier_group_expr} IN (SELECT value FROM json_each(?)))
              GROUP BY day_start_ms",
             fresh_input = fresh_input_sql(),
         ))
@@ -362,10 +369,10 @@ impl Store {
         end_ms: Option<i64>,
         supplier_keys_json: Option<&str>,
         suppliers_json: Option<&str>,
+        supplier_group_expr: &str,
     ) -> Result<SpeedAggregate> {
         let eligible = speed_eligible_sql();
         let effective_output = effective_output_tokens_sql();
-        let supplier_id_expr = supplier_id_sql();
         let row = sqlx::query(&format!(
             "SELECT
                 COALESCE(SUM({effective_output}), 0) AS output_tokens,
@@ -376,7 +383,7 @@ impl Store {
                AND (? IS NULL OR created_at_ms >= ?)
                AND (? IS NULL OR created_at_ms < ?)
                AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
-               AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))"
+               AND (? IS NULL OR {supplier_group_expr} IN (SELECT value FROM json_each(?)))"
         ))
         .bind(start_ms)
         .bind(start_ms)
@@ -407,7 +414,7 @@ impl Store {
                  AND (? IS NULL OR created_at_ms >= ?)
                  AND (? IS NULL OR created_at_ms < ?)
                  AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
-                 AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))
+                 AND (? IS NULL OR {supplier_group_expr} IN (SELECT value FROM json_each(?)))
              )
              WHERE rn IN ((cnt + 1) / 2, (cnt + 2) / 2)",
             eligible = first_output_eligible_sql(),
@@ -433,13 +440,12 @@ impl Store {
         end_ms: Option<i64>,
         supplier_keys_json: Option<&str>,
         suppliers_json: Option<&str>,
-        group_expr: &str,
+        supplier_group_expr: &str,
     ) -> Result<HashMap<String, SpeedTotals>> {
         let eligible = speed_eligible_sql();
         let effective_output = effective_output_tokens_sql();
-        let supplier_id_expr = supplier_id_sql();
         let rows = sqlx::query(&format!(
-            "SELECT {group_expr} AS group_key,
+            "SELECT {supplier_group_expr} AS group_key,
                 COALESCE(SUM({effective_output}), 0) AS output_tokens,
                 COALESCE(SUM(generation_ms), 0) AS generation_ms,
                 COUNT(*) AS samples
@@ -448,7 +454,7 @@ impl Store {
                AND (? IS NULL OR created_at_ms >= ?)
                AND (? IS NULL OR created_at_ms < ?)
                AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
-               AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))
+               AND (? IS NULL OR {supplier_group_expr} IN (SELECT value FROM json_each(?)))
              GROUP BY group_key"
         ))
         .bind(start_ms)
@@ -483,22 +489,21 @@ impl Store {
         end_ms: Option<i64>,
         supplier_keys_json: Option<&str>,
         suppliers_json: Option<&str>,
-        group_expr: &str,
+        supplier_group_expr: &str,
     ) -> Result<HashMap<String, i64>> {
-        let supplier_id_expr = supplier_id_sql();
         let rows = sqlx::query(&format!(
             "SELECT group_key, CAST(AVG(ttfo_ms) AS INTEGER) AS median_ms
              FROM (
-               SELECT {group_expr} AS group_key, ttfo_ms,
-                 ROW_NUMBER() OVER (PARTITION BY {group_expr} ORDER BY ttfo_ms) AS rn,
-                 COUNT(*) OVER (PARTITION BY {group_expr}) AS cnt
+               SELECT {supplier_group_expr} AS group_key, ttfo_ms,
+                 ROW_NUMBER() OVER (PARTITION BY {supplier_group_expr} ORDER BY ttfo_ms) AS rn,
+                 COUNT(*) OVER (PARTITION BY {supplier_group_expr}) AS cnt
                FROM llm_calls
                WHERE {eligible}
                  AND ttfo_ms IS NOT NULL
                  AND (? IS NULL OR created_at_ms >= ?)
                  AND (? IS NULL OR created_at_ms < ?)
                  AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
-                 AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))
+                 AND (? IS NULL OR {supplier_group_expr} IN (SELECT value FROM json_each(?)))
              )
              WHERE rn IN ((cnt + 1) / 2, (cnt + 2) / 2)
              GROUP BY group_key",
@@ -528,165 +533,177 @@ impl Store {
     async fn load_supplier_metadata(
         &self,
         plugin_models: &[PluginModelDescriptor],
+        groups: &SupplierGroups,
     ) -> Result<(
         HashMap<String, CanonicalSupplierMeta>,
         Vec<OverviewFilterSupplier>,
         Vec<OverviewFilterModel>,
     )> {
-        struct CanonicalSupplierAccum {
+        struct GroupAccum {
             source_kind: SourceKind,
+            provider_id: Option<String>,
             endpoint_key: String,
-            configured_label: Option<String>,
+            label: String,
             provider_type: String,
             plugin_icon: Option<String>,
             active: bool,
             model_ids: BTreeSet<String>,
         }
 
-        let mut canonical_suppliers: HashMap<String, CanonicalSupplierAccum> = HashMap::new();
-        let mut groups_by_supplier_key: HashMap<String, String> = HashMap::new();
+        let mut accum: HashMap<String, GroupAccum> = HashMap::new();
 
-        for model in self.models().await? {
-            if let Ok(request_url) = model.request_url() {
-                let provider_type = model.provider_type();
-                let identity = canonical_supplier_identity(
-                    provider_type,
-                    &request_url,
-                    &model.base_url,
-                    &model.model_id,
-                );
-                let configured_group = Some(model.provider_name.clone());
-                let group = model.provider_name.clone();
-                groups_by_supplier_key
-                    .entry(identity.supplier_key)
-                    .or_insert(group);
-
-                let supplier_id =
-                    canonical_supplier_id(identity.source_kind, &identity.endpoint_key);
-                let entry = canonical_suppliers.entry(supplier_id).or_insert_with(|| {
-                    CanonicalSupplierAccum {
-                        source_kind: identity.source_kind,
-                        endpoint_key: identity.endpoint_key,
-                        configured_label: configured_group.clone(),
-                        provider_type: provider_type.as_str().to_owned(),
-                        plugin_icon: None,
-                        active: true,
-                        model_ids: BTreeSet::new(),
-                    }
-                });
-                entry.active = true;
-                if entry.configured_label.is_none() {
-                    entry.configured_label = configured_group;
-                }
-                entry.model_ids.insert(identity.model_id);
+        // Configured built-in suppliers: one row per provider ID, regardless
+        // of how many protocols its models use.
+        for group in groups.groups() {
+            if !group.is_active() {
+                continue;
             }
-        }
-
-        for plugin in plugin_models {
-            let endpoint_url = format!("plugin://{}/{}", plugin.plugin_id, plugin.provider_id);
-            let identity = canonical_supplier_identity(
-                ProviderType::Plugin,
-                &endpoint_url,
-                &endpoint_url,
-                &plugin.model_id,
+            accum.insert(
+                group.id.clone(),
+                GroupAccum {
+                    source_kind: SourceKind::Builtin,
+                    provider_id: Some(group.provider_id.clone()),
+                    endpoint_key: group.base_url.clone(),
+                    label: group.label.clone(),
+                    provider_type: group.provider_type.clone().unwrap_or_default(),
+                    plugin_icon: None,
+                    active: true,
+                    model_ids: group.model_ids.clone(),
+                },
             );
-            groups_by_supplier_key
-                .entry(identity.supplier_key)
-                .or_insert_with(|| plugin.plugin_name.clone());
-
-            let supplier_id = canonical_supplier_id(SourceKind::Plugin, &identity.endpoint_key);
-            let entry =
-                canonical_suppliers
-                    .entry(supplier_id)
-                    .or_insert_with(|| CanonicalSupplierAccum {
-                        source_kind: SourceKind::Plugin,
-                        endpoint_key: identity.endpoint_key,
-                        configured_label: Some(plugin.plugin_name.clone()),
-                        provider_type: ProviderType::Plugin.as_str().to_owned(),
-                        plugin_icon: Some(plugin.icon.clone()),
-                        active: true,
-                        model_ids: BTreeSet::new(),
-                    });
-            entry.active = true;
-            entry.configured_label = Some(plugin.plugin_name.clone());
-            entry.plugin_icon = Some(plugin.icon.clone());
-            entry.model_ids.insert(identity.model_id);
         }
 
+        // Configured plugin suppliers keep their endpoint-level identity.
+        for plugin in plugin_models {
+            let endpoint = format!("plugin://{}/{}", plugin.plugin_id, plugin.provider_id);
+            let group_id = plugin_group_id(&endpoint);
+            let entry = accum.entry(group_id).or_insert_with(|| GroupAccum {
+                source_kind: SourceKind::Plugin,
+                provider_id: None,
+                endpoint_key: endpoint.clone(),
+                label: plugin.plugin_name.clone(),
+                provider_type: plugin.provider_type.clone(),
+                plugin_icon: Some(plugin.icon.clone()),
+                active: true,
+                model_ids: BTreeSet::new(),
+            });
+            entry.active = true;
+            entry.plugin_icon = Some(plugin.icon.clone());
+            entry.model_ids.insert(plugin.model_id.clone());
+        }
+
+        // Endpoints observed in calls, including deleted models and providers.
         let pricing_views = self.supplier_pricing_models(plugin_models).await?;
         let mut available_models = Vec::new();
-
-        for view in pricing_views {
+        for view in &pricing_views {
             if !(view.active || view.call_count > 0) {
                 continue;
             }
 
-            let group = groups_by_supplier_key
-                .get(&view.supplier_key)
-                .cloned()
-                .or_else(|| endpoint_host(&view.endpoint_key))
-                .unwrap_or_else(|| view.endpoint_key.clone());
-
+            let group_id = match view.source_kind {
+                SourceKind::Plugin => plugin_group_id(&view.endpoint_key),
+                SourceKind::Builtin => groups.group_for_endpoint(&view.endpoint_key),
+            };
+            let group_label = accum
+                .get(&group_id)
+                .map(|entry| entry.label.clone())
+                .or_else(|| groups.group(&group_id).map(|group| group.label.clone()))
+                .unwrap_or_else(|| fallback_group_label(&group_id, &view.endpoint_key));
             available_models.push(OverviewFilterModel {
                 supplier_key: view.supplier_key.clone(),
                 source_kind: view.source_kind.as_str().to_owned(),
                 endpoint_key: view.endpoint_key.clone(),
                 model_id: view.model_id.clone(),
                 label: view.display_name.clone(),
-                group,
+                group: group_label,
                 provider_type: view.provider_type.clone(),
                 plugin_icon: view.plugin_icon.clone(),
                 active: view.active,
             });
-
-            let supplier_id = canonical_supplier_id(view.source_kind, &view.endpoint_key);
-            let entry =
-                canonical_suppliers
-                    .entry(supplier_id)
-                    .or_insert_with(|| CanonicalSupplierAccum {
-                        source_kind: view.source_kind,
+            // Configured models already belong to their provider's group. A
+            // shared request endpoint must not add a second supplier entry.
+            if view.source_kind == SourceKind::Builtin && view.active {
+                continue;
+            }
+            let entry = accum.entry(group_id.clone()).or_insert_with(|| {
+                if let Some(group) = groups.group(&group_id) {
+                    return GroupAccum {
+                        source_kind: SourceKind::Builtin,
+                        provider_id: Some(group.provider_id.clone()),
+                        endpoint_key: group.base_url.clone(),
+                        label: group.label.clone(),
+                        provider_type: group.provider_type.clone().unwrap_or_default(),
+                        plugin_icon: None,
+                        active: group.is_active(),
+                        model_ids: BTreeSet::new(),
+                    };
+                }
+                if view.source_kind == SourceKind::Plugin {
+                    GroupAccum {
+                        source_kind: SourceKind::Plugin,
+                        provider_id: None,
                         endpoint_key: view.endpoint_key.clone(),
-                        configured_label: None,
+                        label: endpoint_host(&view.endpoint_key)
+                            .unwrap_or_else(|| view.endpoint_key.clone()),
                         provider_type: view.provider_type.clone(),
                         plugin_icon: view.plugin_icon.clone(),
                         active: view.active,
                         model_ids: BTreeSet::new(),
-                    });
+                    }
+                } else {
+                    let label = group_id
+                        .strip_prefix("builtin::host::")
+                        .unwrap_or(&view.endpoint_key)
+                        .to_owned();
+                    GroupAccum {
+                        source_kind: SourceKind::Builtin,
+                        provider_id: None,
+                        endpoint_key: endpoint_origin(&view.endpoint_key),
+                        label,
+                        provider_type: view.provider_type.clone(),
+                        plugin_icon: None,
+                        active: false,
+                        model_ids: BTreeSet::new(),
+                    }
+                }
+            });
             entry.active |= view.active;
             if entry.plugin_icon.is_none() {
                 entry.plugin_icon = view.plugin_icon.clone();
             }
-            entry.model_ids.insert(view.model_id);
+            if entry.provider_type.is_empty() {
+                entry.provider_type = view.provider_type.clone();
+            }
+            entry.model_ids.insert(view.model_id.clone());
         }
 
-        let mut meta_by_id = HashMap::with_capacity(canonical_suppliers.len());
-        let mut available_suppliers: Vec<OverviewFilterSupplier> = canonical_suppliers
+        let mut meta_by_id = HashMap::with_capacity(accum.len());
+        let mut available_suppliers: Vec<OverviewFilterSupplier> = accum
             .into_iter()
-            .map(|(supplier_id, acc)| {
-                let label = acc
-                    .configured_label
-                    .or_else(|| endpoint_host(&acc.endpoint_key))
-                    .unwrap_or_else(|| acc.endpoint_key.clone());
+            .filter(|(_, entry)| !entry.model_ids.is_empty())
+            .map(|(supplier_id, entry)| {
                 meta_by_id.insert(
                     supplier_id.clone(),
                     CanonicalSupplierMeta {
-                        source_kind: acc.source_kind,
-                        endpoint_key: acc.endpoint_key.clone(),
-                        label: label.clone(),
-                        provider_type: acc.provider_type.clone(),
-                        plugin_icon: acc.plugin_icon.clone(),
-                        active: acc.active,
+                        source_kind: entry.source_kind,
+                        provider_id: entry.provider_id.clone(),
+                        endpoint_key: entry.endpoint_key.clone(),
+                        label: entry.label.clone(),
+                        provider_type: entry.provider_type.clone(),
+                        plugin_icon: entry.plugin_icon.clone(),
+                        active: entry.active,
                     },
                 );
                 OverviewFilterSupplier {
                     supplier_id,
-                    source_kind: acc.source_kind.as_str().to_owned(),
-                    endpoint_key: acc.endpoint_key,
-                    label,
-                    provider_type: acc.provider_type,
-                    plugin_icon: acc.plugin_icon,
-                    active: acc.active,
-                    model_count: acc.model_ids.len() as i64,
+                    provider_id: entry.provider_id,
+                    source_kind: entry.source_kind.as_str().to_owned(),
+                    endpoint_key: entry.endpoint_key,
+                    label: entry.label,
+                    provider_type: entry.provider_type,
+                    plugin_icon: entry.plugin_icon,
+                    active: entry.active,
+                    model_count: entry.model_ids.len() as i64,
                 }
             })
             .collect();
@@ -709,12 +726,12 @@ impl Store {
         end_ms: Option<i64>,
         supplier_keys_json: Option<&str>,
         suppliers_json: Option<&str>,
+        supplier_group_expr: &str,
         metadata: &HashMap<String, CanonicalSupplierMeta>,
     ) -> Result<Vec<OverviewSupplierBreakdown>> {
-        let supplier_id_expr = supplier_id_sql();
         let rows = sqlx::query(&format!(
             "SELECT
-                {supplier_id_expr} AS supplier_id,
+                {supplier_group_expr} AS supplier_id,
                 MAX(endpoint_key) AS endpoint_key,
                 MAX(request_type) AS request_type,
                 MAX(request_url) AS request_url,
@@ -745,8 +762,8 @@ impl Store {
                AND (? IS NULL OR created_at_ms >= ?)
                AND (? IS NULL OR created_at_ms < ?)
                AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
-               AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))
-             GROUP BY {supplier_id_expr}",
+               AND (? IS NULL OR {supplier_group_expr} IN (SELECT value FROM json_each(?)))
+             GROUP BY {supplier_group_expr}",
             fresh_input = fresh_input_sql(),
             cache_estimation_cols = cache_estimation_aggregate_sql(),
         ))
@@ -767,7 +784,7 @@ impl Store {
                 end_ms,
                 supplier_keys_json,
                 suppliers_json,
-                supplier_id_expr,
+                supplier_group_expr,
             )
             .await?;
         let first_output_medians = self
@@ -776,34 +793,31 @@ impl Store {
                 end_ms,
                 supplier_keys_json,
                 suppliers_json,
-                supplier_id_expr,
+                supplier_group_expr,
             )
             .await?;
 
         let mut breakdowns: Vec<(i64, OverviewSupplierBreakdown)> = Vec::with_capacity(rows.len());
         for row in rows {
-            let sql_supplier_id: String = row.try_get("supplier_id")?;
+            let supplier_id: String = row.try_get("supplier_id")?;
             let request_type_raw: String = row.try_get("request_type")?;
-            let request_url: String = row.try_get("request_url")?;
-            let provider_url: String = row.try_get("provider_url")?;
-            let sample_model_id: String = row.try_get("sample_model_id")?;
-            let request_type =
-                ProviderType::from_str(&request_type_raw).unwrap_or(ProviderType::OpenAiChat);
-            let fallback_identity = canonical_supplier_identity(
-                request_type,
-                &request_url,
-                &provider_url,
-                &sample_model_id,
-            );
-            let endpoint_key = row
+            let fallback_endpoint = row
                 .try_get::<Option<String>, _>("endpoint_key")?
                 .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| fallback_identity.endpoint_key.clone());
-            let source_kind = source_kind_for(request_type, &endpoint_key);
-            let canonical_id = canonical_supplier_id(source_kind, &endpoint_key);
-            let meta = metadata
-                .get(&canonical_id)
-                .or_else(|| metadata.get(&sql_supplier_id));
+                .or_else(|| {
+                    row.try_get::<Option<String>, _>("request_url")
+                        .ok()
+                        .flatten()
+                        .filter(|value| !value.is_empty())
+                })
+                .or_else(|| {
+                    row.try_get::<Option<String>, _>("provider_url")
+                        .ok()
+                        .flatten()
+                        .filter(|value| !value.is_empty())
+                })
+                .unwrap_or_default();
+            let meta = metadata.get(&supplier_id);
 
             let input_tokens = non_negative(row.try_get("input_tokens")?);
             let cache_read_tokens = non_negative(row.try_get("cache_read_tokens")?);
@@ -819,29 +833,26 @@ impl Store {
             let cache_write_cost_nano = non_negative(row.try_get("cache_write_cost_nano")?);
             let total_cost_nano = non_negative(row.try_get("total_cost_nano")?);
             let priced_calls = non_negative(row.try_get("priced_calls")?);
-            let speed_sample = speed_totals
-                .get(&sql_supplier_id)
-                .copied()
-                .unwrap_or_default();
-            let first_output_median_ms = first_output_medians.get(&sql_supplier_id).copied();
+            let speed_sample = speed_totals.get(&supplier_id).copied().unwrap_or_default();
+            let first_output_median_ms = first_output_medians.get(&supplier_id).copied();
 
             let label = meta
                 .map(|item| item.label.clone())
-                .or_else(|| endpoint_host(&endpoint_key))
-                .unwrap_or_else(|| endpoint_key.clone());
+                .unwrap_or_else(|| fallback_group_label(&supplier_id, &fallback_endpoint));
+            let source_kind = meta
+                .map(|item| item.source_kind.as_str().to_owned())
+                .unwrap_or_else(|| fallback_group_source_kind(&supplier_id));
+            let endpoint_key = meta
+                .map(|item| item.endpoint_key.clone())
+                .unwrap_or_else(|| endpoint_origin(&fallback_endpoint));
 
             breakdowns.push((
                 total_cost_nano,
                 OverviewSupplierBreakdown {
-                    supplier_id: meta
-                        .map(|_| canonical_id.clone())
-                        .unwrap_or_else(|| sql_supplier_id.clone()),
-                    source_kind: meta
-                        .map(|item| item.source_kind.as_str().to_owned())
-                        .unwrap_or_else(|| source_kind.as_str().to_owned()),
-                    endpoint_key: meta
-                        .map(|item| item.endpoint_key.clone())
-                        .unwrap_or(endpoint_key),
+                    supplier_id,
+                    provider_id: meta.and_then(|item| item.provider_id.clone()),
+                    source_kind,
+                    endpoint_key,
                     label,
                     provider_type: meta
                         .map(|item| item.provider_type.clone())
@@ -910,12 +921,12 @@ impl Store {
         end_ms: Option<i64>,
         supplier_keys_json: Option<&str>,
         suppliers_json: Option<&str>,
+        supplier_group_expr: &str,
     ) -> Result<Vec<OverviewModelSummary>> {
-        let supplier_id_expr = supplier_id_sql();
         let rows = sqlx::query(&format!(
             "SELECT
                 model_id,
-                COUNT(DISTINCT {supplier_id_expr}) AS supplier_count,
+                COUNT(DISTINCT {supplier_group_expr}) AS supplier_count,
                 COUNT(*) AS llm_calls,
                 COALESCE(SUM(status = 'completed'), 0) AS successful_calls,
                 COALESCE(SUM(status != 'completed'), 0) AS failed_calls,
@@ -940,7 +951,7 @@ impl Store {
                AND (? IS NULL OR created_at_ms >= ?)
                AND (? IS NULL OR created_at_ms < ?)
                AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
-               AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))
+               AND (? IS NULL OR {supplier_group_expr} IN (SELECT value FROM json_each(?)))
              GROUP BY model_id",
             fresh_input = fresh_input_sql(),
             cache_estimation_cols = cache_estimation_aggregate_sql(),
@@ -1052,20 +1063,12 @@ impl Store {
 
 struct CanonicalSupplierMeta {
     source_kind: SourceKind,
+    provider_id: Option<String>,
     endpoint_key: String,
     label: String,
     provider_type: String,
     plugin_icon: Option<String>,
     active: bool,
-}
-
-pub(crate) fn supplier_id_sql() -> &'static str {
-    "(CASE
-        WHEN request_type = 'plugin'
-          OR COALESCE(NULLIF(endpoint_key, ''), request_url, provider_url) LIKE 'plugin://%'
-        THEN 'plugin'
-        ELSE 'builtin'
-      END || '::' || COALESCE(NULLIF(endpoint_key, ''), NULLIF(request_url, ''), provider_url))"
 }
 
 pub(crate) fn normalize_string_array_filter(
@@ -1095,6 +1098,22 @@ fn collect_pricing_sources(has_custom: bool, has_catalog: bool, has_unpriced: bo
         sources.push("unpriced".into());
     }
     sources
+}
+
+/// Label for a supplier row whose group has no metadata entry yet.
+fn fallback_group_label(group_id: &str, fallback_endpoint: &str) -> String {
+    if let Some(rest) = group_id.strip_prefix("builtin::host::") {
+        return rest.to_owned();
+    }
+    endpoint_host(fallback_endpoint).unwrap_or_else(|| fallback_endpoint.to_owned())
+}
+
+fn fallback_group_source_kind(group_id: &str) -> String {
+    if group_id.starts_with("plugin::") {
+        "plugin".to_owned()
+    } else {
+        "builtin".to_owned()
+    }
 }
 
 fn token_usage_buckets(
@@ -1207,7 +1226,10 @@ fn saturating_sum(values: &[i64]) -> i64 {
 #[cfg(test)]
 mod tests {
     use crate::{
-        model::{CallOrigin, NewLlmCall, ProviderType, Usage},
+        model::{
+            CallOrigin, ModelConfigInput, NewLlmCall, ProviderConfigInput, ProviderType,
+            RequestFormat, Usage,
+        },
         store::CallFinish,
     };
 
@@ -1284,6 +1306,68 @@ mod tests {
                     elapsed_ms: sample.first_output_ms + sample.generation_ms,
                     generation_ms: Some(sample.generation_ms),
                     generation_output_events: Some(2),
+                    error_kind: None,
+                    error_message: None,
+                },
+            )
+            .await
+            .unwrap();
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn record_endpoint(
+        store: &Store,
+        call_id: &str,
+        endpoint: &str,
+        request_type: ProviderType,
+        model_hash: &str,
+        model_id: &str,
+        input_tokens: u64,
+        output_tokens: u64,
+    ) {
+        store
+            .start_llm_call(&NewLlmCall {
+                call_id: call_id.into(),
+                run_id: "run".into(),
+                conversation_id: "conversation".into(),
+                provider_call_index: 0,
+                model_hash: model_hash.into(),
+                provider_type: request_type,
+                provider_url: endpoint.into(),
+                request_type,
+                request_url: endpoint.into(),
+                model_id: model_id.into(),
+                display_name: model_id.into(),
+                reasoning_effort: None,
+                fast: false,
+                message_count: 1,
+                tool_count: 0,
+                detailed: false,
+                origin: CallOrigin::Run,
+                streaming: true,
+            })
+            .await
+            .unwrap();
+        store
+            .record_llm_usage(
+                call_id,
+                Usage {
+                    input_tokens: Some(input_tokens),
+                    output_tokens: Some(output_tokens),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        store
+            .finish_llm_call(
+                call_id,
+                CallFinish {
+                    status: "completed",
+                    finish_reason: Some("stop"),
+                    elapsed_ms: 100,
+                    generation_ms: None,
+                    generation_output_events: None,
                     error_kind: None,
                     error_message: None,
                 },
@@ -1467,7 +1551,7 @@ mod tests {
         let supplier = overview
             .suppliers
             .iter()
-            .find(|item| item.endpoint_key == "https://example.com/v1/chat/completions")
+            .find(|item| item.endpoint_key == "https://example.com")
             .expect("supplier breakdown");
         assert_eq!(supplier.speed.samples, 3);
         assert_eq!(supplier.speed.output_tokens, 1_347);
@@ -1495,7 +1579,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn supplier_aggregation_keeps_same_name_endpoints_separate_and_sorts_models_by_token_usage(
+    async fn supplier_aggregation_groups_unconfigured_endpoints_by_domain_and_sorts_models_by_token_usage(
     ) {
         let directory = tempfile::tempdir().unwrap();
         let store = Store::connect(&format!(
@@ -1582,9 +1666,10 @@ mod tests {
         let supplier_a = &all
             .suppliers
             .iter()
-            .find(|s| s.endpoint_key == "https://api-a.example.com/v1/chat/completions")
+            .find(|s| s.endpoint_key == "https://api-a.example.com")
             .unwrap()
             .supplier_id;
+        assert_eq!(supplier_a, "builtin::host::api-a.example.com");
         assert_eq!(all.suppliers[0].supplier_id, *supplier_a);
         assert_eq!(all.suppliers[0].model_count, 2);
         assert_eq!(all.suppliers[0].token_usage, 5_300);
@@ -1606,5 +1691,264 @@ mod tests {
         assert_eq!(filtered.models[0].token_usage, 5_000);
         assert_eq!(filtered.models[0].supplier_count, 1);
         assert_eq!(filtered.available_suppliers.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn supplier_aggregation_merges_protocol_endpoints_by_provider_configuration() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::connect(&format!(
+            "sqlite://{}",
+            directory.path().join("test.db").display()
+        ))
+        .await
+        .unwrap();
+
+        let provider = store
+            .create_provider(&ProviderConfigInput {
+                icon: None,
+                sort_order: 0,
+                name: "Gateway".into(),
+                base_url: "https://gateway.example.com".into(),
+                api_key: "key".into(),
+                custom_headers_enabled: false,
+                custom_headers: serde_json::json!({}),
+            })
+            .await
+            .unwrap();
+        let model_input = |request_format: RequestFormat, model_id: &str| ModelConfigInput {
+            provider_id: provider.provider_id.clone(),
+            request_format,
+            request_url_override: None,
+            extra_params_enabled: false,
+            extra_params: serde_json::json!({}),
+            sort_order: 0,
+            display_name: model_id.into(),
+            tooltip_data: model_id.into(),
+            model_id: model_id.into(),
+            reasoning_effort: None,
+            context_window_tokens: None,
+            max_output_tokens: None,
+            anthropic_thinking_effort: None,
+            thinking_budget_tokens: None,
+        };
+        let claude = store
+            .create_model(&model_input(RequestFormat::Anthropic, "claude-opus-5.5"))
+            .await
+            .unwrap();
+        let gemini = store
+            .create_model(&model_input(RequestFormat::Gemini, "gemini-4-neon"))
+            .await
+            .unwrap();
+
+        record_endpoint(
+            &store,
+            "c-anthropic",
+            "https://gateway.example.com/v1/messages",
+            ProviderType::Anthropic,
+            &claude.model_hash,
+            "claude-opus-5.5",
+            100,
+            10,
+        )
+        .await;
+        record_endpoint(
+            &store,
+            "c-gemini",
+            "https://gateway.example.com/v1beta/models",
+            ProviderType::Gemini,
+            &gemini.model_hash,
+            "gemini-4-neon",
+            200,
+            20,
+        )
+        .await;
+        // Historical protocol endpoint that no longer has a model configuration.
+        record_endpoint(
+            &store,
+            "c-legacy",
+            "https://gateway.example.com/v1/responses",
+            ProviderType::OpenAiResponses,
+            "legacy-hash",
+            "gpt-6.1-sol",
+            300,
+            30,
+        )
+        .await;
+
+        let overview = store.overview(None, None, None, None, None).await.unwrap();
+        assert_eq!(overview.suppliers.len(), 1);
+        let supplier = &overview.suppliers[0];
+        assert_eq!(supplier.supplier_id, format!("builtin::provider::{}", provider.provider_id));
+        assert_eq!(
+            supplier.provider_id.as_deref(),
+            Some(provider.provider_id.as_str())
+        );
+        assert_eq!(supplier.label, "Gateway");
+        assert_eq!(supplier.endpoint_key, "https://gateway.example.com");
+        assert!(supplier.active);
+        assert_eq!(supplier.llm_calls, 3);
+        assert_eq!(supplier.model_count, 3);
+        assert_eq!(supplier.token_usage, 660);
+        assert_eq!(overview.available_suppliers.len(), 1);
+        assert_eq!(
+            overview.available_suppliers[0].provider_id,
+            supplier.provider_id
+        );
+        assert_eq!(overview.available_suppliers[0].model_count, 3);
+        assert!(overview
+            .available_models
+            .iter()
+            .all(|model| model.group == "Gateway"));
+
+        let filtered = store
+            .overview(
+                None,
+                None,
+                None,
+                Some(&serde_json::to_string(&vec![supplier.supplier_id.clone()]).unwrap()),
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(filtered.metrics.llm_calls, 3);
+        assert_eq!(filtered.suppliers.len(), 1);
+        assert_eq!(filtered.models.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn supplier_aggregation_keeps_same_name_configurations_separate_on_a_shared_host() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::connect(&format!(
+            "sqlite://{}",
+            directory.path().join("test.db").display()
+        ))
+        .await
+        .unwrap();
+
+        let plan_provider = store
+            .create_provider(&ProviderConfigInput {
+                icon: None,
+                sort_order: 0,
+                name: "Shared Gateway".into(),
+                base_url: "https://shared.example.com/api/plan".into(),
+                api_key: "key".into(),
+                custom_headers_enabled: false,
+                custom_headers: serde_json::json!({}),
+            })
+            .await
+            .unwrap();
+        let coding_provider = store
+            .create_provider(&ProviderConfigInput {
+                icon: None,
+                sort_order: 0,
+                name: "Shared Gateway".into(),
+                base_url: "https://shared.example.com/api/coding".into(),
+                api_key: "key".into(),
+                custom_headers_enabled: false,
+                custom_headers: serde_json::json!({}),
+            })
+            .await
+            .unwrap();
+        let plan_model = store
+            .create_model(&ModelConfigInput {
+                provider_id: plan_provider.provider_id.clone(),
+                request_format: RequestFormat::Anthropic,
+                request_url_override: None,
+                extra_params_enabled: false,
+                extra_params: serde_json::json!({}),
+                sort_order: 0,
+                display_name: "Plan Model".into(),
+                tooltip_data: "Plan Model".into(),
+                model_id: "plan-model".into(),
+                reasoning_effort: None,
+                context_window_tokens: None,
+                max_output_tokens: None,
+                anthropic_thinking_effort: None,
+                thinking_budget_tokens: None,
+            })
+            .await
+            .unwrap();
+        let coding_model = store
+            .create_model(&ModelConfigInput {
+                provider_id: coding_provider.provider_id.clone(),
+                request_format: RequestFormat::Anthropic,
+                request_url_override: None,
+                extra_params_enabled: false,
+                extra_params: serde_json::json!({}),
+                sort_order: 0,
+                display_name: "Coding Model".into(),
+                tooltip_data: "Coding Model".into(),
+                model_id: "coding-model".into(),
+                reasoning_effort: None,
+                context_window_tokens: None,
+                max_output_tokens: None,
+                anthropic_thinking_effort: None,
+                thinking_budget_tokens: None,
+            })
+            .await
+            .unwrap();
+
+        record_endpoint(
+            &store,
+            "c-plan",
+            "https://shared.example.com/api/plan/v1/messages",
+            ProviderType::Anthropic,
+            &plan_model.model_hash,
+            "plan-model",
+            10,
+            1,
+        )
+        .await;
+        record_endpoint(
+            &store,
+            "c-coding",
+            "https://shared.example.com/api/coding/v1/messages",
+            ProviderType::Anthropic,
+            &coding_model.model_hash,
+            "coding-model",
+            20,
+            2,
+        )
+        .await;
+        // Historical call without a live model configuration: the base path decides.
+        record_endpoint(
+            &store,
+            "c-coding-history",
+            "https://shared.example.com/api/coding/v1/messages",
+            ProviderType::Anthropic,
+            "legacy-hash",
+            "legacy-model",
+            30,
+            3,
+        )
+        .await;
+        // Not under any configured base path: falls back to the host group.
+        record_endpoint(
+            &store,
+            "c-other",
+            "https://shared.example.com/api/other/v1/messages",
+            ProviderType::Anthropic,
+            "legacy-hash",
+            "legacy-model",
+            40,
+            4,
+        )
+        .await;
+
+        let overview = store.overview(None, None, None, None, None).await.unwrap();
+        let mut ids = overview
+            .suppliers
+            .iter()
+            .map(|supplier| (supplier.supplier_id.clone(), supplier.llm_calls))
+            .collect::<Vec<_>>();
+        ids.sort_unstable();
+        let mut expected = vec![
+            ("builtin::host::shared.example.com".to_owned(), 1),
+            (format!("builtin::provider::{}", coding_provider.provider_id), 2),
+            (format!("builtin::provider::{}", plan_provider.provider_id), 1),
+        ];
+        expected.sort_unstable();
+        assert_eq!(ids, expected);
+        assert_eq!(overview.available_suppliers.len(), 3);
     }
 }

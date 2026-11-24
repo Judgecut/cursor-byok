@@ -45,6 +45,7 @@ export function HomePage() {
   const {
     overview,
     plugins,
+    providers,
     overviewRangePreset,
     overviewChartMode,
     overviewChartType,
@@ -755,13 +756,15 @@ export function HomePage() {
     navigate("/calls");
   };
 
+  const providerIcons = useMemo(() => new Map(providers.map((provider) => [provider.provider_id, provider.icon])), [providers]);
   const supplierOptions = useMemo(
     () => buildSupplierFilterOptions(
       supplierCatalog.length > 0 ? supplierCatalog : (filteredOverview?.available_suppliers ?? []),
       plugins,
       locale,
+      providerIcons,
     ),
-    [filteredOverview?.available_suppliers, locale, plugins, supplierCatalog],
+    [filteredOverview?.available_suppliers, locale, plugins, providerIcons, supplierCatalog],
   );
 
   const modelOptions = useMemo(
@@ -845,6 +848,7 @@ export function HomePage() {
         onCallDetails={(call) => void appStore.openCallDetails(call.call_id)}
         onOpenAllCalls={openAllCalls}
         suppliers={filteredOverview?.suppliers ?? []}
+        providerIcons={providerIcons}
         models={filteredOverview?.models ?? []}
         overviewReady={hasMatchingOverview && !effectiveOverviewError}
         plugins={plugins}

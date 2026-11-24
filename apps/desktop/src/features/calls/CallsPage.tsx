@@ -20,7 +20,7 @@ import styles from "./CallsPage.module.scss";
 const DEFAULT_CALLS_PAGE_SIZE = 100;
 
 export function CallsPage() {
-  const { overview, plugins, pendingCallsFilter, refreshTick, callsRefreshIntervalSeconds } = useAppStore();
+  const { overview, plugins, providers, pendingCallsFilter, refreshTick, callsRefreshIntervalSeconds } = useAppStore();
   const { active } = useKeepAliveContext();
   const { locale } = useI18n();
   const [preset, setPreset] = useState<OverviewRangePreset | "all">("all");
@@ -172,8 +172,9 @@ export function CallsPage() {
       supplierCatalog.length > 0 ? supplierCatalog : overview.available_suppliers,
       plugins,
       locale,
+      new Map(providers.map((provider) => [provider.provider_id, provider.icon])),
     ),
-    [locale, overview.available_suppliers, plugins, supplierCatalog],
+    [locale, overview.available_suppliers, plugins, providers, supplierCatalog],
   );
 
   const modelOptions = useMemo(

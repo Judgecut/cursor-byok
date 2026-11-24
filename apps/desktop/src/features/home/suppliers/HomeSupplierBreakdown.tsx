@@ -5,7 +5,7 @@ import { Card } from "../../../shared/ui/Card";
 import { Icon } from "../../../shared/ui/Icon";
 import { formatDisplayCost, type DisplayCurrency, type DisplayExchangeRate } from "../../../shared/utils/costFormat";
 import { formatCompactInteger, formatInteger } from "../../../shared/utils/numberFormat";
-import { resolveSupplierIcon } from "../../../shared/utils/providerIcons";
+import { historicalSupplierBrand, resolveSupplierIcon } from "../../../shared/utils/providerIcons";
 import { aggregateTooltip, formatFirstOutput, formatSpeed } from "../../../shared/utils/speedFormat";
 import { buildPluginLabelMap } from "../../../shared/utils/supplierOptions";
 import { ScrollableContent } from "../../../shared/virtual/ScrollableContent";
@@ -30,6 +30,7 @@ import styles from "../breakdown/BreakdownTable.module.scss";
 
 export function HomeSupplierBreakdown({
   suppliers,
+  providerIcons,
   plugins,
   overallTokenUsage,
   currency,
@@ -38,6 +39,7 @@ export function HomeSupplierBreakdown({
   error = null,
 }: {
   suppliers: OverviewSupplierBreakdown[];
+  providerIcons: ReadonlyMap<string, string | null>;
   plugins: PluginDescriptor[];
   overallTokenUsage: number;
   currency: DisplayCurrency;
@@ -145,22 +147,24 @@ export function HomeSupplierBreakdown({
         </thead>
         <tbody>
           {sortedSuppliers.map((supplier) => {
+            const historicalBrand = historicalSupplierBrand(supplier);
             const label = (supplier.source_kind === "plugin" ? pluginLabels.get(supplier.endpoint_key) : undefined)
+              || historicalBrand
               || supplier.label;
             const share = tokenShareInfo(supplier.token_usage, overallTokenUsage);
             return <tr key={supplier.supplier_id}>
               <td className={styles.stickyName}>
                 <div className={styles.entityCell}>
                   <div className={styles.entityMain}>
-                    <Icon {...resolveSupplierIcon(supplier)} />
-                    <span className={styles.entityName} title={label}>{label}</span>
+                    <Icon {...resolveSupplierIcon(supplier, supplier.provider_id ? providerIcons.get(supplier.provider_id) : null)} />
+                    <span className={styles.entityName} title={historicalBrand ? supplier.endpoint_key : label}>{label}</span>
                     {!supplier.active && <span className={styles.badge}>{t("历史")}</span>}
                     {supplier.model_count > 1 && <span className={styles.badge}>
                       {t("{count} 模型", { count: supplier.model_count })}
                     </span>}
                     <PricingSourceBadges sources={supplier.pricing_sources} />
                   </div>
-                  <span className={styles.entitySub} title={supplier.endpoint_key}>{supplier.endpoint_key}</span>
+                  {!historicalBrand && <span className={styles.entitySub} title={supplier.endpoint_key}>{supplier.endpoint_key}</span>}
                 </div>
               </td>
               <td className={styles.stickyTotal} title={totalTokensTooltip(supplier, overallTokenUsage)}>

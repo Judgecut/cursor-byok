@@ -146,10 +146,13 @@ test("previews, stores, and resets provider icons across model views", async ({ 
   expect(management.providers[0].icon).toBeNull();
 });
 
-test("uses the supplier endpoint for brand icons in overview statistics and filters", async ({ page, management }) =>
+test("uses the endpoint brand and updates overview supplier icons after saving an override", async ({ page, management }) =>
 {
-  const endpoint = "https://ark.cn-beijing.volces.com/api/coding/v1/messages";
-  const supplier: OverviewFilterSupplier = { supplier_id: `builtin::${endpoint}`, source_kind: "builtin", endpoint_key: endpoint, label: "Volcengine", provider_type: "anthropic", plugin_icon: null, active: true, model_count: 1 };
+  const base = "https://ark.cn-beijing.volces.com/api/coding";
+  const endpoint = base + "/v1/messages";
+  const providerId = "overview-provider";
+  const supplier: OverviewFilterSupplier = { supplier_id: "builtin::provider::overview-provider", provider_id: providerId, source_kind: "builtin", endpoint_key: endpoint, label: "Volcengine", provider_type: "anthropic", plugin_icon: null, active: true, model_count: 1 };
+  management.providers.push({ provider_id: providerId, sort_order: 1, name: "Volcengine", icon: null, base_url: base, api_key: "test-placeholder", custom_headers_enabled: false, custom_headers: {}, created_at_ms: 1, updated_at_ms: 1 });
   management.overview.suppliers = [{ ...management.overview.metrics, ...supplier, pricing_sources: [] }];
   management.overview.available_suppliers = [supplier];
   management.overview.available_models = [{ supplier_key: "ark-model", source_kind: supplier.source_kind, endpoint_key: endpoint, model_id: "ark-code-latest", label: "Ark Code", group: supplier.label, provider_type: supplier.provider_type, plugin_icon: null, active: true }];
@@ -166,6 +169,45 @@ test("uses the supplier endpoint for brand icons in overview statistics and filt
   await page.getByRole("button", { name: "Custom", exact: true }).click();
   await page.getByRole("button", { name: /Filter.*Model/ }).click();
   await expect(page.getByRole("option", { name: "Ark Code" }).locator("img")).toHaveAttribute("src", /huoshan/);
+  await page.keyboard.press("Escape");
+
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><circle r="8" cx="10" cy="10" fill="red"/></svg>';
+  await page.route("**/api/providers/icon", (route) => route.fulfill({ json: { image: "data:image/svg+xml;base64," + btoa(svg) } }));
+  await page.goto("#/harness/cursor");
+  await page.locator('[data-provider-id="overview-provider"]').getByRole("button", { name: "Edit", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Edit provider", exact: true });
+  await dialog.getByRole("button", { name: "Change icon" }).click();
+  await dialog.getByRole("button", { name: "Fetch from upstream" }).click();
+  await expect(dialog.getByText("Custom icon", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  const saved = management.providers[0].icon;
+  expect(saved).toMatch(/^data:image\/png;base64,/);
+
+  await page.goto("#/");
+  await page.getByRole("tab", { name: /^Provider/ }).click();
+  await expect(row.locator("img")).toHaveAttribute("src", saved!);
+  await page.getByRole("button", { name: /^Filter providers:/ }).click();
+  await expect(page.getByRole("option", { name: /Volcengine/ }).locator("img")).toHaveAttribute("src", saved!);
+});
+
+test("shows a recognized deleted provider by its brand name in history and the supplier filter", async ({ page, management }) =>
+{
+  const host = "ark.cn-beijing.volces.com";
+  const endpoint = "https://" + host;
+  const supplier: OverviewFilterSupplier = { supplier_id: "builtin::host::" + host, provider_id: null, source_kind: "builtin", endpoint_key: endpoint, label: host, provider_type: "anthropic", plugin_icon: null, active: false, model_count: 1 };
+  management.overview.suppliers = [{ ...management.overview.metrics, ...supplier, pricing_sources: ["catalog"] }];
+  management.overview.available_suppliers = [supplier];
+
+  await page.goto("#/");
+  await page.getByRole("tab", { name: /^Provider/ }).click();
+  const row = page.getByRole("table", { name: "Statistics by provider" }).getByRole("row").filter({ hasText: "火山引擎" });
+  await expect(row.getByText("火山引擎", { exact: true })).toHaveAttribute("title", endpoint);
+  await expect(row.getByText("Historical", { exact: true })).toBeVisible();
+  await expect(row.getByText(endpoint, { exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: /^Filter providers:/ }).click();
+  await expect(page.getByRole("option", { name: /火山引擎/ })).toBeVisible();
 });
 
 test("previews an upstream SVG as a local PNG and ignores a result for a changed address", async ({ page, management }) =>

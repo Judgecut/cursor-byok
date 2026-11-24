@@ -17,7 +17,7 @@ use crate::{
 
 use super::{
     now_ms,
-    overview::{normalize_string_array_filter, supplier_id_sql},
+    overview::normalize_string_array_filter,
     pricing::{read_pricing_settings, resolve_snapshot_conn, snapshot_from_call_row},
     Store,
 };
@@ -574,13 +574,14 @@ impl Store {
         let supplier_keys_json =
             normalize_string_array_filter(filter.supplier_keys, "supplier_keys")?;
         let suppliers_json = normalize_string_array_filter(filter.suppliers, "suppliers")?;
-        let supplier_id_expr = supplier_id_sql();
+        let groups = self.supplier_groups().await?;
+        let supplier_group_expr = groups.expr();
         let query = format!(
             "SELECT COUNT(*) FROM llm_calls
              WHERE (? IS NULL OR created_at_ms >= ?)
                AND (? IS NULL OR created_at_ms < ?)
                AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
-               AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))"
+               AND (? IS NULL OR {supplier_group_expr} IN (SELECT value FROM json_each(?)))"
         );
         let total: i64 = sqlx::query_scalar(&query)
             .bind(filter.start_ms)
@@ -600,14 +601,15 @@ impl Store {
         let supplier_keys_json =
             normalize_string_array_filter(filter.supplier_keys, "supplier_keys")?;
         let suppliers_json = normalize_string_array_filter(filter.suppliers, "suppliers")?;
-        let supplier_id_expr = supplier_id_sql();
+        let groups = self.supplier_groups().await?;
+        let supplier_group_expr = groups.expr();
         let query = format!(
             "SELECT {LLM_CALL_COLUMNS}
              FROM llm_calls
              WHERE (? IS NULL OR created_at_ms >= ?)
                AND (? IS NULL OR created_at_ms < ?)
                AND (? IS NULL OR supplier_key IN (SELECT value FROM json_each(?)))
-               AND (? IS NULL OR {supplier_id_expr} IN (SELECT value FROM json_each(?)))
+               AND (? IS NULL OR {supplier_group_expr} IN (SELECT value FROM json_each(?)))
              ORDER BY created_at_ms DESC, rowid DESC
              LIMIT ? OFFSET ?"
         );

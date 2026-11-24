@@ -443,6 +443,7 @@ mod overview {
     #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
     pub struct OverviewFilterSupplier {
         pub supplier_id: String,
+        pub provider_id: Option<String>,
         pub source_kind: String,
         pub endpoint_key: String,
         pub label: String,
@@ -455,6 +456,7 @@ mod overview {
     #[derive(Clone, Debug, PartialEq, Serialize)]
     pub struct OverviewSupplierBreakdown {
         pub supplier_id: String,
+        pub provider_id: Option<String>,
         pub source_kind: String,
         pub endpoint_key: String,
         pub label: String,

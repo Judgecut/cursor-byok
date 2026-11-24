@@ -2,7 +2,7 @@ import type { Locale } from "../../i18n/runtime";
 import { pluginText, type OverviewFilterModel, type OverviewFilterSupplier, type PluginDescriptor } from "../api";
 import type { ModelSelectOption } from "../ui/ModelSelect";
 import type { SupplierFilterOption } from "../ui/SupplierFilter";
-import { resolveSupplierIcon } from "./providerIcons";
+import { historicalSupplierBrand, resolveSupplierIcon } from "./providerIcons";
 
 export function buildPluginLabelMap(plugins: PluginDescriptor[], locale: Locale): Map<string, string> {
   const labels = new Map<string, string>();
@@ -19,12 +19,14 @@ export function buildSupplierFilterOptions(
   suppliers: OverviewFilterSupplier[],
   plugins: PluginDescriptor[],
   locale: Locale,
+  providerIcons: ReadonlyMap<string, string | null>,
 ): SupplierFilterOption[] {
   const pluginLabels = buildPluginLabelMap(plugins, locale);
   return suppliers.map((supplier) => {
     const label = (supplier.source_kind === "plugin" ? pluginLabels.get(supplier.endpoint_key) : undefined)
+      || historicalSupplierBrand(supplier)
       || supplier.label;
-    const { icon, src } = resolveSupplierIcon(supplier);
+    const { icon, src } = resolveSupplierIcon(supplier, supplier.provider_id ? providerIcons.get(supplier.provider_id) : null);
     return {
       value: supplier.supplier_id,
       label,

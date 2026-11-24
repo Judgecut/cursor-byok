@@ -29,6 +29,7 @@ export function OverviewTabs({
   onCallDetails,
   onOpenAllCalls,
   suppliers,
+  providerIcons,
   models,
   overviewReady,
   plugins,
@@ -52,6 +53,7 @@ export function OverviewTabs({
   onCallDetails: (call: LlmCall) => void;
   onOpenAllCalls: () => void;
   suppliers: OverviewSupplierBreakdown[];
+  providerIcons: ReadonlyMap<string, string | null>;
   models: OverviewModelSummary[];
   overviewReady: boolean;
   plugins: PluginDescriptor[];
@@ -85,6 +87,7 @@ export function OverviewTabs({
       badge: overviewReady ? suppliers.length : undefined,
       content: <HomeSupplierBreakdown
         suppliers={suppliers}
+        providerIcons={providerIcons}
         plugins={plugins}
         overallTokenUsage={overallTokenUsage}
         currency={currency}
