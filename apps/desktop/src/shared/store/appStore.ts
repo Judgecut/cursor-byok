@@ -175,6 +175,7 @@ let snapshot: AppSnapshot = {
     },
     token_usage_granularity: "day",
     token_usage_series: [],
+    trend_breakdown: null,
     activity_series: [],
     suppliers: [],
     models: [],

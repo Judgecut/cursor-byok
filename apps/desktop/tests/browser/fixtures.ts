@@ -29,7 +29,7 @@ const call: CallDetail = {
 
 const overview: Overview = {
   metrics: { llm_calls: 1, successful_calls: 1, failed_calls: 0, token_usage: 300, prompt_tokens: 200, input_tokens: 200, reported_cache_input_tokens: 200, cache_read_tokens: 0, cache_write_tokens: 0, output_tokens: 100, total_cost: "0", input_cost: "0", output_cost: "0", cache_read_cost: "0", cache_write_cost: "0", average_priced_cost: null, priced_calls: 0, unpriced_calls: 1, incomplete_usage_calls: 0, unreported_cache_calls: 0, assumed_cache_calls: 0, assumed_cache_cost: "0", estimated_cache_read_tokens: 0, speed: { average_tokens_per_second: 100, output_tokens: 100, generation_ms: 1000, samples: 1, first_output_median_ms: 100 } },
-  token_usage_granularity: "day", token_usage_series: [], activity_series: [], suppliers: [], models: [], available_suppliers: [], available_models: [],
+  token_usage_granularity: "day", token_usage_series: [], trend_breakdown: null, activity_series: [], suppliers: [], models: [], available_suppliers: [], available_models: [],
 };
 
 // Only the HTTP/native boundary is simulated. The production build supplies React,

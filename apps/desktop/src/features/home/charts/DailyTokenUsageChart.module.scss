@@ -25,6 +25,37 @@
   color: var(--vscode-descriptionForeground);
 }
 
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-2xs;
+  list-style: none;
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+.legendSwatch {
+  flex: 0 0 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.legendLabel {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .root {
   width: 100%;
   min-width: 0;

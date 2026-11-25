@@ -582,6 +582,19 @@ export interface OverviewActivityDay {
   total_cost: string;
 }
 
+export interface OverviewTrendSeries {
+  id: string;
+  label: string;
+  token_rank: number | null;
+  cost_rank: number | null;
+  buckets: { bucket_start_ms: number; token_usage: number; total_cost: string }[];
+}
+
+export interface OverviewTrendBreakdown {
+  models: OverviewTrendSeries[];
+  suppliers: OverviewTrendSeries[];
+}
+
 export interface OverviewFilterSupplier {
   supplier_id: string;
   provider_id: string | null;
@@ -675,6 +688,7 @@ export interface Overview {
   metrics: OverviewMetrics;
   token_usage_granularity: TokenUsageGranularity;
   token_usage_series: OverviewTokenUsageBucket[];
+  trend_breakdown: OverviewTrendBreakdown | null;
   activity_series: OverviewActivityDay[];
   suppliers: OverviewSupplierBreakdown[];
   models: OverviewModelSummary[];

@@ -8,6 +8,7 @@ import {
   type Overview,
   type OverviewFilterModel,
   type OverviewFilterSupplier,
+  type OverviewTrendSeries,
 } from "../../shared/api";
 import { appStore, useAppStore, useCurrencyDisplay } from "../../shared/store/appStore";
 import { CurrencySelect } from "../../shared/ui/CurrencySelect";
@@ -32,6 +33,7 @@ import { OverviewTimeRangeFilter } from "./overview/OverviewTimeRangeFilter";
 import styles from "./HomePage.module.scss";
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+const EMPTY_TREND_SERIES: OverviewTrendSeries[] = [];
 
 function keepEqualSeries<T>(previous: T[] | undefined, next: T[]): T[]
 {
@@ -67,6 +69,7 @@ export function HomePage() {
     () => typeof document === "undefined" || document.visibilityState === "visible",
   );
   const [activeTab, setActiveTab] = useState<OverviewTabId>("models");
+  const [trendGroup, setTrendGroup] = useState<"total" | "models" | "suppliers">("total");
   const [quick, setQuick] = useState<QuickPreset | null>(null);
   const [customRange, setCustomRange] = useState<CustomRange | null>(null);
   const [customOpen, setCustomOpen] = useState(false);
@@ -302,6 +305,11 @@ export function HomePage() {
       const previous = rangeStateRef.current?.overview;
       next.token_usage_series = keepEqualSeries(previous?.token_usage_series, next.token_usage_series);
       next.activity_series = keepEqualSeries(previous?.activity_series, next.activity_series);
+      if (next.trend_breakdown)
+      {
+        next.trend_breakdown.models = keepEqualSeries(previous?.trend_breakdown?.models, next.trend_breakdown.models);
+        next.trend_breakdown.suppliers = keepEqualSeries(previous?.trend_breakdown?.suppliers, next.trend_breakdown.suppliers);
+      }
       const nextState = { filterKey: requestFilterKey, day: new Date(range.endMs).toDateString(), resetChanges: resetChangesOnSuccess.current, overview: next };
       resetChangesOnSuccess.current = false;
       rangeStateRef.current = nextState;
@@ -796,8 +804,9 @@ export function HomePage() {
       estimatedHeight: 244,
       content: <DailyTokenUsageChart
         data={dailyTokenUsage}
+        breakdown={trendGroup === "total" ? null : filteredOverview?.trend_breakdown?.[trendGroup] ?? EMPTY_TREND_SERIES}
         animate={animate}
-        filterKey={filterKey}
+        filterKey={JSON.stringify([filterKey, trendGroup])}
         granularity={filteredOverview?.token_usage_granularity ?? "day"}
         mode={overviewChartMode}
         chartType={overviewChartType}
@@ -911,6 +920,11 @@ export function HomePage() {
           aria-pressed={overviewChartType === "line"}
           onClick={() => appStore.selectOverviewChartType("line")}
         >{t("曲线")}</button>
+      </div>
+      <div className={styles.segmentGroup} role="group" aria-label={t("趋势分组")}>
+        <button type="button" aria-pressed={trendGroup === "total"} onClick={() => setTrendGroup("total")}>{t("总计")}</button>
+        <button type="button" aria-pressed={trendGroup === "models"} onClick={() => setTrendGroup("models")}>{t("模型")}</button>
+        <button type="button" aria-pressed={trendGroup === "suppliers"} onClick={() => setTrendGroup("suppliers")}>{t("供应商")}</button>
       </div>
       <TooltipTrigger label={t("刷新")}>
         <button

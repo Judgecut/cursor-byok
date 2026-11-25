@@ -409,6 +409,28 @@ mod overview {
         }
     }
 
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+    pub struct OverviewTrendBucket {
+        pub bucket_start_ms: i64,
+        pub token_usage: i64,
+        pub total_cost: String,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+    pub struct OverviewTrendSeries {
+        pub id: String,
+        pub label: String,
+        pub token_rank: Option<i64>,
+        pub cost_rank: Option<i64>,
+        pub buckets: Vec<OverviewTrendBucket>,
+    }
+
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    pub struct OverviewTrendBreakdown {
+        pub models: Vec<OverviewTrendSeries>,
+        pub suppliers: Vec<OverviewTrendSeries>,
+    }
+
     /// Pooled generation rate: total effective output divided by total
     /// generation time, so one long call contributes in proportion to its real
     /// output and generation window.
@@ -539,6 +561,7 @@ mod overview {
         pub metrics: OverviewMetrics,
         pub token_usage_granularity: TokenUsageGranularity,
         pub token_usage_series: Vec<TokenUsageBucket>,
+        pub trend_breakdown: Option<OverviewTrendBreakdown>,
         pub activity_series: Vec<OverviewActivityDay>,
         pub suppliers: Vec<OverviewSupplierBreakdown>,
         pub models: Vec<OverviewModelSummary>,

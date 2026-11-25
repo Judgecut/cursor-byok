@@ -149,6 +149,11 @@
       "placeholders": [],
       "refs": [
         {
+          "file": "features/home/HomePage.tsx",
+          "line": 927,
+          "column": 117
+        },
+        {
           "file": "features/home/overview/OverviewTabs.tsx",
           "line": 86,
           "column": 14
@@ -605,17 +610,17 @@
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 213,
+          "line": 217,
           "column": 15
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 279,
+          "line": 293,
           "column": 51
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 295,
+          "line": 309,
           "column": 49
         }
       ]
@@ -653,12 +658,12 @@
       "refs": [
         {
           "file": "shared/store/appStore.ts",
-          "line": 482,
+          "line": 483,
           "column": 23
         },
         {
           "file": "shared/store/appStore.ts",
-          "line": 489,
+          "line": 490,
           "column": 25
         }
       ]
@@ -689,7 +694,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 200,
+          "line": 203,
           "column": 17
         }
       ]
@@ -725,7 +730,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 307,
+          "line": 321,
           "column": 27
         }
       ]
@@ -1122,7 +1127,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 304,
+          "line": 318,
           "column": 27
         }
       ]
@@ -1511,7 +1516,7 @@
         },
         {
           "file": "features/home/HomePage.tsx",
-          "line": 908,
+          "line": 917,
           "column": 11
         }
       ]
@@ -1737,7 +1742,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 133,
+          "line": 137,
           "column": 7
         }
       ]
@@ -1990,7 +1995,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 285,
+          "line": 299,
           "column": 29
         }
       ]
@@ -2475,7 +2480,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 165,
+          "line": 169,
           "column": 46
         }
       ]
@@ -2706,12 +2711,12 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 189,
+          "line": 193,
           "column": 15
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 293,
+          "line": 307,
           "column": 52
         }
       ]
@@ -3039,17 +3044,17 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 177,
+          "line": 181,
           "column": 15
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 276,
+          "line": 290,
           "column": 50
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 292,
+          "line": 306,
           "column": 48
         }
       ]
@@ -3692,7 +3697,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 362,
+          "line": 382,
           "column": 52
         }
       ]
@@ -3889,7 +3894,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 891,
+          "line": 900,
           "column": 69
         }
       ]
@@ -4308,7 +4313,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 310,
+          "line": 324,
           "column": 27
         }
       ]
@@ -4500,12 +4505,12 @@
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 201,
+          "line": 205,
           "column": 15
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 294,
+          "line": 308,
           "column": 53
         }
       ]
@@ -4734,7 +4739,7 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 889,
+          "line": 903,
           "column": 43
         }
       ]
@@ -4764,7 +4769,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 134,
+          "line": 138,
           "column": 7
         }
       ]
@@ -4954,7 +4959,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 362,
+          "line": 382,
           "column": 69
         }
       ]
@@ -5348,12 +5353,12 @@
       "refs": [
         {
           "file": "shared/store/appStore.ts",
-          "line": 642,
+          "line": 643,
           "column": 23
         },
         {
           "file": "shared/store/appStore.ts",
-          "line": 649,
+          "line": 650,
           "column": 25
         }
       ]
@@ -5389,7 +5394,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 282,
+          "line": 296,
           "column": 29
         }
       ]
@@ -5506,7 +5511,7 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 884,
+          "line": 898,
           "column": 43
         }
       ]
@@ -5800,7 +5805,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 901,
+          "line": 910,
           "column": 11
         }
       ]
@@ -5839,7 +5844,7 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 802,
+          "line": 816,
           "column": 21
         }
       ]
@@ -6623,7 +6628,7 @@
         },
         {
           "file": "features/home/HomePage.tsx",
-          "line": 913,
+          "line": 922,
           "column": 11
         }
       ]
@@ -6750,7 +6755,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 230,
+          "line": 234,
           "column": 35
         },
         {
@@ -6882,7 +6887,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 360,
+          "line": 380,
           "column": 40
         }
       ]
@@ -7511,7 +7516,7 @@
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 154,
+          "line": 158,
           "column": 20
         }
       ]
@@ -7550,7 +7555,7 @@
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 299,
+          "line": 313,
           "column": 18
         },
         {
@@ -7605,12 +7610,12 @@
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 230,
+          "line": 234,
           "column": 50
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 291,
+          "line": 305,
           "column": 16
         }
       ]
@@ -7778,7 +7783,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 903,
+          "line": 912,
           "column": 69
         }
       ]
@@ -7999,12 +8004,12 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 915,
+          "line": 929,
           "column": 30
         },
         {
           "file": "features/home/HomePage.tsx",
-          "line": 919,
+          "line": 933,
           "column": 23
         },
         {
@@ -9166,7 +9171,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 277,
+          "line": 291,
           "column": 54
         }
       ]
@@ -9204,7 +9209,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 278,
+          "line": 292,
           "column": 55
         }
       ]
@@ -9214,6 +9219,11 @@
       "kind": "text",
       "placeholders": [],
       "refs": [
+        {
+          "file": "features/home/HomePage.tsx",
+          "line": 926,
+          "column": 111
+        },
         {
           "file": "features/home/models/HomeModelBreakdown.tsx",
           "line": 65,
@@ -9981,7 +9991,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 275,
+          "line": 289,
           "column": 18
         }
       ]
@@ -10258,7 +10268,7 @@
         },
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 165,
+          "line": 169,
           "column": 35
         }
       ]
@@ -10625,6 +10635,18 @@
         }
       ]
     },
+    "e8dc871a7fdee23b": {
+      "source": "总计",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/HomePage.tsx",
+          "line": 925,
+          "column": 109
+        }
+      ]
+    },
     "e9d8d890d33584e8": {
       "source": "没有可用的重置卡。",
       "kind": "text",
@@ -10769,7 +10791,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 76,
+          "line": 77,
           "column": 25
         }
       ]
@@ -11268,7 +11290,7 @@
       "refs": [
         {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
-          "line": 75,
+          "line": 76,
           "column": 25
         }
       ]
@@ -11543,6 +11565,18 @@
         }
       ]
     },
+    "fdab2d6349941d97": {
+      "source": "趋势分组",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/home/HomePage.tsx",
+          "line": 924,
+          "column": 69
+        }
+      ]
+    },
     "fdc4cabc370fa3f7": {
       "source": "暂无选项",
       "kind": "text",
@@ -11605,7 +11639,7 @@
       "refs": [
         {
           "file": "features/home/HomePage.tsx",
-          "line": 927,
+          "line": 941,
           "column": 25
         }
       ]

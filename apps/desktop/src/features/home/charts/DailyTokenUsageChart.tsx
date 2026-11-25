@@ -1,6 +1,6 @@
-import type { EChartsCoreOption } from "echarts/core";
+import { format, type EChartsCoreOption } from "echarts/core";
 import { useMemo, useState } from "react";
-import type { TokenUsageGranularity } from "../../../shared/api";
+import type { OverviewTrendSeries, TokenUsageGranularity } from "../../../shared/api";
 import type { OverviewChartMode, OverviewChartType } from "../../../shared/store/appStore";
 import {
   CURRENCY_SYMBOLS,
@@ -14,6 +14,7 @@ import {
 } from "../../../shared/utils/costFormat";
 import { formatCompactInteger } from "../../../shared/utils/numberFormat";
 import { EChart } from "./EChart";
+import { buildUsageTrendBreakdown } from "./usageTrendBreakdown";
 import styles from "./DailyTokenUsageChart.module.scss";
 
 export type DailyTokenUsage = {
@@ -90,6 +91,7 @@ function totalTokens(day: DailyTokenUsage) {
 
 export function DailyTokenUsageChart({
   data,
+  breakdown,
   animate,
   filterKey,
   granularity,
@@ -101,6 +103,7 @@ export function DailyTokenUsageChart({
   error = null,
 }: {
   data: DailyTokenUsage[];
+  breakdown: OverviewTrendSeries[] | null;
   animate: boolean;
   filterKey: string;
   granularity: TokenUsageGranularity;
@@ -113,6 +116,7 @@ export function DailyTokenUsageChart({
 }) {
   const [hovered, setHovered] = useState(false);
   const conversionNote = mode === "cost" ? formatConversionNote(currency, exchangeRate) : null;
+  const grouped = useMemo(() => breakdown === null ? null : buildUsageTrendBreakdown(breakdown, data, mode, chartType, currency, exchangeRate), [breakdown, data, mode, chartType, currency, exchangeRate]);
 
   const totals = useMemo(
     () => data.map((day) => (mode === "tokens"
@@ -120,7 +124,7 @@ export function DailyTokenUsageChart({
       : convertUsdToDisplayNumber(day.totalCost, currency, exchangeRate))),
     [exchangeRate, currency, data, mode],
   );
-  const maximumTotal = totals.reduce((maximum, total) => Math.max(maximum, total), 0);
+  const maximumTotal = grouped?.maximum ?? totals.reduce((maximum, total) => Math.max(maximum, total), 0);
   const axisMaximum = mode === "tokens"
     ? Math.max(1, maximumTotal)
     : maximumTotal > 0 ? maximumTotal : 1;
@@ -269,6 +273,16 @@ export function DailyTokenUsageChart({
           const first = (params as TooltipItem[])[0];
           const day = first ? data[first.dataIndex] : undefined;
           if (!day) return "";
+          if (grouped)
+          {
+            const lines = grouped.groups.map((group) =>
+            {
+              const point = group.points[first.dataIndex];
+              const value = mode === "tokens" ? formatCompactInteger(point?.token_usage ?? 0) : formatDisplayCost(point?.total_cost, currency, exchangeRate);
+              return `${colorMark(group.color)}${format.encodeHTML(group.label)}：${value}`;
+            });
+            return [formatTooltipTime(day.bucketStartMs, granularity), ...lines].join("<br/>");
+          }
           if (mode === "tokens") {
             const lines = [
               formatTooltipTime(day.bucketStartMs, granularity),
@@ -347,22 +361,28 @@ export function DailyTokenUsageChart({
             : formatAxisCost(value, currency),
         },
       },
-      series: chartType === "line" ? lineSeries : barSeries,
+      series: grouped?.series ?? (chartType === "line" ? lineSeries : barSeries),
     };
-  }, [averageLevel, axisMaximum, chartType, exchangeRate, conversionNote, currency, data, granularity, hovered, mode, totals]);
+  }, [averageLevel, axisMaximum, chartType, exchangeRate, conversionNote, currency, data, granularity, grouped, hovered, mode, totals]);
 
   return <div className={styles.container}>
     <div className={styles.metaBar}>
       <span className={styles.unit}>{unitLabel}</span>
       {conversionNote && <span className={styles.conversion}>{conversionNote}</span>}
     </div>
+    {!!grouped?.groups.length && <ul className={styles.legend}>
+      {grouped.groups.map(({ id, label, color }) => <li key={id} title={label}>
+        <span className={styles.legendSwatch} style={{ backgroundColor: color }} aria-hidden="true" />
+        <span className={styles.legendLabel}>{label}</span>
+      </li>)}
+    </ul>}
     {error
       ? <div className={styles.state}>{t("趋势数据加载失败：{error}", { error })}</div>
-      : data.length === 0
+      : data.length === 0 || grouped?.groups.length === 0
         ? <div className={styles.state}>{loading ? t("正在加载趋势数据…") : t("当前筛选范围内暂无趋势数据")}</div>
         : <EChart
             option={option}
-            transition={{ viewKey: JSON.stringify([filterKey, chartType, mode, granularity, mode === "cost" && currency, mode === "cost" && exchangeRate?.rate]), data, enabled: animate }}
+            transition={{ viewKey: JSON.stringify([filterKey, chartType, mode, granularity, mode === "cost" && currency, mode === "cost" && exchangeRate?.rate]), data: breakdown ?? data, enabled: animate }}
             className={styles.root}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}

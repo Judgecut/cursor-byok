@@ -20,6 +20,7 @@ import type {
   OverviewModelSummary,
   OverviewSupplierBreakdown,
   OverviewTokenUsageBucket,
+  OverviewTrendSeries,
   PricingRates,
   PricingSettings,
   PricingSource,
@@ -1033,12 +1034,56 @@ function createOverview(params: URLSearchParams): Overview {
     metrics,
     token_usage_granularity: granularity,
     token_usage_series: tokenUsageSeries,
+    trend_breakdown: startMs !== null && endMs !== null ? {
+      models: buildDemoTrend(matchingCalls, bucketMs, bucketMap, (call) => call.model_id),
+      suppliers: buildDemoTrend(matchingCalls, bucketMs, bucketMap, supplierIdOfCall, (id) => supplierMeta.get(id)?.label ?? suppliers.find((supplier) => supplier.supplier_id === id)?.label ?? id),
+    } : null,
     activity_series: activitySeries,
     suppliers,
     models: modelSummaries,
     available_suppliers: availableSuppliers,
     available_models: availableModels,
   };
+}
+
+function buildDemoTrend(
+  calls: LlmCall[],
+  bucketMs: number,
+  buckets: ReadonlyMap<number, OverviewTokenUsageBucket>,
+  groupIdFor: (call: LlmCall) => string,
+  labelFor: (id: string) => string = (id) => id,
+): OverviewTrendSeries[]
+{
+  const groups = new Map<string, { id: string; tokens: number; cost: number; points: Map<number, { tokens: number; cost: number }> }>();
+  for (const call of calls)
+  {
+    const bucketStart = Math.floor(call.created_at_ms / bucketMs) * bucketMs;
+    if (!buckets.has(bucketStart)) continue;
+    const id = groupIdFor(call);
+    const group = groups.get(id) ?? { id, tokens: 0, cost: 0, points: new Map() };
+    const point = group.points.get(bucketStart) ?? { tokens: 0, cost: 0 };
+    const tokens = (call.billed_input_tokens ?? call.input_tokens ?? 0) + (call.cache_read_tokens ?? 0) + (call.cache_write_tokens ?? 0) + (call.output_tokens ?? 0);
+    const cost = call.cost_status === "priced" ? toNano(call.total_cost) : 0;
+    point.tokens += tokens;
+    point.cost += cost;
+    group.tokens += tokens;
+    group.cost += cost;
+    group.points.set(bucketStart, point);
+    groups.set(id, group);
+  }
+  const all = [...groups.values()];
+  const rank = (primary: "tokens" | "cost", secondary: "tokens" | "cost") => new Map(all.filter((group) => group[primary] > 0)
+    .sort((left, right) => right[primary] - left[primary] || right[secondary] - left[secondary] || left.id.localeCompare(right.id))
+    .slice(0, 7).map((group, index) => [group.id, index + 1]));
+  const tokens = rank("tokens", "cost");
+  const costs = rank("cost", "tokens");
+  return all.filter(({ id }) => tokens.has(id) || costs.has(id)).map(({ id, points }) => ({
+    id,
+    label: labelFor(id),
+    token_rank: tokens.get(id) ?? null,
+    cost_rank: costs.get(id) ?? null,
+    buckets: [...points].map(([bucket_start_ms, point]) => ({ bucket_start_ms, token_usage: point.tokens, total_cost: formatNano(point.cost) })),
+  }));
 }
 
 function createCallDetail(id: string): CallDetail {

@@ -767,6 +767,44 @@ test("opens call details using the URL sent to the desktop boundary", async ({ p
   await expect(details.getByText("https://provider.example/v1/responses", { exact: true })).toBeVisible();
 });
 
+test("shows up to seven trend groups ranked by the selected metric", async ({ page, management }) =>
+{
+  const start = Date.UTC(2026, 10, 25);
+  const bucket = {
+    bucket_start_ms: start, input_tokens: 100, cache_read_tokens: 0, cache_write_tokens: 0, output_tokens: 0,
+    input_cost: "20", output_cost: "0", cache_read_cost: "0", cache_write_cost: "0", total_cost: "20",
+    priced_calls: 8, unpriced_calls: 0, incomplete_usage_calls: 0, unreported_cache_calls: 0,
+    assumed_cache_calls: 0, assumed_cache_cost: "0", estimated_cache_read_tokens: 0,
+  };
+  const models = Array.from({ length: 8 }, (_, index) => ({
+    id: `trend-model-${index + 1}`,
+    label: `Trend model ${index + 1}`,
+    token_rank: index < 7 ? index + 1 : null,
+    cost_rank: index > 0 ? 8 - index : null,
+    buckets: [{ bucket_start_ms: start, token_usage: 8 - index, total_cost: String(index + 1) }],
+  }));
+  const suppliers = [{ id: "trend-provider", label: "Trend provider", token_rank: 1, cost_rank: 1, buckets: [{ bucket_start_ms: start, token_usage: 36, total_cost: "36" }] }];
+  management.overview.token_usage_series = [bucket, { ...bucket, bucket_start_ms: start + 3_600_000 }];
+  management.overview.trend_breakdown = { models, suppliers };
+
+  await page.goto("#/");
+  const grouping = page.getByRole("group", { name: "Trend grouping", exact: true });
+  await expect(grouping.getByRole("button", { name: "Total", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await grouping.getByRole("button", { name: "Model", exact: true }).click();
+  const modelLabels = page.getByRole("listitem").filter({ hasText: /^Trend model \d+$/ });
+  await expect(modelLabels).toHaveText(["Trend model 1", "Trend model 2", "Trend model 3", "Trend model 4", "Trend model 5", "Trend model 6", "Trend model 7"]);
+
+  await page.getByRole("group", { name: "Chart metric", exact: true }).getByRole("button", { name: "Cost", exact: true }).click();
+  await expect(modelLabels).toHaveText(["Trend model 8", "Trend model 7", "Trend model 6", "Trend model 5", "Trend model 4", "Trend model 3", "Trend model 2"]);
+
+  await page.getByRole("group", { name: "Trend chart type", exact: true }).getByRole("button", { name: "Line", exact: true }).click();
+  await grouping.getByRole("button", { name: "Provider", exact: true }).click();
+  await expect(page.getByText("Trend provider", { exact: true })).toBeVisible();
+  await expect(modelLabels).toHaveCount(0);
+  await grouping.getByRole("button", { name: "Total", exact: true }).click();
+  await expect(page.getByText("Trend provider", { exact: true })).toHaveCount(0);
+});
+
 test("switches overview activity chart between heatmap, bar, and line across week, month, and year", async ({ page, management }) =>
 {
   management.exchangeRateSync.auto_sync_enabled = false;
@@ -1095,6 +1133,7 @@ test("shows cache hit rate and orders average cost before estimated cost in the 
   await page.getByRole("tab", { name: /^Model/ }).click();
 
   const table = page.getByRole("table", { name: "Statistics by model", exact: true });
+  await expect(table).toBeVisible();
   const headers = (await table.getByRole("columnheader").allTextContents()).slice(-5)
     .map((text) => text.replace(/[↕↑↓]/g, "").trim());
   expect(headers).toEqual(["Input", "Cache hit rate", "Output", "Avg / call", "Estimated cost"]);

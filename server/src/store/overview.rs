@@ -2,6 +2,8 @@
 //! annual activity series, cross-model supplier breakdowns, model summaries,
 //! and complete filter candidate lists.
 
+mod trend;
+
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use chrono::{Days, Utc};
@@ -10,8 +12,8 @@ use sqlx::Row;
 use crate::{
     model::{
         Overview, OverviewActivityDay, OverviewFilterModel, OverviewFilterSupplier,
-        OverviewMetrics, OverviewModelSummary, OverviewSupplierBreakdown, SpeedAggregate,
-        SpeedTotals, TokenUsageBucket, TokenUsageGranularity,
+        OverviewMetrics, OverviewModelSummary, OverviewSupplierBreakdown, OverviewTrendBreakdown,
+        SpeedAggregate, SpeedTotals, TokenUsageBucket, TokenUsageGranularity,
     },
     plugin::PluginModelDescriptor,
     pricing::{divide_nano_round_half_up, endpoint_host, format_nano_usd, SourceKind},
@@ -283,10 +285,47 @@ impl Store {
             )
             .await?;
 
+        let trend_breakdown = if let (Some(start_ms), Some(end_ms)) = (start_ms, end_ms) {
+            let range = start_ms.max(series_start_ms)..end_ms;
+            let (models, mut supplier_trends) = tokio::try_join!(
+                self.load_trend_series(
+                    range.clone(),
+                    bucket_ms,
+                    supplier_keys_json.as_deref(),
+                    suppliers_json.as_deref(),
+                    supplier_group_expr,
+                    "model_id"
+                ),
+                self.load_trend_series(
+                    range,
+                    bucket_ms,
+                    supplier_keys_json.as_deref(),
+                    suppliers_json.as_deref(),
+                    supplier_group_expr,
+                    supplier_group_expr
+                ),
+            )?;
+            for series in &mut supplier_trends {
+                if let Some(supplier) = suppliers
+                    .iter()
+                    .find(|supplier| supplier.supplier_id == series.id)
+                {
+                    series.label.clone_from(&supplier.label);
+                }
+            }
+            Some(OverviewTrendBreakdown {
+                models,
+                suppliers: supplier_trends,
+            })
+        } else {
+            None
+        };
+
         Ok(Overview {
             metrics,
             token_usage_granularity,
             token_usage_series,
+            trend_breakdown,
             activity_series,
             suppliers,
             models,
@@ -1678,10 +1717,11 @@ mod tests {
         assert_eq!(all.suppliers[0].model_count, 2);
         assert_eq!(all.suppliers[0].token_usage, 5_300);
 
+        let now_ms = Utc::now().timestamp_millis();
         let filtered = store
             .overview(
-                None,
-                None,
+                Some(now_ms - DAY_MS),
+                Some(now_ms + HOUR_MS),
                 None,
                 Some(&serde_json::to_string(&vec![supplier_a]).unwrap()),
                 None,
@@ -1695,6 +1735,30 @@ mod tests {
         assert_eq!(filtered.models[0].token_usage, 5_000);
         assert_eq!(filtered.models[0].supplier_count, 1);
         assert_eq!(filtered.available_suppliers.len(), 2);
+        let trend = filtered.trend_breakdown.unwrap();
+        assert_eq!(trend.suppliers.len(), 1);
+        assert_eq!(trend.suppliers[0].id, *supplier_a);
+        assert_eq!(trend.suppliers[0].label, filtered.suppliers[0].label);
+        assert_eq!(trend.models.len(), 2);
+        let large = trend
+            .models
+            .iter()
+            .find(|series| series.id == "model-large")
+            .unwrap();
+        assert_eq!(large.token_rank, Some(1));
+        assert_eq!(large.cost_rank, None);
+        assert_eq!(
+            large
+                .buckets
+                .iter()
+                .map(|bucket| bucket.token_usage)
+                .sum::<i64>(),
+            5_000
+        );
+        assert!(large.buckets.iter().all(|bucket| filtered
+            .token_usage_series
+            .iter()
+            .any(|total| total.bucket_start_ms == bucket.bucket_start_ms)));
     }
 
     #[tokio::test]
