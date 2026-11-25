@@ -917,15 +917,22 @@ function createOverview(params: URLSearchParams): Overview {
 
   // Activity calendar uses fixed 365-day window under supplier selection only.
   const activityCalls = filterDemoCalls(null, null, supplierIds, supplierKeys);
-  const tokensByDate = new Map<string, number>();
-  for (const call of activityCalls) {
+  const activityByDate = new Map<string, { tokens: number; costNano: number }>();
+  for (const call of activityCalls)
+  {
     const d = new Date(call.created_at_ms);
     const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
     const billedInput = call.billed_input_tokens ?? call.input_tokens ?? 0;
     const cacheRead = call.cache_read_tokens ?? 0;
     const cacheWrite = call.cache_write_tokens ?? 0;
     const output = call.output_tokens ?? 0;
-    tokensByDate.set(key, (tokensByDate.get(key) ?? 0) + billedInput + cacheRead + cacheWrite + output);
+    const activity = activityByDate.get(key) ?? { tokens: 0, costNano: 0 };
+    activity.tokens += billedInput + cacheRead + cacheWrite + output;
+    if (call.cost_status === "priced")
+    {
+      activity.costNano += toNano(call.total_cost);
+    }
+    activityByDate.set(key, activity);
   }
   const activitySeries: OverviewActivityDay[] = [];
   const todayUtc = new Date(DEMO_NOW);
@@ -933,7 +940,8 @@ function createOverview(params: URLSearchParams): Overview {
   for (let offset = 364; offset >= 0; offset -= 1) {
     const day = new Date(todayUtc.getTime() - offset * DAY_MS);
     const date = `${day.getUTCFullYear()}-${String(day.getUTCMonth() + 1).padStart(2, "0")}-${String(day.getUTCDate()).padStart(2, "0")}`;
-    activitySeries.push({ date, token_usage: tokensByDate.get(date) ?? 0 });
+    const activity = activityByDate.get(date);
+    activitySeries.push({ date, token_usage: activity?.tokens ?? 0, total_cost: formatNano(activity?.costNano ?? 0) });
   }
 
   // Complete supplier metadata from configured models.

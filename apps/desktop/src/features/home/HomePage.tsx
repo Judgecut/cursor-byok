@@ -662,6 +662,7 @@ export function HomePage() {
     () => (activitySeries ?? []).map((day) => ({
       date: day.date,
       tokens: day.token_usage,
+      totalCost: day.total_cost,
     })),
     [activitySeries],
   );
@@ -817,6 +818,8 @@ export function HomePage() {
         onWindowModeChange={(value) => appStore.selectOverviewCalendarWindow(value)}
         chartType={overviewCalendarChartType}
         onChartTypeChange={(value) => appStore.selectOverviewCalendarChartType(value)}
+        currency={currency}
+        exchangeRate={exchangeRate}
         loading={rangeBusy && !hasMatchingOverview}
         error={effectiveOverviewError}
       />,

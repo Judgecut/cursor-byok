@@ -438,6 +438,7 @@ mod overview {
     pub struct OverviewActivityDay {
         pub date: String,
         pub token_usage: i64,
+        pub total_cost: String,
     }
 
     #[derive(Clone, Debug, PartialEq, Eq, Serialize)]

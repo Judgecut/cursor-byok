@@ -9,8 +9,11 @@ const source = stripTypeScriptTypes(
 );
 const context = createContext({ Date, Intl, Math, Number });
 const module = new SourceTextModule(source, { context });
-await module.link((specifier) => {
-  throw new Error(`Unexpected dependency: ${specifier}`);
+await module.link(async (specifier) =>
+{
+  assert.equal(specifier, "../../../shared/utils/costFormat");
+  const source = stripTypeScriptTypes(await readFile(new URL("../src/shared/utils/costFormat.ts", import.meta.url), "utf8"));
+  return new SourceTextModule(source, { context });
 });
 await module.evaluate();
 
@@ -28,7 +31,7 @@ function makeSeries(startDate, count, tokenForIndex) {
   const dayMs = 24 * 60 * 60 * 1000;
   return Array.from({ length: count }, (_, index) => {
     const date = new Date(startMs + index * dayMs).toISOString().slice(0, 10);
-    return { date, tokens: tokenForIndex(index, date) };
+    return { date, tokens: tokenForIndex(index, date), totalCost: "0" };
   });
 }
 
@@ -201,19 +204,19 @@ test("buildCalendarLayout computes week single-row card layout starting from Mon
 test("summarizeContribution computes window-scoped totals, streaks, peaks, averages, and ranges", () => {
   // Series ending on Thursday 2026-11-12 -> week starts Monday 2026-11-09 (4 days), month starts 2026-11-01 (12 days)
   const series = [
-    { date: "2026-10-31", tokens: 50000 },
-    { date: "2026-11-01", tokens: 9000 },
-    { date: "2026-11-02", tokens: 9000 },
-    { date: "2026-11-03", tokens: 9000 },
-    { date: "2026-11-04", tokens: 0 },
-    { date: "2026-11-05", tokens: 100 },
-    { date: "2026-11-06", tokens: 300 },
-    { date: "2026-11-07", tokens: 0 },
-    { date: "2026-11-08", tokens: 0 },
-    { date: "2026-11-09", tokens: 100 },
-    { date: "2026-11-10", tokens: 300 },
-    { date: "2026-11-11", tokens: 0 },
-    { date: "2026-11-12", tokens: 200 },
+    { date: "2026-10-31", tokens: 50000, totalCost: "1" },
+    { date: "2026-11-01", tokens: 9000, totalCost: "0.1" },
+    { date: "2026-11-02", tokens: 9000, totalCost: "0.1" },
+    { date: "2026-11-03", tokens: 9000, totalCost: "0.1" },
+    { date: "2026-11-04", tokens: 0, totalCost: "0" },
+    { date: "2026-11-05", tokens: 100, totalCost: "0.1" },
+    { date: "2026-11-06", tokens: 300, totalCost: "0.1" },
+    { date: "2026-11-07", tokens: 0, totalCost: "0" },
+    { date: "2026-11-08", tokens: 0, totalCost: "0" },
+    { date: "2026-11-09", tokens: 100, totalCost: "0.1" },
+    { date: "2026-11-10", tokens: 300, totalCost: "0.3" },
+    { date: "2026-11-11", tokens: 0, totalCost: "0.5" },
+    { date: "2026-11-12", tokens: 200, totalCost: "0" },
   ];
 
   const weekSummary = summarizeContribution(series, "week");
@@ -223,6 +226,7 @@ test("summarizeContribution computes window-scoped totals, streaks, peaks, avera
   assert.equal(weekSummary.activeDays, 3);
   assert.equal(weekSummary.activeRateLabel, "75%");
   assert.equal(weekSummary.averageActiveTokens, 200);
+  assert.equal(weekSummary.totalCost, "0.9");
   assert.equal(weekSummary.longestStreak, 2);
   assert.deepEqual({ ...weekSummary.peakDay }, { date: "2026-11-10", tokens: 300 });
   assert.equal(weekSummary.dateRangeLabel, "2026-11-09 ~ 2026-11-12");
@@ -234,18 +238,20 @@ test("summarizeContribution computes window-scoped totals, streaks, peaks, avera
   assert.equal(monthSummary.activeDays, 8);
   assert.equal(monthSummary.activeRateLabel, "66.7%");
   assert.equal(monthSummary.averageActiveTokens, 3500);
+  assert.equal(monthSummary.totalCost, "1.4");
   assert.equal(monthSummary.longestStreak, 3);
   assert.deepEqual({ ...monthSummary.peakDay }, { date: "2026-11-01", tokens: 9000 });
   assert.equal(monthSummary.dateRangeLabel, "2026-11-01 ~ 2026-11-12");
 
   // Single inactive day
-  const singleZero = summarizeContribution([{ date: "2026-11-10", tokens: 0 }], "week");
+  const singleZero = summarizeContribution([{ date: "2026-11-10", tokens: 0, totalCost: "0" }], "week");
   assert.ok(singleZero);
   assert.equal(singleZero.windowDays, 1);
   assert.equal(singleZero.totalTokens, 0);
   assert.equal(singleZero.activeDays, 0);
   assert.equal(singleZero.activeRateLabel, "0%");
   assert.equal(singleZero.averageActiveTokens, null);
+  assert.equal(singleZero.totalCost, "0");
   assert.equal(singleZero.longestStreak, 0);
   assert.equal(singleZero.peakDay, null);
   assert.equal(singleZero.dateRangeLabel, "2026-11-10");
@@ -309,9 +315,9 @@ test("buildContributionSeries aligns slicing, levels, maxTokens, and averageActi
 
 test("buildContributionSeries sanitizes invalid tokens and handles inactive or single-day windows", () => {
   const invalidSeries = [
-    { date: "2026-11-09", tokens: -25 },
-    { date: "2026-11-10", tokens: Number.NaN },
-    { date: "2026-11-11", tokens: Number.POSITIVE_INFINITY },
+    { date: "2026-11-09", tokens: -25, totalCost: "0" },
+    { date: "2026-11-10", tokens: Number.NaN, totalCost: "0" },
+    { date: "2026-11-11", tokens: Number.POSITIVE_INFINITY, totalCost: "0" },
   ];
   const allZero = buildContributionSeries(invalidSeries, "week", "en-US");
   assert.ok(allZero);
@@ -322,7 +328,7 @@ test("buildContributionSeries sanitizes invalid tokens and handles inactive or s
     assert.equal(point.level, 0);
   });
 
-  const singleActive = buildContributionSeries([{ date: "2026-11-12", tokens: 450 }], "week", "en-US");
+  const singleActive = buildContributionSeries([{ date: "2026-11-12", tokens: 450, totalCost: "0" }], "week", "en-US");
   assert.ok(singleActive);
   assert.equal(singleActive.points.length, 1);
   assert.equal(singleActive.maxTokens, 450);

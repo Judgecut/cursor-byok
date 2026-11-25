@@ -769,12 +769,15 @@ test("opens call details using the URL sent to the desktop boundary", async ({ p
 
 test("switches overview activity chart between heatmap, bar, and line across week, month, and year", async ({ page, management }) =>
 {
+  management.exchangeRateSync.auto_sync_enabled = false;
+  management.settings.eur_rate = "0.9";
   const activitySeries = Array.from({ length: 45 }, (_, index) =>
   {
     const date = new Date(Date.UTC(2026, 9, 5 + index)).toISOString().slice(0, 10);
     return {
       date,
       token_usage: index % 4 === 0 ? 0 : (index + 1) * 1000,
+      total_cost: index === 42 ? "12" : index === 43 ? "18" : index % 4 === 0 ? "0" : "3",
     };
   });
 
@@ -802,7 +805,7 @@ test("switches overview activity chart between heatmap, bar, and line across wee
   await expect(yearSection.getByRole("img", { name: "Token usage calendar for the past year", exact: true }).locator("canvas")).toBeVisible();
   await expect(yearSection.getByText("Less", { exact: true })).toBeVisible();
   await expect(yearSection.getByText("Active days", { exact: true })).toBeVisible();
-  await expect(yearSection.getByText("Active daily avg", { exact: true })).toBeVisible();
+  await expect(yearSection.getByText("Total cost", { exact: true })).toBeVisible();
   await expect(yearSection.getByText("Peak day", { exact: true })).toBeVisible();
 
   const chartTypeGroup = yearSection.getByRole("group", { name: "Activity chart type", exact: true });
@@ -828,6 +831,11 @@ test("switches overview activity chart between heatmap, bar, and line across wee
   await expect(weekSection.getByText("Weekly activity line chart (this week, filtered by selected providers)", { exact: true })).toBeVisible();
   await expect(weekSection.getByRole("img", { name: "Token usage line chart for this week", exact: true }).locator("canvas")).toBeVisible();
   await expect(weekSection.getByText("Total this week", { exact: true })).toBeVisible();
+  await expect(weekSection.getByText("$30.00", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Display currency", exact: true }).click();
+  await page.getByRole("option", { name: /^EUR ·/ }).click();
+  await expect(weekSection.getByText("€27.00", { exact: true })).toBeVisible();
+  await expect.poll(() => management.settings.currency).toBe("EUR");
   await expect.poll(() => management.settings.overview_calendar_chart_type).toBe("line");
   await expect.poll(() => management.settings.overview_calendar_window).toBe("week");
 
@@ -1174,6 +1182,7 @@ test("preserves overview table scroll position across call pagination, page size
   const activitySeries = Array.from({ length: 45 }, (_, index) => ({
     date: new Date(Date.UTC(2026, 9, 5 + index)).toISOString().slice(0, 10),
     token_usage: (index + 1) * 1000,
+    total_cost: "0",
   }));
   const tokenUsageSeries = Array.from({ length: 7 }, (_, index) => ({
     bucket_start_ms: Date.UTC(2026, 10, 1 + index),

@@ -320,7 +320,8 @@ impl Store {
                 COALESCE(SUM({fresh_input}), 0)
                   + COALESCE(SUM(COALESCE(cache_read_tokens, 0)), 0)
                   + COALESCE(SUM(COALESCE(cache_write_tokens, 0)), 0)
-                  + COALESCE(SUM(COALESCE(output_tokens, 0)), 0) AS token_usage
+                  + COALESCE(SUM(COALESCE(output_tokens, 0)), 0) AS token_usage,
+                COALESCE(SUM(CASE WHEN cost_status = 'priced' THEN COALESCE(total_cost_nano, 0) ELSE 0 END), 0) AS total_cost_nano
              FROM llm_calls
              WHERE status != 'running'
                AND created_at_ms >= ?
@@ -339,11 +340,12 @@ impl Store {
         .fetch_all(&self.pool)
         .await?;
 
-        let mut by_day_ms = HashMap::with_capacity(rows.len());
+        let mut by_day = HashMap::with_capacity(rows.len());
         for row in rows {
             let day_start_ms: i64 = row.try_get("day_start_ms")?;
             let token_usage = non_negative(row.try_get("token_usage")?);
-            by_day_ms.insert(day_start_ms, token_usage);
+            let total_cost_nano = non_negative(row.try_get("total_cost_nano")?);
+            by_day.insert(day_start_ms, (token_usage, total_cost_nano));
         }
 
         let mut series = Vec::with_capacity(OVERVIEW_DAYS as usize);
@@ -355,9 +357,11 @@ impl Store {
                 .and_hms_opt(0, 0, 0)
                 .map(|dt| dt.and_utc().timestamp_millis())
                 .unwrap_or(0);
+            let (token_usage, total_cost_nano) = by_day.get(&day_ms).copied().unwrap_or_default();
             series.push(OverviewActivityDay {
                 date: day.format("%Y-%m-%d").to_string(),
-                token_usage: by_day_ms.get(&day_ms).copied().unwrap_or(0),
+                token_usage,
+                total_cost: format_nano_usd(total_cost_nano),
             });
         }
         Ok(series)

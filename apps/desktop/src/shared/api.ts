@@ -579,6 +579,7 @@ export interface OverviewTokenUsageBucket {
 export interface OverviewActivityDay {
   date: string;
   token_usage: number;
+  total_cost: string;
 }
 
 export interface OverviewFilterSupplier {

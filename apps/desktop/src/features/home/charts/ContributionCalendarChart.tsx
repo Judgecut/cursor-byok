@@ -4,6 +4,7 @@ import { init, Rect, type ElementEvent, type ZRenderType } from "zrender";
 import { useI18n } from "../../../i18n/store";
 import type { OverviewCalendarChartType } from "../../../shared/store/appStore";
 import { useTooltip, type TooltipAnchor } from "../../../shared/ui/Tooltip";
+import { formatDisplayCost, formatDisplayCostExact, type DisplayCurrency, type DisplayExchangeRate } from "../../../shared/utils/costFormat";
 import { formatCompactInteger, formatInteger } from "../../../shared/utils/numberFormat";
 import { EChart } from "./EChart";
 import {
@@ -29,6 +30,8 @@ type ContributionCalendarChartProps = {
   onWindowModeChange: (value: ContributionWindow) => void;
   chartType: OverviewCalendarChartType;
   onChartTypeChange: (value: OverviewCalendarChartType) => void;
+  currency: DisplayCurrency;
+  exchangeRate: DisplayExchangeRate | null;
   loading?: boolean;
   error?: string | null;
 };
@@ -431,6 +434,8 @@ export function ContributionCalendarChart({
   onWindowModeChange,
   chartType,
   onChartTypeChange,
+  currency,
+  exchangeRate,
   loading = false,
   error = null,
 }: ContributionCalendarChartProps) {
@@ -892,13 +897,13 @@ export function ContributionCalendarChart({
             </div>
 
             <div className={styles.summaryCell}>
-              <div className={styles.summaryLabel}>{t("活跃日均")}</div>
+              <div className={styles.summaryLabel}>{t("总费用")}</div>
               <div className={styles.summaryBody}>
                 <div
                   className={styles.summaryValue}
-                  title={summary.averageActiveTokens !== null ? formatInteger(summary.averageActiveTokens) : undefined}
+                  title={formatDisplayCostExact(summary.totalCost, currency, exchangeRate)}
                 >
-                  {summary.averageActiveTokens !== null ? formatCompactInteger(summary.averageActiveTokens) : "—"}
+                  {formatDisplayCost(summary.totalCost, currency, exchangeRate)}
                 </div>
                 <div className={styles.summarySub}>
                   {summary.longestStreak > 0

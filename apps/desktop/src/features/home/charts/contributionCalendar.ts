@@ -1,6 +1,12 @@
-export type ContributionDay = {
+import { addUsdStrings } from "../../../shared/utils/costFormat";
+
+type DailyTokenUsage = {
   date: string;
   tokens: number;
+};
+
+export type ContributionDay = DailyTokenUsage & {
+  totalCost: string;
 };
 
 export type ContributionWindow = "year" | "month" | "week";
@@ -17,7 +23,7 @@ export const CONTRIBUTION_LEVEL_COLORS = [
   "#216e39",
 ] as const;
 
-export type CalendarCell = ContributionDay & {
+export type CalendarCell = DailyTokenUsage & {
   column: number;
   row: number;
   level: number;
@@ -37,7 +43,7 @@ export type CalendarLayout = {
   axisTicks: AxisTick[];
 };
 
-export type ContributionSeriesPoint = ContributionDay & {
+export type ContributionSeriesPoint = DailyTokenUsage & {
   axisLabel: string;
   tooltipLabel: string;
   level: number;
@@ -53,11 +59,12 @@ export type ContributionSeries = {
 export type ContributionSummary = {
   windowDays: number;
   totalTokens: number;
+  totalCost: string;
   activeDays: number;
   activeRateLabel: string;
   averageActiveTokens: number | null;
   longestStreak: number;
-  peakDay: ContributionDay | null;
+  peakDay: DailyTokenUsage | null;
   dateRangeLabel: string;
 };
 
@@ -230,15 +237,17 @@ export function buildCalendarLayout(
 
 function summarizeSlicedContribution(sliced: ContributionDay[]): ContributionSummary {
   let totalTokens = 0;
+  let totalCost = "0";
   let activeDays = 0;
   let longestStreak = 0;
   let currentStreak = 0;
   let previousActiveMs: number | null = null;
-  let peakDay: ContributionDay | null = null;
+  let peakDay: DailyTokenUsage | null = null;
 
   for (const day of sliced) {
     const tokens = sanitizeTokens(day.tokens);
     totalTokens += tokens;
+    totalCost = addUsdStrings(totalCost, day.totalCost);
     if (tokens > 0) {
       activeDays += 1;
       const dayMs = parseDate(day.date).getTime();
@@ -265,6 +274,7 @@ function summarizeSlicedContribution(sliced: ContributionDay[]): ContributionSum
   return {
     windowDays,
     totalTokens,
+    totalCost,
     activeDays,
     activeRateLabel,
     averageActiveTokens: activeDays > 0 ? Math.round(totalTokens / activeDays) : null,
