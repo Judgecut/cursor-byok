@@ -4,18 +4,24 @@
   }
 }
 
-:root {
-  --oa-card-radius: 9px;
+:root
+{
+  --oa-workspace-radius: 18px;
+  --oa-card-radius: 12px;
   --oa-overlay-radius: 8px;
-}
-
-:root:not([data-platform="macos"]) {
-  --oa-card-radius: 7px;
-  --oa-overlay-radius: 6px;
 }
 
 :root,
 :root[data-theme="default-dark"] {
+  --oa-window-background: #141414;
+  --oa-workspace-background: #191919;
+  --oa-workspace-back: #242424;
+  --oa-workspace-shadow: 0 4px 12px rgb(0 0 0 / 26%);
+  --oa-card-background: #202020;
+  --oa-card-border: #ffffff14;
+  --oa-accent: #40c463;
+  --oa-accent-foreground: #102518;
+  --oa-accent-selection: color-mix(in srgb, var(--oa-accent) 14%, transparent);
   --oa-tooltip-shadow: 0 12px 32px rgb(0 0 0 / 30%);
   --oa-dropdown-shadow: 0 12px 28px rgb(0 0 0 / 38%);
 
@@ -23,29 +29,29 @@
     foreground: #ffffffe6,
     errorForeground: #f53b3a,
     descriptionForeground: #FFFFFFB3,
-    focusBorder: #49b0ff,
+    focusBorder: var(--oa-accent),
     textLink-foreground: #49b0ff,
     textCodeBlock-background: #2a2a2a,
-    editor-background: #141414,
+    editor-background: var(--oa-window-background),
     editor-selectionBackground: #49b0ff33,
     editor-selectionForeground: #ffffff,
     editorCursor-foreground: #ffffff,
     editorLineNumber-foreground: #ffffff40,
     editorLineNumber-activeForeground: #ffffffe6,
-    editorWidget-background: #1f1f1f,
+    editorWidget-background: var(--oa-card-background),
     editorWidget-border: #ffffff0a,
     editorHoverWidget-background: #1f1f1f,
     editorHoverWidget-border: #ffffff0a,
     editorHoverWidget-foreground: #ffffffe6,
     sideBar-border: #ffffff0a,
-    list-activeSelectionBackground: #ffffff0d,
-    list-activeSelectionForeground: #ffffffe6,
+    list-activeSelectionBackground: var(--oa-accent-selection),
+    list-activeSelectionForeground: var(--oa-accent),
     list-hoverBackground: #2a2a2a,
     input-background: #2a2a2a,
     input-foreground: #ffffffe6,
     input-border: #ffffff0a,
-    button-background: #4489ff,
-    button-foreground: #ffffff,
+    button-background: var(--oa-accent),
+    button-foreground: var(--oa-accent-foreground),
     dropdown-background: #2a2a2a,
     dropdown-foreground: #ffffffe6,
     dropdown-border: #ffffff0a,
@@ -59,43 +65,52 @@
     notifications-foreground: #ffffffe6,
     notifications-border: #ffffff14,
     checkbox-background: #ffffff0d,
-    checkbox-foreground: #ffffff,
+    checkbox-foreground: var(--oa-accent-foreground),
     checkbox-border: #ffffff0a,
   ));
   color-scheme: dark;
 }
 
 :root[data-theme="default-light"] {
+  --oa-window-background: #f2f1ef;
+  --oa-workspace-background: #f9f8f6;
+  --oa-workspace-back: #e9e7e3;
+  --oa-workspace-shadow: 0 4px 12px rgb(30 25 15 / 9%);
+  --oa-card-background: #ffffff;
+  --oa-card-border: #1919191a;
+  --oa-accent: #216e39;
+  --oa-accent-foreground: #ffffff;
+  --oa-accent-selection: color-mix(in srgb, var(--oa-accent) 10%, transparent);
   --oa-tooltip-shadow: 0 8px 22px rgb(0 0 0 / 12%);
   --oa-dropdown-shadow: 0 8px 20px rgb(0 0 0 / 14%);
 
   @include vscode-theme((
     foreground: #191919,
     errorForeground: #f53b3a,
-    descriptionForeground: #888888,
-    focusBorder: #317cff,
-    textLink-foreground: #317cff,
+    descriptionForeground: #626262,
+    focusBorder: var(--oa-accent),
+    textLink-foreground: #215bc2,
     textCodeBlock-background: #f0f0f0,
-    editor-background: #f5f5f5,
+    editor-background: var(--oa-window-background),
     editor-selectionBackground: #317cff40,
     editor-selectionForeground: #191919,
     editorCursor-foreground: #000000,
     editorLineNumber-foreground: #1919194d,
     editorLineNumber-activeForeground: #191919,
-    editorWidget-background: #ffffff,
+    editorWidget-background: var(--oa-card-background),
     editorWidget-border: #00000024,
     editorHoverWidget-background: #ffffff,
     editorHoverWidget-border: #00000024,
     editorHoverWidget-foreground: #191919,
     sideBar-border: #00000024,
-    list-activeSelectionBackground: #0000000f,
-    list-activeSelectionForeground: #191919,
+    list-activeSelectionBackground: var(--oa-accent-selection),
+    list-activeSelectionForeground: var(--oa-accent),
     list-hoverBackground: #f3f3f3,
     input-background: #ffffff,
     input-foreground: #191919,
     input-border: #00000024,
-    button-background: #317cff,
-    button-foreground: #ffffff,
+    button-background: var(--oa-accent),
+    button-foreground: var(--oa-accent-foreground),
     dropdown-background: #ffffff,
     dropdown-foreground: #191919,
     dropdown-border: #00000024,
@@ -105,11 +120,12 @@
     scrollbarSlider-hoverBackground: #1919191a,
     scrollbarSlider-activeBackground: #19191926,
     gitDecoration-addedResourceForeground: #00a558,
+    testing-iconPassed: #216e39,
     notifications-background: #ffffff,
     notifications-foreground: #191919,
     notifications-border: #00000024,
     checkbox-background: #0000000f,
-    checkbox-foreground: #ffffff,
+    checkbox-foreground: var(--oa-accent-foreground),
     checkbox-border: #00000024,
   ));
   color-scheme: light;

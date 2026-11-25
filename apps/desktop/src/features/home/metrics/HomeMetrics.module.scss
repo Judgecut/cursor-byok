@@ -3,12 +3,8 @@
 .root {
   width: 100%;
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 1px;
-  overflow: hidden;
-  background: var(--vscode-sideBar-border);
-  border: 1px solid var(--vscode-sideBar-border);
-  border-radius: var(--oa-overlay-radius);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
   font-family: var(--oa-metrics-font);
 }
 
@@ -19,7 +15,9 @@
   flex-direction: column;
   justify-content: space-between;
   padding: 14px 15px;
-  background: var(--vscode-editor-background);
+  background: var(--oa-card-background);
+  border: 1px solid var(--oa-card-border);
+  border-radius: var(--oa-card-radius);
 }
 
 .label {
@@ -108,14 +106,14 @@
   white-space: pre-wrap;
 }
 
-@media (max-width: 1120px) {
+@container workspace (min-width: 574px) {
   .root {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 680px) {
+@container workspace (min-width: 1024px) {
   .root {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 }

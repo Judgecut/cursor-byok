@@ -339,7 +339,6 @@ export function DailyTokenUsageChart({
             const bucket = data[index];
             return bucket ? formatAxisLabel(bucket.bucketStartMs, granularity) : "";
           },
-          color: "#8c8c8c",
           fontFamily: "HFKos",
           margin: 12,
         },
@@ -354,7 +353,6 @@ export function DailyTokenUsageChart({
         axisLine: { show: false },
         axisTick: { show: false },
         axisLabel: {
-          color: "#8c8c8c",
           fontFamily: "HFKos",
           formatter: (value: number) => mode === "tokens"
             ? formatCompactInteger(value)

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, type CallDetail } from "../../shared/api";
 import { CallDetails } from "./CallDetails";
+import { Card } from "../../shared/ui/Card";
 import { TitledCard } from "../../shared/ui/TitledCard";
 import styles from "./CallDetailsPage.module.scss";
 import { ScrollableContent } from "../../shared/virtual/ScrollableContent";
@@ -28,7 +29,7 @@ export function CallDetailsPage() {
   const content = error
     ? <TitledCard title={t("无法加载调用详情")}><div className={styles.stateMessage}>{error}</div></TitledCard>
     : detail
-      ? <CallDetails detail={detail} />
+      ? <Card className={styles.detailCard}><CallDetails detail={detail} /></Card>
       : <TitledCard title={t("调用详情")}><div className={styles.stateMessage}>{t("正在加载调用详情…")}</div></TitledCard>;
 
   return <main className={styles.root}>

@@ -84,7 +84,13 @@ export function OverviewTimeRangeFilter({
     return { startMs: nowMs, endMs: nowMs, endFollowsNow: false };
   };
 
-  return <div className={styles.root} aria-label={t("时间范围筛选")}>
+  return <div className={styles.root} aria-label={t("时间范围筛选")} onKeyDown={(event) =>
+  {
+    if (!customOpen || event.defaultPrevented || event.key !== "Escape") return;
+    event.preventDefault();
+    onCustomOpenChange(false);
+    customButton.current?.focus();
+  }}>
     <div className={styles.presets}>
       {allowAll && onSelectAll && <button
         type="button"
@@ -115,13 +121,6 @@ export function OverviewTimeRangeFilter({
       aria-label={t("自定义时间与筛选")}
       style={position}
       onPointerDown={(event) => event.stopPropagation()}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          onCustomOpenChange(false);
-          customButton.current?.focus();
-        }
-      }}
     >
       <CustomRangePanel
         initialRange={initialRange()}

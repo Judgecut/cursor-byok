@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { CostQuota, CostQuotaPeriod } from "../../shared/api";
 import { appStore, useAppStore } from "../../shared/store/appStore";
 import { Button } from "../../shared/ui/Button";
@@ -29,6 +29,7 @@ function CostQuotaRow({ period, quota, defaultCurrency }: { period: CostQuotaPer
   const [currencyDraft, setCurrencyDraft] = useState<DisplayCurrency | null>(null);
   const [saving, setSaving] = useState(false);
   const [invalid, setInvalid] = useState(false);
+  const amountId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const label = costQuotaLabel(period);
   const amount = amountDraft ?? quota?.amount ?? "";
@@ -66,16 +67,20 @@ function CostQuotaRow({ period, quota, defaultCurrency }: { period: CostQuotaPer
     }
     void save({ amount: normalized, currency });
   }}>
-    <strong>{label}</strong>
+    <label className={styles.period} htmlFor={amountId}>{label}</label>
     <div className={styles.controls}>
-      <TextInput ref={inputRef} className={styles.amount} inputMode="decimal" maxLength={64} value={amount} aria-label={t("{period}金额", { period: label })} aria-invalid={invalid || undefined} disabled={saving} onChange={(event) =>
-      {
-        setAmountDraft(event.target.value);
-        setInvalid(false);
-      }} />
-      <CurrencySelect codeOnly value={currency} disabled={saving} ariaLabel={t("{period}币种", { period: label })} onChange={setCurrencyDraft} />
-      <Button variant="primary" size="small" type="submit" disabled={saving || !changed}>{saving ? t("保存中…") : t("保存")}</Button>
-      {quota && <Button size="small" disabled={saving} onClick={() => void save(null)}>{t("清除额度")}</Button>}
+      <div className={styles.fields}>
+        <TextInput id={amountId} ref={inputRef} className={styles.amount} inputMode="decimal" maxLength={64} placeholder="—" value={amount} aria-label={t("{period}金额", { period: label })} aria-invalid={invalid || undefined} disabled={saving} onChange={(event) =>
+        {
+          setAmountDraft(event.target.value);
+          setInvalid(false);
+        }} />
+        <CurrencySelect value={currency} disabled={saving} ariaLabel={t("{period}币种", { period: label })} onChange={setCurrencyDraft} />
+      </div>
+      <div className={styles.actions}>
+        <Button className={styles.save} variant={changed ? "primary" : "secondary"} type="submit" disabled={saving || !changed}>{saving ? t("保存中…") : t("保存")}</Button>
+        {quota && <Button className={styles.clear} disabled={saving} onClick={() => void save(null)}>{t("清除额度")}</Button>}
+      </div>
     </div>
     {invalid && <small className={styles.error} role="alert">{t("额度必须是大于 0 的金额，例如 1500.50")}</small>}
   </form>;

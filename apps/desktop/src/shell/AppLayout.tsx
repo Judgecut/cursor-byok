@@ -49,8 +49,9 @@ export function AppLayout() {
   const { locale } = useI18n();
   const message = useMessage();
   const location = useLocation();
-  const contentRef = useRef<HTMLElement | null>(null);
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
   const actionRegionRef = useRef<HTMLDivElement | null>(null);
+  const [titleTarget, setTitleTarget] = useState<HTMLDivElement | null>(null);
   const [leftActionTarget, setLeftActionTarget] = useState<HTMLDivElement | null>(null);
   const [rightActionTarget, setRightActionTarget] = useState<HTMLDivElement | null>(null);
   const [ads, setAds] = useState<AdSlot[]>(() => loadCachedAds());
@@ -188,40 +189,35 @@ export function AppLayout() {
     });
   }, [dismissCandidate, dismissReason]);
 
-  useLayoutEffect(() => {
-    const content = contentRef.current;
-    const actionsCard = actionRegionRef.current?.firstElementChild;
-    if (!content || !(actionsCard instanceof HTMLElement)) return;
+  useLayoutEffect(() =>
+  {
+    const workspace = workspaceRef.current;
+    const header = actionRegionRef.current;
+    if (!workspace || !header) return;
+    const actions = header.lastElementChild;
+    if (!(actions instanceof HTMLElement)) return;
 
-    let lastHeight = -1;
-    let lastWrapped: boolean | null = null;
-    const syncActionsLayout = () => {
-      const nextHeight = Math.round(actionsCard.getBoundingClientRect().height);
-      if (nextHeight <= 0) return;
-      if (nextHeight !== lastHeight) {
-        lastHeight = nextHeight;
-        content.style.setProperty("--app-actions-height", `${nextHeight}px`);
-      }
-      const baseHeight = Number.parseFloat(getComputedStyle(content).getPropertyValue("--app-toolbar-height")) || 36;
-      const nextWrapped = nextHeight > baseHeight + 4;
-      if (nextWrapped !== lastWrapped) {
-        lastWrapped = nextWrapped;
-        if (nextWrapped) {
-          content.setAttribute("data-actions-wrapped", "true");
-        } else {
-          content.removeAttribute("data-actions-wrapped");
-        }
-      }
+    const syncHeaderLayout = () =>
+    {
+      const height = Math.ceil(header.getBoundingClientRect().height);
+      workspace.style.setProperty("--app-header-height", `${height}px`);
+      workspace.toggleAttribute("data-actions-wrapped", actions.getBoundingClientRect().height > 36);
     };
 
-    syncActionsLayout();
-    const observer = new ResizeObserver(syncActionsLayout);
-    try {
-      observer.observe(actionsCard, { box: "border-box" });
-    } catch {
-      observer.observe(actionsCard);
-    }
-    return () => observer.disconnect();
+    syncHeaderLayout();
+    let frame = 0;
+    const observer = new ResizeObserver(() =>
+    {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(syncHeaderLayout);
+    });
+    observer.observe(header, { box: "border-box" });
+    observer.observe(actions, { box: "border-box" });
+    return () =>
+    {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
   }, []);
 
   return <PageLayout className={sidebarCollapsed ? `${styles.root} ${styles.sidebarCollapsed}` : styles.root}>
@@ -309,26 +305,29 @@ export function AppLayout() {
         />
       </label>
     </ConfirmDialog>
-    <main ref={contentRef} className={styles.content}>
-      <div ref={actionRegionRef} className={styles.actionRegion}>
-        <Card className={styles.actions}>
-          <div ref={setLeftActionTarget} className={styles.pageActions} />
-          {location.pathname !== "/" && <TooltipTrigger label={t("刷新")}><button className={controls.iconButton} aria-label={t("刷新")} disabled={busy} onClick={() => void appStore.refresh()}>
-            <Icon className={busy ? controls.spin : ""} icon={refreshIcon} size="1.1em" />
-          </button></TooltipTrigger>}
-          <div ref={setRightActionTarget} className={styles.pageActions} />
-        </Card>
-      </div>
-      <PageActionsTarget.Provider value={{ left: leftActionTarget, right: rightActionTarget }}>
-        <KeepAliveRouteOutlet
-          activeCacheKey={location.pathname}
-          include={keptAlivePages}
-          max={keptAlivePages.length}
-          enableActivity
-          containerClassName={styles.keepAliveContainer}
-          cacheNodeClassName={styles.keepAlivePage}
-        />
-      </PageActionsTarget.Provider>
-    </main>
+    <div ref={workspaceRef} className={styles.workspace}>
+      <main className={styles.content}>
+        <header ref={actionRegionRef} className={styles.actionRegion}>
+          <div ref={setTitleTarget} className={styles.pageTitle} />
+          <div className={styles.actions}>
+            <div ref={setLeftActionTarget} className={styles.pageActions} />
+            {location.pathname !== "/" && <TooltipTrigger label={t("刷新")}><button className={controls.iconButton} aria-label={t("刷新")} disabled={busy} onClick={() => void appStore.refresh()}>
+              <Icon className={busy ? controls.spin : ""} icon={refreshIcon} size="1.1em" />
+            </button></TooltipTrigger>}
+            <div ref={setRightActionTarget} className={styles.pageActions} />
+          </div>
+        </header>
+        <PageActionsTarget.Provider value={{ title: titleTarget, left: leftActionTarget, right: rightActionTarget }}>
+          <KeepAliveRouteOutlet
+            activeCacheKey={location.pathname}
+            include={keptAlivePages}
+            max={keptAlivePages.length}
+            enableActivity
+            containerClassName={styles.keepAliveContainer}
+            cacheNodeClassName={styles.keepAlivePage}
+          />
+        </PageActionsTarget.Provider>
+      </main>
+    </div>
   </PageLayout>;
 }

@@ -579,6 +579,54 @@ test("switches between synced and saved exchange rates across overview and call 
   await detail.close();
 });
 
+for (const theme of ["default-dark", "default-light"] as const)
+{
+  test(`keeps workspace cards and controls inside the window in ${theme}`, async ({ page, management }) =>
+  {
+    management.settings.theme = theme;
+    await page.goto("#/");
+    const main = page.getByRole("main");
+    const header = main.locator("header").first();
+    const title = header.getByRole("heading", { level: 1 });
+    const custom = header.getByRole("button", { name: "Custom", exact: true });
+    const metrics = main.getByRole("region", { name: "Call statistics", exact: true });
+
+    await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+    await expect(main).toHaveCSS("border-radius", "18px");
+    const stack = await main.evaluate((front) =>
+    {
+      const back = getComputedStyle(front.parentElement!, "::before");
+      return { top: back.top, right: back.right, bottom: back.bottom, pointerEvents: back.pointerEvents };
+    });
+    expect(stack).toEqual({ top: "4px", right: "-4px", bottom: "-4px", pointerEvents: "none" });
+
+    for (const [width, height, columns] of [[820, 558, 3], [1280, 800, 6], [1680, 900, 6]])
+    {
+      await page.setViewportSize({ width, height });
+      await expect(title).toBeInViewport();
+      await expect(custom).toBeInViewport();
+      await expect.poll(() => metrics.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(columns);
+      const [panel, titleBox, customBox] = await Promise.all([main.boundingBox(), title.boundingBox(), custom.boundingBox()]);
+      expect(panel!.x + panel!.width).toBeLessThan(width);
+      expect(panel!.y + panel!.height).toBeLessThan(height);
+      expect(titleBox!.x + titleBox!.width <= customBox!.x || titleBox!.y + titleBox!.height <= customBox!.y).toBe(true);
+    }
+
+    await page.setViewportSize({ width: 820, height: 558 });
+    await custom.click();
+    const popover = page.getByRole("dialog");
+    await expect(popover).toBeInViewport();
+    await page.keyboard.press("Escape");
+    await expect(popover).toBeHidden();
+    await expect(custom).toBeFocused();
+
+    await page.getByRole("link", { name: "Call history", exact: true }).click();
+    await expect(title).toHaveText("Calls");
+    await expect(header.getByRole("button", { name: "Refresh", exact: true })).toBeInViewport();
+    await expect(main.getByRole("button", { name: "Items per page", exact: true })).toBeInViewport();
+  });
+}
+
 test("collapses the sidebar at minimum window size and remembers the choice with save rollback", async ({ page, management }) =>
 {
   await page.setViewportSize({ width: 820, height: 558 });
@@ -705,7 +753,7 @@ test("keeps the call table compact in call history and overview", async ({ page,
   await page.goto("#/calls");
   const history = await dimensions();
   expect(history).toMatchObject({ headerFont: "12px", rowFont: "12px", headerHeight: 30, rowHeight: 32, visibleRows: expect.any(Number) });
-  expect(history.visibleRows).toBeGreaterThanOrEqual(20);
+  expect(history.visibleRows).toBeGreaterThanOrEqual(19);
   expect(history.tableWidth).toBeLessThan(3600);
 
   await page.goto("#/");
@@ -725,7 +773,9 @@ test("leads with status, call index and time, and explains status dots in a tool
   await page.route("**/__byok-api__/api/llm-calls?*", (route) => route.fulfill({ json: { items: records, total: records.length } }));
   await page.goto("#/calls");
 
-  const headers = await page.getByRole("columnheader").allTextContents();
+  const columns = page.getByRole("columnheader");
+  await expect(columns.first()).toBeVisible();
+  const headers = await columns.allTextContents();
   expect(headers.slice(0, 4)).toEqual(["Status", "Call Index", "Time", "Display name"]);
 
   const rows = page.locator("tbody tr");
@@ -839,7 +889,18 @@ test("switches overview activity chart between heatmap, bar, and line across wee
   await page.goto("#/");
   const yearSection = page.getByRole("region", { name: "Token usage over the past year", exact: true });
   await expect(yearSection).toBeVisible();
-  await expect(yearSection.getByText("Annual activity calendar (last 365 days, filtered by selected providers)", { exact: true })).toBeVisible();
+  const calendarHeading = page.getByRole("heading", { name: "Annual activity calendar (last 365 days, filtered by selected providers)", level: 2, exact: true });
+  const calendarCard = yearSection.getByRole("article").filter({ has: calendarHeading });
+  const activeDaysCard = yearSection.getByRole("article").filter({ has: page.getByRole("heading", { name: "Active days", level: 3, exact: true }) });
+  await expect(calendarHeading).toBeVisible();
+  await expect(calendarCard).toHaveCSS("border-radius", "12px");
+  await expect(activeDaysCard).toHaveCSS("border-radius", "12px");
+  await expect(activeDaysCard).toHaveCSS("background-color", await calendarCard.evaluate((card) => getComputedStyle(card).backgroundColor));
+  await expect.poll(async () =>
+  {
+    const [chart, metric] = await Promise.all([calendarCard.boundingBox(), activeDaysCard.boundingBox()]);
+    return chart && metric ? metric.x - chart.x - chart.width : 0;
+  }).toBeGreaterThanOrEqual(12);
   await expect(yearSection.getByRole("img", { name: "Token usage calendar for the past year", exact: true }).locator("canvas")).toBeVisible();
   await expect(yearSection.getByText("Less", { exact: true })).toBeVisible();
   await expect(yearSection.getByText("Active days", { exact: true })).toBeVisible();
@@ -1277,7 +1338,7 @@ test("preserves overview table scroll position across call pagination, page size
       const style = getComputedStyle(el);
       return (style.overflowY === "auto" || style.overflowY === "scroll") && el.scrollHeight > el.clientHeight;
     });
-    const horizontal = [...document.querySelectorAll("*")].find((el) => el.scrollWidth > el.clientWidth + 100);
+    const horizontal = [...document.querySelectorAll("*")].find((el) => getComputedStyle(el).overflowX === "auto" && el.scrollWidth > el.clientWidth + 100);
     return {
       position: {
         scrollTop: vertical?.scrollTop ?? 0,
@@ -1294,7 +1355,7 @@ test("preserves overview table scroll position across call pagination, page size
       const style = getComputedStyle(el);
       return (style.overflowY === "auto" || style.overflowY === "scroll") && el.scrollHeight > el.clientHeight;
     });
-    const horizontal = [...document.querySelectorAll("*")].find((el) => el.scrollWidth > el.clientWidth + 100);
+    const horizontal = [...document.querySelectorAll("*")].find((el) => getComputedStyle(el).overflowX === "auto" && el.scrollWidth > el.clientWidth + 100);
     if (vertical) vertical.scrollTop = vertical.scrollHeight;
     if (horizontal) horizontal.scrollLeft = 800;
   });

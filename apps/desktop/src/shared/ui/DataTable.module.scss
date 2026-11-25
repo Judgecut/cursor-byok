@@ -9,7 +9,10 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  overflow: hidden;
+  background: var(--oa-card-background);
+  border: 1px solid var(--oa-card-border);
+  border-radius: var(--oa-card-radius);
 }
 
 .tableRegion {
@@ -19,9 +22,7 @@
   min-height: 160px;
   display: flex;
   overflow: hidden;
-  background: var(--vscode-editorWidget-background);
-  border: 1px solid var(--vscode-sideBar-border);
-  border-radius: var(--oa-card-radius);
+  border-bottom: 1px solid var(--oa-card-border);
 }
 
 .viewport {
@@ -82,7 +83,7 @@
     z-index: 2;
     height: var(--data-table-header-height);
     color: var(--vscode-descriptionForeground);
-    background: var(--vscode-editor-background);
+    background: var(--oa-workspace-background);
     font-weight: 400;
   }
 
@@ -102,7 +103,7 @@
   z-index: 1;
   width: 44px;
   min-width: 44px;
-  background: var(--vscode-editor-background);
+  background: var(--oa-workspace-background);
 }
 
 thead .stickyRight {

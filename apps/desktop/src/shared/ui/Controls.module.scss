@@ -7,7 +7,13 @@
   color: var(--vscode-button-foreground);
   background: var(--vscode-button-background);
   border: 0;
-  border-radius: 5px;
+  border-radius: 8px;
+
+  &:hover:not(:disabled)
+  {
+    background: color-mix(in srgb, var(--vscode-button-background) 92%, var(--vscode-button-foreground));
+  }
+
   &:disabled { opacity: .5; cursor: not-allowed; }
 }
 
@@ -21,7 +27,7 @@
   color: var(--vscode-input-foreground);
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, var(--vscode-sideBar-border));
-  border-radius: 6px;
+  border-radius: 8px;
   white-space: nowrap;
   &:hover { background: var(--vscode-list-hoverBackground); }
   &:disabled { opacity: .5; cursor: not-allowed; }

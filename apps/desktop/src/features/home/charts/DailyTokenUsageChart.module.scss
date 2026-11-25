@@ -5,6 +5,10 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 6px;
+  padding: var(--app-page-padding);
+  background: var(--oa-card-background);
+  border: 1px solid var(--oa-card-border);
+  border-radius: var(--oa-card-radius);
 }
 
 .metaBar {
@@ -74,9 +78,6 @@
   justify-content: center;
   padding: 16px;
   color: var(--vscode-descriptionForeground);
-  background: color-mix(in srgb, var(--vscode-editorWidget-background) 55%, transparent);
-  border: 1px solid var(--vscode-sideBar-border);
-  border-radius: var(--oa-card-radius);
   font-size: type.$font-size-xs;
   text-align: center;
 }

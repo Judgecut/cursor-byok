@@ -32,6 +32,13 @@
 
     &:last-child { border-right: 0; }
     &:hover { color: var(--vscode-foreground); background: var(--vscode-list-hoverBackground); }
+    &:focus-visible,
+    &[aria-expanded="true"]
+    {
+      outline: 2px solid var(--vscode-focusBorder);
+      outline-offset: -2px;
+    }
+
     &[aria-pressed="true"] { color: var(--vscode-list-activeSelectionForeground); background: var(--vscode-list-activeSelectionBackground); }
   }
 }
@@ -46,4 +53,17 @@
   border-radius: var(--oa-overlay-radius);
   box-shadow: var(--oa-dropdown-shadow);
   overflow: visible;
+}
+
+@container workspace (max-width: 760px)
+{
+  .presets
+  {
+    justify-content: flex-start;
+
+    button
+    {
+      padding-inline: 4px;
+    }
+  }
 }

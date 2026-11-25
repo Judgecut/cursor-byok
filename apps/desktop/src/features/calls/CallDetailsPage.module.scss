@@ -1,21 +1,28 @@
 @use "../../styles/typography" as type;
 
-.root {
+.root
+{
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: var(--vscode-editor-background);
+  padding: 12px;
+  background: var(--oa-window-background);
 }
 
-.scroller {
+.scroller
+{
   width: 100%;
   height: 100%;
+  overflow: hidden;
+  background: var(--oa-workspace-background);
+  border: 1px solid var(--oa-card-border);
+  border-radius: var(--oa-workspace-radius);
 }
 
 .content {
   width: calc(100% - var(--app-page-padding) * 2);
   min-width: 0;
-  padding: 28px 0 40px;
+  padding: var(--app-page-padding) 0;
   margin-right: auto;
   margin-left: auto;
 
@@ -27,10 +34,9 @@
   }
 }
 
-@media (max-width: 680px) {
-  .content {
-    padding: 20px 0 32px;
-  }
+.detailCard
+{
+  padding: var(--app-page-padding);
 }
 
 .stateMessage {

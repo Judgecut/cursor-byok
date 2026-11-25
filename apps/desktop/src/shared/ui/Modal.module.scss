@@ -28,15 +28,15 @@
   flex-direction: column;
   overflow: hidden;
   color: var(--vscode-foreground);
-  background: var(--vscode-editorWidget-background);
-  border: 1px solid var(--vscode-editorWidget-border);
-  border-radius: var(--oa-overlay-radius);
+  background: var(--oa-card-background);
+  border: 1px solid var(--oa-card-border);
+  border-radius: var(--oa-workspace-radius);
   box-shadow: 0 20px 50px rgb(0 0 0 / 45%);
 
   header {
     flex: 0 0 auto;
     padding: 10px 18px;
-    border-bottom: 1px solid var(--vscode-editorWidget-border);
+    border-bottom: 1px solid var(--oa-card-border);
     font-size: type.$font-size-base;
     font-weight: 630;
   }
@@ -46,7 +46,7 @@
     justify-content: flex-end;
     gap: 8px;
     padding: 10px 18px;
-    border-top: 1px solid var(--vscode-editorWidget-border);
+    border-top: 1px solid var(--oa-card-border);
   }
 }
 
@@ -65,7 +65,7 @@
 .banner {
   flex: 0 0 auto;
   padding: 12px 18px;
-  border-bottom: 1px solid var(--vscode-editorWidget-border);
+  border-bottom: 1px solid var(--oa-card-border);
 }
 
 .body {

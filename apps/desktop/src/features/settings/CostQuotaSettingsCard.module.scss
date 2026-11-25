@@ -1,30 +1,111 @@
-.rows {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+@use "../../styles/typography" as type;
+
+.rows
+{
+  container: cost-quota / inline-size;
+  max-inline-size: 40rem;
+  margin-inline: 16px;
 }
 
-.row {
-  display: flex;
-  flex-wrap: wrap;
+.row
+{
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
+  gap: 6px 12px;
+  padding-block: 8px;
+
+  & + &
+  {
+    border-block-start: 1px solid var(--vscode-sideBar-border);
+  }
 }
 
-.controls {
+.period
+{
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.controls,
+.actions
+{
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.actions > button
+{
+  height: 34px;
+}
+
+.fields
+{
+  display: grid;
+  grid-template-columns: minmax(0, 7rem) minmax(0, 1fr);
+  gap: 8px;
+  flex: 0 1 17.5rem;
   min-width: 0;
 }
 
-.controls .amount {
-  width: 7.5em;
+.amount
+{
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
 }
 
-.error {
-  flex-basis: 100%;
+.save
+{
+  min-inline-size: 4.5rem;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.actions .clear
+{
+  border-color: transparent;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+
+  &:hover:not(:disabled)
+  {
+    background: var(--vscode-list-hoverBackground);
+    color: var(--vscode-foreground);
+  }
+}
+
+.error
+{
+  grid-column: 2;
   color: var(--vscode-errorForeground);
+  font-size: type.$font-size-xs;
+}
+
+@container cost-quota (max-width: 39rem)
+{
+  .row
+  {
+    grid-template-columns: 7rem minmax(0, 1fr);
+  }
+
+  .fields
+  {
+    grid-template-columns: minmax(0, 6rem) minmax(0, 1fr);
+    flex-basis: 16rem;
+  }
+}
+
+@container cost-quota (max-width: 31rem)
+{
+  .row
+  {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .error
+  {
+    grid-column: 1;
+  }
 }

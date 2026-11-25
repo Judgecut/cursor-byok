@@ -1,19 +1,21 @@
 @use "../styles/typography" as type;
 
-.root {
-  --app-region-gap: 16px;
-  --app-toolbar-height: 36px;
-  --app-content-left: calc(var(--app-edge) + var(--app-menu-width));
-  --app-scroll-shadow-top: calc(var(--window-safe-top) + var(--app-toolbar-height) + 10px);
-  background: var(--vscode-editor-background);
+.root
+{
+  --app-region-gap: 12px;
+  --workspace-bottom: max(var(--app-edge), var(--window-corner-safe-bottom));
+  background: var(--oa-window-background);
 }
 
-.menuCard {
+.menuCard
+{
   position: fixed;
   z-index: 10;
-  top: calc(var(--window-menu-top));
-  bottom: var(--app-edge);
+  top: var(--window-menu-top);
+  bottom: var(--workspace-bottom);
   left: var(--app-edge);
+  --oa-card-background: var(--oa-workspace-background);
+  --oa-card-radius: var(--oa-workspace-radius);
   width: var(--app-menu-width);
   display: flex;
   flex-direction: column;
@@ -56,7 +58,7 @@
 .navigationGroup {
   display: flex;
   align-items: center;
-  color: color-mix(in srgb, var(--vscode-descriptionForeground) 65%, transparent);
+  color: var(--vscode-descriptionForeground);
   font-size: type.$font-size-xs;
   font-weight: normal;
   padding: 5px 9px 2px;
@@ -79,10 +81,15 @@
     padding: 0 11px;
     color: inherit;
     text-decoration: none;
-    border-radius: 6px;
+    border-radius: 8px;
 
     &:hover {
       background: var(--vscode-list-hoverBackground);
+    }
+
+    &:focus-visible
+    {
+      outline-offset: -2px;
     }
 
     &[aria-current="page"] {
@@ -198,98 +205,104 @@
   }
 }
 
-.content {
-  --app-actions-height: var(--app-toolbar-height);
-  width: calc(100% - var(--app-content-left));
-  height: 100%;
+.workspace
+{
+  --app-header-height: 56px;
+  --app-content-top: calc(var(--app-header-height) + 8px);
+  --workspace-stack-offset: 4px;
   position: relative;
-  container-type: size;
-  min-width: 0;
-  min-height: 0;
-  margin-left: var(--app-content-left);
-  overflow: hidden;
+  isolation: isolate;
+  height: calc(100% - var(--window-menu-top) - var(--workspace-bottom) - var(--workspace-stack-offset));
+  margin-top: var(--window-menu-top);
+  margin-right: calc(var(--app-edge) + var(--workspace-stack-offset));
+  margin-left: calc(var(--app-edge) + var(--app-menu-width) + var(--app-region-gap));
+
+  &::before
+  {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: var(--workspace-stack-offset) calc(-1 * var(--workspace-stack-offset)) calc(-1 * var(--workspace-stack-offset)) var(--workspace-stack-offset);
+    background: var(--oa-workspace-back);
+    border: 1px solid var(--oa-card-border);
+    border-radius: var(--oa-workspace-radius);
+    box-shadow: var(--oa-workspace-shadow);
+    pointer-events: none;
+  }
 }
 
-.actionRegion,
-.keepAliveContainer {
-  --app-actions-top: calc(var(--window-safe-top) + 5px);
-  --app-content-top: calc(var(--app-actions-top) + var(--app-actions-height) + 5px);
+.content
+{
+  position: relative;
+  container: workspace / size;
+  overflow: hidden;
+  height: 100%;
+  background: var(--oa-workspace-background);
+  border: 1px solid var(--oa-card-border);
+  border-radius: var(--oa-workspace-radius);
 }
 
 .keepAliveContainer,
-.keepAlivePage {
+.keepAlivePage
+{
   width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
 }
 
-.actionRegion {
+.actionRegion
+{
   position: absolute;
-  z-index: 12500;
-  top: var(--app-actions-top);
-  right: var(--app-page-padding);
-  max-width: calc(100% - var(--app-page-padding) * 2 - 128px);
+  z-index: 20;
+  inset: 0 0 auto;
+  min-height: 44px;
   display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 6px var(--app-page-padding);
+  background: var(--oa-workspace-background);
+  border-bottom: 1px solid var(--oa-card-border);
   user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  -webkit-touch-callout: none;
-  -webkit-user-drag: none;
-  // Page actions (e.g. the overview time-range bar and the floating refresh
-  // button) must not act as a window drag handle; the dedicated drag layer in
-  // AppHeader owns window dragging. Otherwise these controls get dragged and
-  // double-click maximizes the window.
   -webkit-app-region: no-drag;
 }
 
-.actions {
+.pageTitle
+{
+  min-width: 0;
+}
+
+.pageTitle h1
+{
+  margin: 0;
+  font-size: type.$font-size-base;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.actions
+{
+  min-width: 0;
   max-width: 100%;
-  min-height: var(--app-toolbar-height);
-  max-height: clamp(var(--app-toolbar-height), calc(100cqh - var(--app-actions-top) - 116px), 144px);
-  min-width: var(--app-toolbar-height);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
-  padding: 4px 6px;
   gap: 4px 5px;
-  box-shadow: 0 0px 6px 4px var(--vscode-editor-background);
-  transform: translateX(6px);
-
-  &::-webkit-scrollbar {
-    width: 4px;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: var(--vscode-scrollbarSlider-background);
-    border-radius: 999px;
-  }
+  margin-inline-start: auto;
 }
 
-@container (max-width: 420px) {
-  .content > .actionRegion:has(.pageActions:not(:empty)),
-  .content:has(> .actionRegion .pageActions:not(:empty)) > .keepAliveContainer {
-    --app-actions-top: calc(var(--window-safe-top) + var(--app-toolbar-height) + 2px);
-  }
-
-  .content > .actionRegion:has(.pageActions:not(:empty)) {
-    max-width: calc(100% - var(--app-page-padding) * 2);
-  }
-}
-
-.pageActions {
+.pageActions
+{
   display: contents;
+}
 
-  &:empty {
-    display: none;
+@container workspace (max-width: 760px)
+{
+  .actions:has(.pageActions:not(:empty))
+  {
+    flex-basis: 100%;
+    justify-content: flex-start;
   }
 }

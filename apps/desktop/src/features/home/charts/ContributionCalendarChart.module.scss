@@ -1,11 +1,19 @@
 @use "../../../styles/typography" as type;
 
-.root {
+.root
+{
   width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.chartCard
+{
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-  background: var(--vscode-editor-background);
-  border: 1px solid var(--vscode-sideBar-border);
-  border-radius: var(--oa-overlay-radius);
 }
 
 .header {
@@ -15,13 +23,18 @@
   justify-content: space-between;
   gap: 8px 16px;
   padding: 10px 15px;
-  border-bottom: 1px solid var(--vscode-sideBar-border);
+  border-bottom: 1px solid var(--oa-card-border);
   color: var(--vscode-descriptionForeground);
   font-size: type.$font-size-2xs;
 }
 
-.title {
+.title
+{
   min-width: 0;
+  margin: 0;
+  color: var(--vscode-foreground);
+  font-size: type.$font-size-base;
+  font-weight: 630;
 }
 
 .headerMeta {
@@ -29,6 +42,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 14px;
+  margin-inline-start: auto;
 }
 
 .switcher {
@@ -66,8 +80,8 @@
     }
 
     &[aria-pressed="true"] {
-      color: var(--vscode-button-foreground);
-      background: var(--vscode-button-background);
+      color: var(--vscode-list-activeSelectionForeground);
+      background: var(--vscode-list-activeSelectionBackground);
     }
   }
 }
@@ -97,17 +111,9 @@
   border-radius: 2px;
 }
 
-.body {
-  width: 100%;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.bodyWide {
-  align-items: stretch;
-}
-
-.calendarPane {
+.calendarPane
+{
+  flex: 1 1 auto;
   min-width: 0;
   padding: 14px 16px 12px;
   display: flex;
@@ -192,44 +198,39 @@
   text-align: center;
 }
 
-.summaryPane {
+.summaryPane
+{
   min-width: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-rows: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  overflow: hidden;
-  background: var(--vscode-sideBar-border);
-  border-left: 1px solid var(--vscode-sideBar-border);
+  gap: 12px;
   font-family: var(--oa-metrics-font);
 }
 
-.summaryQuota {
+.summaryQuota
+{
   grid-column: 1 / -1;
   min-width: 0;
 }
 
-.quotaFooter {
-  border-top: 1px solid var(--vscode-sideBar-border);
-}
-
-.summaryCell {
+.summaryCell
+{
   min-width: 0;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: 8px;
   padding: 12px 15px;
-  background: var(--vscode-editor-background);
 }
 
-.summaryLabel {
-  overflow: hidden;
-  color: var(--vscode-descriptionForeground);
+.summaryLabel
+{
+  margin: 0;
+  color: var(--vscode-foreground);
   font-size: type.$font-size-xs;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .summaryBody {
@@ -261,15 +262,19 @@
   flex-direction: column;
 }
 
-.seriesFrame {
+.seriesFrame
+{
   width: 100%;
   min-width: 0;
+  display: flex;
+  align-self: stretch;
 }
 
-.echart {
-  width: 100%;
+.echart
+{
+  flex: 1 1 auto;
   min-width: 0;
-  height: 180px;
+  min-height: 180px;
   overflow: hidden;
 }
 

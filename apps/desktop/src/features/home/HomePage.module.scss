@@ -7,7 +7,7 @@
   background: var(--vscode-sideBar-border);
 }
 
-:global([data-actions-wrapped="true"]) .divider {
+:global([data-actions-wrapped]) .divider {
   visibility: hidden;
 }
 
@@ -44,9 +44,22 @@
       background: var(--vscode-list-hoverBackground);
     }
 
+    &:focus-visible
+    {
+      outline-offset: -2px;
+    }
+
     &[aria-pressed="true"] {
       color: var(--vscode-list-activeSelectionForeground);
       background: var(--vscode-list-activeSelectionBackground);
     }
+  }
+}
+
+@container workspace (max-width: 760px)
+{
+  .divider
+  {
+    display: none;
   }
 }

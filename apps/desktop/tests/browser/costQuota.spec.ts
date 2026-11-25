@@ -2,6 +2,34 @@ import { test, expect } from "./fixtures";
 
 test.use({ timezoneId: "America/New_York" });
 
+test("keeps amount, currency, and actions together at desktop window sizes", async ({ page, management }) =>
+{
+  management.settings.cost_quotas.week = { amount: "1500", currency: "CNY" };
+  await page.goto("#/settings");
+  for (const width of [1920, 820])
+  {
+    await page.setViewportSize({ width, height: 558 });
+    for (const name of ["Weekly quota", "Monthly quota", "Yearly quota"])
+    {
+      const form = page.getByRole("form", { name });
+      await form.scrollIntoViewIfNeeded();
+      const bounds = await Promise.all([
+        form.getByText(name, { exact: true }).boundingBox(),
+        form.getByRole("textbox").boundingBox(),
+        form.getByRole("button", { name: `${name} currency` }).boundingBox(),
+        form.getByRole("button", { name: "Save", exact: true }).boundingBox(),
+      ]);
+      const [label, amount, currency, save] = bounds;
+      if (!label || !amount || !currency || !save) throw new Error(`Missing ${name} controls at ${width}px`);
+      expect(amount.x - label.x).toBeLessThan(160);
+      expect(currency.x).toBeGreaterThan(amount.x);
+      expect(save.x).toBeGreaterThan(currency.x);
+      expect(currency.y).toBeCloseTo(amount.y, 0);
+      expect(save.y).toBeCloseTo(amount.y, 0);
+    }
+  }
+});
+
 test("saves independent cost quotas and displays all of them across activity views", async ({ page, management }) =>
 {
   management.settings.home_auto_refresh_enabled = false;
@@ -34,7 +62,7 @@ test("saves independent cost quotas and displays all of them across activity vie
   }
   await page.reload();
   await expect(amount).toHaveValue("100");
-  await expect(week.getByRole("button", { name: "Weekly quota currency" })).toHaveText("CNY");
+  await expect(week.getByRole("button", { name: "Weekly quota currency" })).toContainText("CNY");
 
   await page.setViewportSize({ width: 1680, height: 900 });
   await page.goto("#/");

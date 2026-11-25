@@ -3,6 +3,7 @@ import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "reac
 import { init, Rect, type ElementEvent, type ZRenderType } from "zrender";
 import { useI18n } from "../../../i18n/store";
 import type { OverviewCalendarChartType } from "../../../shared/store/appStore";
+import { Card } from "../../../shared/ui/Card";
 import { useTooltip, type TooltipAnchor } from "../../../shared/ui/Tooltip";
 import { formatDisplayCost, formatDisplayCostExact, type DisplayCurrency, type DisplayExchangeRate } from "../../../shared/utils/costFormat";
 import { formatCompactInteger, formatInteger } from "../../../shared/utils/numberFormat";
@@ -74,7 +75,8 @@ const AVERAGE_LINE_COLOR = "#E7B40B";
 
 const CALENDAR_CONFIG = {
   resizeTransitionMs: 180,
-  calendarPadX: 32,
+  calendarPadX: 34,
+  cardGap: 12,
   weekdayReserve: 40,
   wideLayoutMinWidth: 1340,
   summaryMinWidth: 360,
@@ -156,7 +158,7 @@ function computeCalendarGeometry(bodyWidth: number, layout: CalendarLayout): Cal
   const cellGap = windowConfig.cellGap;
   const gapsWidth = Math.max(0, colCount - 1) * cellGap;
   const summaryTarget = computeWideSummaryWidth(bodyWidth);
-  const calendarBudget = summaryTarget !== null ? Math.max(0, bodyWidth - summaryTarget) : bodyWidth;
+  const calendarBudget = summaryTarget !== null ? bodyWidth - summaryTarget - CALENDAR_CONFIG.cardGap : bodyWidth;
 
   const availableGridWidth = Math.max(
     0,
@@ -181,7 +183,7 @@ function computeCalendarGeometry(bodyWidth: number, layout: CalendarLayout): Cal
   if (summaryTarget !== null) {
     const calendarPaneWidth = gridWidth + weekdayReserve + CALENDAR_CONFIG.calendarPadX;
     const keepCompactCalendar = layout.window === "year"
-      && calendarPaneWidth >= bodyWidth - CALENDAR_CONFIG.summaryMaxWidth;
+      && calendarPaneWidth >= bodyWidth - CALENDAR_CONFIG.cardGap - CALENDAR_CONFIG.summaryMaxWidth;
     gridTemplateColumns = keepCompactCalendar
       ? `${calendarPaneWidth}px minmax(0, 1fr)`
       : `minmax(0, 1fr) ${summaryTarget}px`;
@@ -264,7 +266,7 @@ function buildSeriesChartOption({
           type: "bar",
           stack: "empty-placeholder",
           data: series.points.map((point) => ({ id: point.date, value: point.tokens === 0 ? axisMaximum : 0 })),
-          barWidth: "98%",
+          barMaxWidth: 18,
           silent: true,
           z: 0,
           itemStyle: { color: CONTRIBUTION_LEVEL_COLORS[0], borderRadius: [2, 2, 0, 0] },
@@ -275,14 +277,14 @@ function buildSeriesChartOption({
       id: "tokens-bar",
       name: t("Token 用量"),
       type: "bar",
-      barWidth: "98%",
+      barMaxWidth: 18,
       barGap: "-100%",
       data: series.points.map((point) => ({
         id: point.date,
         value: point.tokens,
         itemStyle: {
           color: CONTRIBUTION_LEVEL_COLORS[point.level],
-          borderRadius: [3, 3, 0, 0],
+          borderRadius: [2, 2, 0, 0],
         },
       })),
       markLine,
@@ -349,7 +351,6 @@ function buildSeriesChartOption({
       axisLabel: {
         interval: windowMode === "week" ? 0 : "auto",
         hideOverlap: true,
-        color: "#8c8c8c",
         fontFamily: "HFKos",
         margin: 10,
       },
@@ -364,7 +365,6 @@ function buildSeriesChartOption({
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
-        color: "#8c8c8c",
         fontFamily: "HFKos",
         formatter: (value: number) => formatCompactInteger(value),
       },
@@ -442,7 +442,7 @@ export function ContributionCalendarChart({
   error = null,
 }: ContributionCalendarChartProps) {
   const { locale } = useI18n();
-  const bodyRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const zrenderRef = useRef<ZRenderType | null>(null);
   const cellRectsRef = useRef<Map<string, Rect>>(new Map());
@@ -706,46 +706,44 @@ export function ContributionCalendarChart({
     </div>
   );
 
-  const quotaFooter = quotaProgress && <div className={styles.quotaFooter}>{quotaProgress}</div>;
+  const quotaCard = quotaProgress && <Card className={styles.summaryQuota}>{quotaProgress}</Card>;
 
-  if (error) {
-    return (
-      <section className={styles.root} aria-label={sectionAriaLabel}>
-        <div className={styles.header}>
-          <span className={styles.title}>{windowTitle}</span>
-          <div className={styles.headerMeta}>
-            {renderChartTypeSwitcher()}
-            {renderWindowSwitcher()}
-          </div>
+  const renderChartCard = (content: ReactNode, inlineStats?: string) => (
+    <Card as="article" className={styles.chartCard}>
+      <header className={styles.header}>
+        <h2 className={styles.title}>{windowTitle}</h2>
+        <div className={styles.headerMeta}>
+          {inlineStats && <span className={styles.inlineStats}>{inlineStats}</span>}
+          {renderChartTypeSwitcher()}
+          {renderWindowSwitcher()}
+          {isHeatmap && (
+            <div className={styles.legend} aria-hidden="true">
+              <span>{t("少")}</span>
+              <div className={styles.legendSwatches}>
+                {CONTRIBUTION_LEVEL_COLORS.map((color, index) => (
+                  <span key={index} className={styles.legendSwatch} style={{ backgroundColor: color }} />
+                ))}
+              </div>
+              <span>{t("多")}</span>
+            </div>
+          )}
         </div>
-        <div className={styles.state}>
-          {chartType === "heatmap"
-            ? t("日历数据加载失败：{error}", { error })
-            : t("活动数据加载失败：{error}", { error })}
-        </div>
-        {quotaFooter}
-      </section>
-    );
-  }
+      </header>
+      {content}
+    </Card>
+  );
 
-  if (!summary || (chartType === "heatmap" ? !layout : !series)) {
-    return (
-      <section className={styles.root} aria-label={sectionAriaLabel}>
-        <div className={styles.header}>
-          <span className={styles.title}>{windowTitle}</span>
-          <div className={styles.headerMeta}>
-            {renderChartTypeSwitcher()}
-            {renderWindowSwitcher()}
-          </div>
-        </div>
-        <div className={styles.state}>
-          {loading
-            ? (chartType === "heatmap" ? t("正在加载日历数据…") : t("正在加载活动数据…"))
-            : t("暂无活动数据")}
-        </div>
-        {quotaFooter}
-      </section>
-    );
+  if (error || !summary || (chartType === "heatmap" ? !layout : !series))
+  {
+    const message = error
+      ? (chartType === "heatmap" ? t("日历数据加载失败：{error}", { error }) : t("活动数据加载失败：{error}", { error }))
+      : loading
+        ? (chartType === "heatmap" ? t("正在加载日历数据…") : t("正在加载活动数据…"))
+        : t("暂无活动数据");
+    return <section className={styles.root} aria-label={sectionAriaLabel}>
+      {renderChartCard(<div className={styles.state}>{message}</div>)}
+      {quotaCard}
+    </section>;
   }
 
   const summaryTarget = computeWideSummaryWidth(bodyWidth);
@@ -780,36 +778,8 @@ export function ContributionCalendarChart({
         });
 
   return (
-    <section className={styles.root} aria-label={sectionAriaLabel}>
-      <div className={styles.header}>
-        <span className={styles.title}>{windowTitle}</span>
-        <div className={styles.headerMeta}>
-          {!isWide && (
-            <span className={styles.inlineStats}>
-              {inlineStatsLabel}
-            </span>
-          )}
-          {renderChartTypeSwitcher()}
-          {renderWindowSwitcher()}
-          {chartType === "heatmap" && (
-            <div className={styles.legend} aria-hidden="true">
-              <span>{t("少")}</span>
-              <div className={styles.legendSwatches}>
-                {CONTRIBUTION_LEVEL_COLORS.map((color, index) => (
-                  <span key={index} className={styles.legendSwatch} style={{ backgroundColor: color }} />
-                ))}
-              </div>
-              <span>{t("多")}</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div
-        ref={bodyRef}
-        className={[styles.body, isWide ? styles.bodyWide : ""].filter(Boolean).join(" ")}
-        style={bodyStyle}
-      >
+    <section ref={bodyRef} className={styles.root} aria-label={sectionAriaLabel} style={bodyStyle}>
+      {renderChartCard(
         <div className={styles.calendarPane}>
           {chartType === "heatmap" ? (
             <div className={styles.scroller}>
@@ -872,72 +842,72 @@ export function ContributionCalendarChart({
               </div>
             )
           )}
+        </div>,
+        isWide ? undefined : inlineStatsLabel,
+      )}
+      {isWide && (
+        <div className={styles.summaryPane}>
+          <Card as="article" className={styles.summaryCell}>
+            <h3 className={styles.summaryLabel}>{summaryTotalLabel}</h3>
+            <div className={styles.summaryBody}>
+              <div className={styles.summaryValue} title={formatInteger(summary.totalTokens)}>
+                {formatCompactInteger(summary.totalTokens)}
+              </div>
+              <div className={styles.summarySub} title={summary.dateRangeLabel}>
+                {summary.dateRangeLabel}
+              </div>
+            </div>
+          </Card>
+
+          <Card as="article" className={styles.summaryCell}>
+            <h3 className={styles.summaryLabel}>{t("活跃天数")}</h3>
+            <div className={styles.summaryBody}>
+              <div className={styles.summaryValue}>
+                {t("{count} 天", { count: formatInteger(summary.activeDays) })}
+              </div>
+              <div className={styles.summarySub}>
+                {summary.activeDays > 0
+                  ? t("活跃占比 {rate}", { rate: summary.activeRateLabel })
+                  : t("暂无活跃记录")}
+              </div>
+            </div>
+          </Card>
+
+          <Card as="article" className={styles.summaryCell}>
+            <h3 className={styles.summaryLabel}>{t("总费用")}</h3>
+            <div className={styles.summaryBody}>
+              <div
+                className={styles.summaryValue}
+                title={formatDisplayCostExact(summary.totalCost, currency, exchangeRate)}
+              >
+                {formatDisplayCost(summary.totalCost, currency, exchangeRate)}
+              </div>
+              <div className={styles.summarySub}>
+                {summary.longestStreak > 0
+                  ? t("最长连续 {days} 天", { days: formatInteger(summary.longestStreak) })
+                  : t("暂无连续活跃")}
+              </div>
+            </div>
+          </Card>
+
+          <Card as="article" className={styles.summaryCell}>
+            <h3 className={styles.summaryLabel}>{t("单日峰值")}</h3>
+            <div className={styles.summaryBody}>
+              <div
+                className={styles.summaryValue}
+                title={summary.peakDay ? formatInteger(summary.peakDay.tokens) : undefined}
+              >
+                {summary.peakDay ? formatCompactInteger(summary.peakDay.tokens) : "—"}
+              </div>
+              <div className={styles.summarySub}>
+                {summary.peakDay ? summary.peakDay.date : t("暂无用量记录")}
+              </div>
+            </div>
+          </Card>
+          {quotaCard}
         </div>
-
-        {isWide && (
-          <div className={styles.summaryPane}>
-            <div className={styles.summaryCell}>
-              <div className={styles.summaryLabel}>{summaryTotalLabel}</div>
-              <div className={styles.summaryBody}>
-                <div className={styles.summaryValue} title={formatInteger(summary.totalTokens)}>
-                  {formatCompactInteger(summary.totalTokens)}
-                </div>
-                <div className={styles.summarySub} title={summary.dateRangeLabel}>
-                  {summary.dateRangeLabel}
-                </div>
-              </div>
-            </div>
-
-            <div className={styles.summaryCell}>
-              <div className={styles.summaryLabel}>{t("活跃天数")}</div>
-              <div className={styles.summaryBody}>
-                <div className={styles.summaryValue}>
-                  {t("{count} 天", { count: formatInteger(summary.activeDays) })}
-                </div>
-                <div className={styles.summarySub}>
-                  {summary.activeDays > 0
-                    ? t("活跃占比 {rate}", { rate: summary.activeRateLabel })
-                    : t("暂无活跃记录")}
-                </div>
-              </div>
-            </div>
-
-            <div className={styles.summaryCell}>
-              <div className={styles.summaryLabel}>{t("总费用")}</div>
-              <div className={styles.summaryBody}>
-                <div
-                  className={styles.summaryValue}
-                  title={formatDisplayCostExact(summary.totalCost, currency, exchangeRate)}
-                >
-                  {formatDisplayCost(summary.totalCost, currency, exchangeRate)}
-                </div>
-                <div className={styles.summarySub}>
-                  {summary.longestStreak > 0
-                    ? t("最长连续 {days} 天", { days: formatInteger(summary.longestStreak) })
-                    : t("暂无连续活跃")}
-                </div>
-              </div>
-            </div>
-
-            <div className={styles.summaryCell}>
-              <div className={styles.summaryLabel}>{t("单日峰值")}</div>
-              <div className={styles.summaryBody}>
-                <div
-                  className={styles.summaryValue}
-                  title={summary.peakDay ? formatInteger(summary.peakDay.tokens) : undefined}
-                >
-                  {summary.peakDay ? formatCompactInteger(summary.peakDay.tokens) : "—"}
-                </div>
-                <div className={styles.summarySub}>
-                  {summary.peakDay ? summary.peakDay.date : t("暂无用量记录")}
-                </div>
-              </div>
-            </div>
-            {quotaProgress && <div className={styles.summaryQuota}>{quotaProgress}</div>}
-          </div>
-        )}
-      </div>
-      {!isWide && quotaFooter}
+      )}
+      {!isWide && quotaCard}
     </section>
   );
 }

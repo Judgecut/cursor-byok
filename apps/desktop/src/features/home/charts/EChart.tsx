@@ -2,7 +2,7 @@ import { BarChart, LineChart } from "echarts/charts";
 import { GridComponent, LegendComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
 import { getInstanceByDom, init, use, type EChartsCoreOption } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
-import { useEffect, useRef, type MouseEventHandler } from "react";
+import { useEffect, useRef, useSyncExternalStore, type MouseEventHandler } from "react";
 import styles from "./EChart.module.scss";
 
 use([BarChart, LineChart, GridComponent, LegendComponent, MarkLineComponent, TooltipComponent, CanvasRenderer]);
@@ -12,11 +12,12 @@ type TooltipSize = {
   viewSize: [number, number];
 };
 
-type TooltipConfig = Record<string, unknown>;
+type OptionFields = Record<string, unknown>;
 
 const TOOLTIP_OVERLAY_CSS = "max-width: min(360px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow-y: auto; white-space: normal; word-break: normal; overflow-wrap: anywhere; box-sizing: border-box; z-index: 15000;";
 
-function isTooltipConfig(value: unknown): value is TooltipConfig {
+function isOptionObject(value: unknown): value is OptionFields
+{
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -50,10 +51,31 @@ function clampTooltipPosition(
   return [left - chartRect.left, top - chartRect.top];
 }
 
-function resolveChartOption(option: EChartsCoreOption, node: HTMLDivElement): EChartsCoreOption {
+function subscribeTheme(onChange: () => void)
+{
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, { attributeFilter: ["data-theme"] });
+  return () => observer.disconnect();
+}
+
+function getTheme()
+{
+  return document.documentElement.dataset.theme;
+}
+
+function resolveChartOption(option: EChartsCoreOption, node: HTMLDivElement): EChartsCoreOption
+{
+  const color = getComputedStyle(node).getPropertyValue("--vscode-descriptionForeground").trim();
+  const styleAxis = (axis: unknown) =>
+  {
+    if (!isOptionObject(axis)) return axis;
+    const axisLabel = isOptionObject(axis.axisLabel) ? axis.axisLabel : {};
+    return { ...axis, axisLabel: { color, ...axisLabel } };
+  };
+  const styled = { ...option, xAxis: Array.isArray(option.xAxis) ? option.xAxis.map(styleAxis) : styleAxis(option.xAxis), yAxis: Array.isArray(option.yAxis) ? option.yAxis.map(styleAxis) : styleAxis(option.yAxis) };
   const rawTooltip = (option as { tooltip?: unknown }).tooltip;
-  if (!isTooltipConfig(rawTooltip) || rawTooltip.show === false) {
-    return option;
+  if (!isOptionObject(rawTooltip) || rawTooltip.show === false) {
+    return styled;
   }
 
   const callerCss = typeof rawTooltip.extraCssText === "string" ? rawTooltip.extraCssText.trim() : "";
@@ -62,7 +84,7 @@ function resolveChartOption(option: EChartsCoreOption, node: HTMLDivElement): EC
     : TOOLTIP_OVERLAY_CSS;
 
   return {
-    ...option,
+    ...styled,
     tooltip: {
       ...rawTooltip,
       appendTo: rawTooltip.appendTo ?? (() => document.body),
@@ -88,6 +110,7 @@ type EChartProps = {
 };
 
 export function EChart({ option, transition, className = styles.root, onMouseEnter, onMouseLeave }: EChartProps) {
+  const theme = useSyncExternalStore(subscribeTheme, getTheme);
   const previous = useRef<EChartProps["transition"]>(undefined);
   const viewKey = transition?.viewKey;
   const data = transition?.data;
@@ -141,7 +164,7 @@ export function EChart({ option, transition, className = styles.root, onMouseEnt
       animationEasingUpdate: "cubicOut",
     }, sameView ? { replaceMerge: ["series"] } : { notMerge: true });
     previous.current = { viewKey, data, enabled: Boolean(enabled) };
-  }, [data, enabled, option, viewKey]);
+  }, [data, enabled, option, theme, viewKey]);
 
   return <div ref={element} className={className} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
 }

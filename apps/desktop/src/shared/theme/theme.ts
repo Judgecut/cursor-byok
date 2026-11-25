@@ -28,7 +28,7 @@ export function resolveTheme(themeId: ThemeId): ResolvedThemeId {
 
 function applyResolvedTheme(resolved: ResolvedThemeId) {
   const light = resolved === "default-light";
-  const background = light ? "#f5f5f5" : "#141414";
+  const background = light ? "#f2f1ef" : "#141414";
   document.documentElement.dataset.theme = resolved;
   document.documentElement.style.setProperty("--startup-background", background);
   document.documentElement.style.colorScheme = light ? "light" : "dark";

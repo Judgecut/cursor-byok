@@ -19,10 +19,14 @@
     width: 18px;
     height: 18px;
     border-radius: 50%;
-    background: var(--vscode-button-foreground);
+    background: #ffffff;
     box-shadow: 0 1px 4px rgb(0 0 0 / 28%);
     transition: transform 160ms ease;
   }
 
-  &[data-checked] span { transform: translateX(16px); }
+  &[data-checked] span
+  {
+    background: var(--vscode-button-foreground);
+    transform: translateX(16px);
+  }
 }
