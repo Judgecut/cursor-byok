@@ -263,7 +263,7 @@ function buildSeriesChartOption({
           type: "bar",
           stack: "empty-placeholder",
           data: series.points.map((point) => ({ id: point.date, value: point.tokens === 0 ? axisMaximum : 0 })),
-          barMaxWidth: 18,
+          barWidth: "98%",
           silent: true,
           z: 0,
           itemStyle: { color: CONTRIBUTION_LEVEL_COLORS[0], borderRadius: [2, 2, 0, 0] },
@@ -274,7 +274,7 @@ function buildSeriesChartOption({
       id: "tokens-bar",
       name: t("Token 用量"),
       type: "bar",
-      barMaxWidth: 18,
+      barWidth: "98%",
       barGap: "-100%",
       data: series.points.map((point) => ({
         id: point.date,
