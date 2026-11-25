@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { SpeedAggregate } from "../../../shared/api";
 import {
   addUsdStrings,
+  convertUsdToDisplayNumber,
   formatConversionNote,
   formatDisplayCost,
   formatDisplayCostExact,
@@ -14,8 +15,12 @@ import { aggregateTooltip, formatFirstOutput, formatSpeed } from "../../../share
 import { Icon } from "../../../shared/ui/Icon";
 import { useTooltip, type TooltipAnchor } from "../../../shared/ui/Tooltip";
 import { informationOutlineIcon } from "../../../shared/ui/icons";
+import { RollingNumber } from "../motion/RollingNumber";
+import type { MotionTone } from "../motion/rollingDigits";
 import type { MetricChanges } from "./useMetricChanges";
 import styles from "./HomeMetrics.module.scss";
+
+const PULSE_DURATION_MS = 1_200;
 
 export type HomeMetricsData = {
   llmCalls: number;
@@ -79,16 +84,25 @@ function InfoTooltip({ content }: { content: string }) {
   ><Icon icon={informationOutlineIcon} size="1.1em" /></button>;
 }
 
-function SignedChange({ value, timestamp, animate }: { value: string; timestamp: number; animate: boolean })
+function SignedChange({ value, timestamp, animate, tone }: { value: string; timestamp: number; animate: boolean; tone?: MotionTone })
 {
   const [elapsed] = useState(() => Date.now() - timestamp);
-  return <span className={styles.change} data-animate={animate} style={{ animationDelay: `-${Math.max(0, elapsed)}ms` }} title={t("较上次刷新")}>{value}</span>;
+  return <span className={styles.change} data-animate={animate} data-tone={tone !== "none" ? tone : undefined} style={{ animationDelay: `-${Math.max(0, elapsed)}ms` }} title={t("较上次刷新")}>{value}</span>;
+}
+
+function CardPulse({ timestamp, animate, tone }: { timestamp: number; animate: boolean; tone?: MotionTone })
+{
+  const [elapsed] = useState(() => Date.now() - timestamp);
+  if (!animate || !tone || tone === "none" || elapsed >= PULSE_DURATION_MS) return null;
+  return <span className={styles.cardPulse} data-tone={tone} style={{ animationDelay: `-${Math.max(0, elapsed)}ms` }} aria-hidden="true" />;
 }
 
 export function HomeMetrics({
   data,
   changes,
   animate,
+  resetKey = "",
+  suppressFlash = false,
   currency,
   exchangeRate,
   loading = false,
@@ -97,6 +111,8 @@ export function HomeMetrics({
   data: HomeMetricsData | null;
   changes: MetricChanges | null;
   animate: boolean;
+  resetKey?: string;
+  suppressFlash?: boolean;
   currency: DisplayCurrency;
   exchangeRate: DisplayExchangeRate | null;
   loading?: boolean;
@@ -271,28 +287,91 @@ export function HomeMetrics({
           })
         : t("缓存读写 {cost}", { cost: formatDisplayCost(cacheCost, currency, exchangeRate) });
 
+  const cacheHitChange = changes?.cacheHitRate != null
+    ? `${changes.cacheHitRate > 0 ? "+" : "−"}${Math.abs(changes.cacheHitRate).toFixed(2)}%`
+    : null;
+  const cacheHitTone: MotionTone | undefined = changes?.cacheHitRate != null
+    ? (changes.cacheHitRate > 0 ? "positive" : "attention")
+    : undefined;
+
   const callsChange = changes?.calls ? `${changes.calls > 0 ? "+" : "−"}${formatCompactInteger(Math.abs(changes.calls))}` : null;
+  const callsTone: MotionTone | undefined = changes && (changes.calls !== 0 || changes.failedCalls > 0)
+    ? (changes.failedCalls > 0 && changes.failedCalls === changes.calls
+        ? "negative"
+        : changes.calls > 0
+          ? "active"
+          : "attention")
+    : undefined;
+
+  const speedChange = changes?.speed != null
+    ? `${changes.speed > 0 ? "+" : "−"}${Math.abs(changes.speed) >= 1 ? Math.round(Math.abs(changes.speed)) : Math.abs(changes.speed).toFixed(1)}`
+    : null;
+  const speedTone: MotionTone | undefined = changes?.speed != null
+    ? (changes.speed > 0 ? "positive" : "attention")
+    : undefined;
+
+  const firstOutputChange = changes?.firstOutputMs != null
+    ? `${changes.firstOutputMs > 0 ? "+" : "−"}${(Math.abs(changes.firstOutputMs) / 1000).toFixed(1)}s`
+    : null;
+  const firstOutputTone: MotionTone | undefined = changes?.firstOutputMs != null
+    ? (changes.firstOutputMs < 0 ? "positive" : "attention")
+    : undefined;
+
   const tokensChange = changes?.tokens ? `${changes.tokens > 0 ? "+" : "−"}${formatCompactInteger(Math.abs(changes.tokens))}` : null;
+  const tokensTone: MotionTone | undefined = changes?.tokens
+    ? (changes.tokens > 0 ? "active" : "attention")
+    : undefined;
+
   const costChange = changes && changes.cost !== "0"
     ? `${changes.cost.startsWith("-") ? "−" : "+"}${formatDisplayCost(changes.cost.replace(/^-/, ""), currency, exchangeRate)}`
     : null;
+  const costTone: MotionTone | undefined = changes && changes.cost !== "0"
+    ? (changes.cost.startsWith("-") ? "positive" : "attention")
+    : undefined;
 
+  const costDisplay = formatDisplayCost(data.totalCost, currency, exchangeRate);
+  const costNumeric = convertUsdToDisplayNumber(data.totalCost, currency, exchangeRate);
   const costValueTitle = conversionNote
     ? `${formatDisplayCostExact(data.totalCost, currency, exchangeRate)}\n${t("原美元金额：{cost}", { cost: formatUsdExact(data.totalCost) })}\n${conversionNote}`
     : formatUsdExact(data.totalCost);
 
   return <section className={styles.root} aria-label={t("调用统计")}>
     <article className={styles.metric}>
-      <div className={styles.label}>{t("缓存命中率")}<InfoTooltip content={cacheTooltip} /></div>
+      {changes && cacheHitChange && <CardPulse key={`pulse-${changes.timestamp}-${animate}`} timestamp={changes.timestamp} animate={animate && !suppressFlash} tone={cacheHitTone} />}
+      <div className={styles.label}>{t("缓存命中率")}<InfoTooltip content={cacheTooltip} />{changes && cacheHitChange && <SignedChange key={`${changes.timestamp}:${animate}`} value={cacheHitChange} timestamp={changes.timestamp} animate={animate} tone={cacheHitTone} />}</div>
       <div className={styles.body}>
-        <div className={styles.value}>{cacheHitPrimary}</div>
+        <div className={styles.value}>
+          <RollingNumber
+            value={cacheHitPrimary}
+            numericValue={allUsageUnreported ? null : defaultCacheHitRate}
+            animate={animate}
+            resetKey={resetKey}
+            polarity="higher-better"
+            suppressFlash={suppressFlash}
+            rollOnMount
+            mountDelayMs={0}
+          />
+        </div>
         <div className={styles.secondary} title={cacheHitSecondary}>{cacheHitSecondary}</div>
       </div>
     </article>
     <article className={styles.metric}>
-      <div className={styles.label}>{t("LLM 调用")}<InfoTooltip content={callsTooltip} />{changes && callsChange && <SignedChange key={`${changes.timestamp}:${animate}`} value={callsChange} timestamp={changes.timestamp} animate={animate} />}</div>
+      {changes && (callsChange || changes.failedCalls > 0) && <CardPulse key={`pulse-${changes.timestamp}-${animate}`} timestamp={changes.timestamp} animate={animate && !suppressFlash} tone={callsTone} />}
+      <div className={styles.label}>{t("LLM 调用")}<InfoTooltip content={callsTooltip} />{changes && callsChange && <SignedChange key={`${changes.timestamp}:${animate}`} value={callsChange} timestamp={changes.timestamp} animate={animate} tone={callsTone} />}</div>
       <div className={styles.body}>
-        <div className={styles.value} title={formatInteger(data.llmCalls)}>{formatCompactInteger(data.llmCalls)}</div>
+        <div className={styles.value} title={formatInteger(data.llmCalls)}>
+          <RollingNumber
+            value={formatCompactInteger(data.llmCalls)}
+            numericValue={data.llmCalls}
+            animate={animate}
+            resetKey={resetKey}
+            polarity="activity"
+            flashTone={callsTone}
+            suppressFlash={suppressFlash}
+            rollOnMount
+            mountDelayMs={28}
+          />
+        </div>
         <div className={styles.secondary}>{t("成功 {successful} / 异常 {failed}", {
           successful: formatCompactInteger(data.successfulCalls),
           failed: formatCompactInteger(data.failedCalls),
@@ -300,30 +379,78 @@ export function HomeMetrics({
       </div>
     </article>
     <article className={styles.metric}>
-      <div className={styles.label}>{t("生成速度（tok/s）")}<InfoTooltip content={speedTooltip} /></div>
+      {changes && speedChange && <CardPulse key={`pulse-${changes.timestamp}-${animate}`} timestamp={changes.timestamp} animate={animate && !suppressFlash} tone={speedTone} />}
+      <div className={styles.label}>{t("生成速度（tok/s）")}<InfoTooltip content={speedTooltip} />{changes && speedChange && <SignedChange key={`${changes.timestamp}:${animate}`} value={speedChange} timestamp={changes.timestamp} animate={animate} tone={speedTone} />}</div>
       <div className={styles.body}>
-        <div className={styles.value} title={speedDisplay}>{speedDisplay}</div>
+        <div className={styles.value} title={speedDisplay}>
+          <RollingNumber
+            value={speedDisplay}
+            numericValue={data.speed.average_tokens_per_second}
+            animate={animate}
+            resetKey={resetKey}
+            polarity="higher-better"
+            suppressFlash={suppressFlash}
+            rollOnMount
+            mountDelayMs={56}
+          />
+        </div>
         <div className={styles.secondary} title={speedSecondary}>{speedSecondary}</div>
       </div>
     </article>
     <article className={styles.metric}>
-      <div className={styles.label}>{t("首次输出（s）")}<InfoTooltip content={firstOutputTooltip} /></div>
+      {changes && firstOutputChange && <CardPulse key={`pulse-${changes.timestamp}-${animate}`} timestamp={changes.timestamp} animate={animate && !suppressFlash} tone={firstOutputTone} />}
+      <div className={styles.label}>{t("首次输出（s）")}<InfoTooltip content={firstOutputTooltip} />{changes && firstOutputChange && <SignedChange key={`${changes.timestamp}:${animate}`} value={firstOutputChange} timestamp={changes.timestamp} animate={animate} tone={firstOutputTone} />}</div>
       <div className={styles.body}>
-        <div className={styles.value} title={firstOutputDisplay}>{firstOutputDisplay}</div>
+        <div className={styles.value} title={firstOutputDisplay}>
+          <RollingNumber
+            value={firstOutputDisplay}
+            numericValue={data.speed.first_output_median_ms}
+            animate={animate}
+            resetKey={resetKey}
+            polarity="lower-better"
+            suppressFlash={suppressFlash}
+            rollOnMount
+            mountDelayMs={84}
+          />
+        </div>
         <div className={styles.secondary} title={firstOutputSecondary}>{firstOutputSecondary}</div>
       </div>
     </article>
     <article className={styles.metric}>
-      <div className={styles.label}>{t("Token 消耗")}<InfoTooltip content={tokensTooltip} />{changes && tokensChange && <SignedChange key={`${changes.timestamp}:${animate}`} value={tokensChange} timestamp={changes.timestamp} animate={animate} />}</div>
+      {changes && tokensChange && <CardPulse key={`pulse-${changes.timestamp}-${animate}`} timestamp={changes.timestamp} animate={animate && !suppressFlash} tone={tokensTone} />}
+      <div className={styles.label}>{t("Token 消耗")}<InfoTooltip content={tokensTooltip} />{changes && tokensChange && <SignedChange key={`${changes.timestamp}:${animate}`} value={tokensChange} timestamp={changes.timestamp} animate={animate} tone={tokensTone} />}</div>
       <div className={styles.body}>
-        <div className={styles.value} title={formatInteger(data.tokenUsage)}>{formatCompactInteger(data.tokenUsage)}</div>
+        <div className={styles.value} title={formatInteger(data.tokenUsage)}>
+          <RollingNumber
+            value={formatCompactInteger(data.tokenUsage)}
+            numericValue={data.tokenUsage}
+            animate={animate}
+            resetKey={resetKey}
+            polarity="activity"
+            suppressFlash={suppressFlash}
+            rollOnMount
+            mountDelayMs={112}
+          />
+        </div>
         <div className={styles.secondary}>{t("提示词 {tokens}", { tokens: formatCompactInteger(data.promptTokens) })}</div>
       </div>
     </article>
     <article className={styles.metric}>
-      <div className={styles.label}>{t("估算费用")}<InfoTooltip content={costTooltipLines.join("\n")} />{changes && costChange && <SignedChange key={`${changes.timestamp}:${animate}`} value={costChange} timestamp={changes.timestamp} animate={animate} />}</div>
+      {changes && costChange && <CardPulse key={`pulse-${changes.timestamp}-${animate}`} timestamp={changes.timestamp} animate={animate && !suppressFlash} tone={costTone} />}
+      <div className={styles.label}>{t("估算费用")}<InfoTooltip content={costTooltipLines.join("\n")} />{changes && costChange && <SignedChange key={`${changes.timestamp}:${animate}`} value={costChange} timestamp={changes.timestamp} animate={animate} tone={costTone} />}</div>
       <div className={styles.body}>
-        <div className={styles.value} title={costValueTitle}>{formatDisplayCost(data.totalCost, currency, exchangeRate)}</div>
+        <div className={styles.value} title={costValueTitle}>
+          <RollingNumber
+            value={costDisplay}
+            numericValue={costNumeric}
+            animate={animate}
+            resetKey={`${resetKey}|${currency}|${exchangeRate?.rate ?? ""}`}
+            polarity="cost"
+            suppressFlash={suppressFlash}
+            rollOnMount
+            mountDelayMs={140}
+          />
+        </div>
         <div className={styles.secondary} title={costSecondary}>{costSecondary}</div>
       </div>
     </article>

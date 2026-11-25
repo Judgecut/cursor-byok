@@ -19,6 +19,7 @@ export function OverviewTabs({
   onTabChange,
   calls,
   animate,
+  filterKey,
   callsTotal,
   callsReady,
   callsQueryKey,
@@ -43,6 +44,7 @@ export function OverviewTabs({
   onTabChange: (tab: OverviewTabId) => void;
   calls: LlmCall[];
   animate: boolean;
+  filterKey: string;
   callsTotal: number;
   callsReady: boolean;
   callsQueryKey: string;
@@ -92,6 +94,8 @@ export function OverviewTabs({
         overallTokenUsage={overallTokenUsage}
         currency={currency}
         exchangeRate={exchangeRate}
+        animate={animate}
+        filterKey={filterKey}
         loading={overviewLoading}
         error={overviewError}
       />,
@@ -105,6 +109,8 @@ export function OverviewTabs({
         overallTokenUsage={overallTokenUsage}
         currency={currency}
         exchangeRate={exchangeRate}
+        animate={animate}
+        filterKey={filterKey}
         loading={overviewLoading}
         error={overviewError}
       />,

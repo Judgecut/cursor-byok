@@ -1,12 +1,14 @@
 import type { EChartsCoreOption } from "echarts/core";
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { init, Rect, type ElementEvent, type ZRenderType } from "zrender";
 import { useI18n } from "../../../i18n/store";
 import type { OverviewCalendarChartType } from "../../../shared/store/appStore";
 import { Card } from "../../../shared/ui/Card";
 import { useTooltip, type TooltipAnchor } from "../../../shared/ui/Tooltip";
-import { formatDisplayCost, formatDisplayCostExact, type DisplayCurrency, type DisplayExchangeRate } from "../../../shared/utils/costFormat";
+import { compareUsdStrings, convertUsdToDisplayNumber, formatDisplayCost, formatDisplayCostExact, type DisplayCurrency, type DisplayExchangeRate } from "../../../shared/utils/costFormat";
 import { formatCompactInteger, formatInteger } from "../../../shared/utils/numberFormat";
+import { RollingNumber } from "../motion/RollingNumber";
+import type { MotionTone } from "../motion/rollingDigits";
 import { EChart } from "./EChart";
 import {
   buildCalendarLayout,
@@ -75,6 +77,8 @@ const AVERAGE_LINE_COLOR = "#E7B40B";
 
 const CALENDAR_CONFIG = {
   resizeTransitionMs: 180,
+  colorTransitionMs: 420,
+  highlightDurationMs: 1_200,
   calendarPadX: 34,
   cardGap: 12,
   weekdayReserve: 40,
@@ -223,12 +227,14 @@ function buildSeriesChartOption({
   chartType,
   windowMode,
   hovered,
+  highlightedDates,
   tokenFormatter,
 }: {
   series: ContributionSeries;
   chartType: Exclude<OverviewCalendarChartType, "heatmap">;
   windowMode: ContributionWindow;
   hovered: boolean;
+  highlightedDates: ReadonlySet<string>;
   tokenFormatter: Intl.NumberFormat;
 }): EChartsCoreOption {
   const axisMaximum = Math.max(1, series.maxTokens);
@@ -250,33 +256,58 @@ function buildSeriesChartOption({
 
   const barSeries: EChartsCoreOption[] = [
     {
-      id: "tokens-bar",
+      id: "tokens",
       name: t("Token 用量"),
       type: "bar",
       barWidth: "95%",
-      data: series.points.map((point) => ({
-        id: point.date,
-        value: point.tokens,
-        itemStyle: {
-          color: CONTRIBUTION_LEVEL_COLORS[point.level],
-        },
-      })),
+      universalTransition: true,
+      data: series.points.map((point) => {
+        const isHighlighted = highlightedDates.has(point.date);
+        return {
+          id: point.date,
+          value: point.tokens,
+          itemStyle: isHighlighted
+            ? {
+                color: CONTRIBUTION_LEVEL_COLORS[point.level],
+                shadowBlur: 12,
+                shadowColor: "rgba(64, 196, 99, 0.65)",
+              }
+            : {
+                color: CONTRIBUTION_LEVEL_COLORS[point.level],
+                shadowBlur: 0,
+              },
+        };
+      }),
       markLine,
     },
   ];
 
+  const defaultShowSymbol = windowMode !== "year" || series.points.length <= 31;
   const lineSeries: EChartsCoreOption[] = [
     {
       name: t("Token 用量"),
-      id: "tokens-line",
+      id: "tokens",
       type: "line",
-      data: series.points.map((point) => ({ id: point.date, value: point.tokens })),
+      universalTransition: true,
+      data: series.points.map((point) => {
+        const isHighlighted = highlightedDates.has(point.date);
+        return {
+          id: point.date,
+          value: point.tokens,
+          ...(defaultShowSymbol
+            ? (isHighlighted ? { symbolSize: 9 } : {})
+            : { symbolSize: isHighlighted ? 9 : 0 }),
+          ...(isHighlighted
+            ? { itemStyle: { color: LINE_COLOR, shadowBlur: 12, shadowColor: "rgba(64, 196, 99, 0.7)" } }
+            : {}),
+        };
+      }),
       smooth: true,
       smoothMonotone: "x",
       clip: true,
       symbol: "circle",
       symbolSize: windowMode === "week" ? 7 : 5,
-      showSymbol: windowMode !== "year" || series.points.length <= 31,
+      showSymbol: defaultShowSymbol || highlightedDates.size > 0,
       lineStyle: { color: LINE_COLOR, width: 2 },
       itemStyle: { color: LINE_COLOR },
       areaStyle: {
@@ -425,6 +456,24 @@ export function ContributionCalendarChart({
   const { show: showTooltip, hide: hideTooltip } = useTooltip();
   const [bodyWidth, setBodyWidth] = useState(0);
   const [seriesHovered, setSeriesHovered] = useState(false);
+  const [highlightedDates, setHighlightedDates] = useState<ReadonlySet<string>>(() => new Set());
+  const prevSeriesRef = useRef<{ key: string; tokensByDate: Map<string, number>; data: ContributionDay[] } | null>(null);
+  const [summaryPulses, setSummaryPulses] = useState<{
+    id: number;
+    total?: MotionTone;
+    activeDays?: MotionTone;
+    totalCost?: MotionTone;
+    peak?: MotionTone;
+  } | null>(null);
+  const summaryPulseSeqRef = useRef(0);
+  const prevSummaryRef = useRef<{
+    key: string;
+    currencyKey: string;
+    totalTokens: number;
+    activeDays: number;
+    totalCost: string;
+    peakTokens: number | null;
+  } | null>(null);
 
   const layout = useMemo(
     () => (chartType === "heatmap" ? buildCalendarLayout(data, windowMode, locale) : null),
@@ -437,6 +486,90 @@ export function ContributionCalendarChart({
   const summary = useMemo(() => summarizeContribution(data, windowMode), [data, windowMode]);
   const hasData = Boolean(summary && (chartType === "heatmap" ? layout : series) && !error);
   const isHeatmap = hasData && chartType === "heatmap";
+
+  useLayoutEffect(() => {
+    const key = `${filterKey}|${windowMode}`;
+    const tokensByDate = new Map<string, number>();
+    for (const point of series?.points ?? []) {
+      tokensByDate.set(point.date, point.tokens);
+    }
+    const prev = prevSeriesRef.current;
+    prevSeriesRef.current = { key, tokensByDate, data };
+
+    if (!animate || chartType === "heatmap" || !prev || prev.key !== key) {
+      setHighlightedDates((current) => (current.size > 0 ? new Set() : current));
+      return;
+    }
+
+    if (prev.data === data) return;
+    const increased = new Set<string>();
+    for (const [date, tokens] of tokensByDate) {
+      if (tokens > (prev.tokensByDate.get(date) ?? 0)) {
+        increased.add(date);
+      }
+    }
+    if (increased.size > 0) {
+      setHighlightedDates(increased);
+    }
+  }, [animate, chartType, data, filterKey, series, windowMode]);
+
+  useEffect(() => {
+    if (highlightedDates.size === 0) return;
+    const timer = window.setTimeout(() => setHighlightedDates(new Set()), CALENDAR_CONFIG.highlightDurationMs);
+    return () => window.clearTimeout(timer);
+  }, [highlightedDates]);
+
+  useLayoutEffect(() => {
+    const key = `${filterKey}|${windowMode}`;
+    const currencyKey = `${currency}:${exchangeRate?.rate ?? ""}`;
+    if (!summary) {
+      prevSummaryRef.current = null;
+      setSummaryPulses(null);
+      return;
+    }
+    const peakTokens = summary.peakDay?.tokens ?? null;
+    const prev = prevSummaryRef.current;
+    prevSummaryRef.current = {
+      key,
+      currencyKey,
+      totalTokens: summary.totalTokens,
+      activeDays: summary.activeDays,
+      totalCost: summary.totalCost,
+      peakTokens,
+    };
+
+    if (!animate || !prev || prev.key !== key) {
+      setSummaryPulses(null);
+      return;
+    }
+
+    const sameCurrency = prev.currencyKey === currencyKey;
+    const total: MotionTone | undefined = summary.totalTokens !== prev.totalTokens
+      ? (summary.totalTokens > prev.totalTokens ? "active" : "attention")
+      : undefined;
+    const activeDays: MotionTone | undefined = summary.activeDays !== prev.activeDays
+      ? (summary.activeDays > prev.activeDays ? "active" : "attention")
+      : undefined;
+    const totalCost: MotionTone | undefined = sameCurrency && summary.totalCost !== prev.totalCost
+      ? (compareUsdStrings(summary.totalCost, prev.totalCost) < 0 ? "positive" : "attention")
+      : undefined;
+    const peak: MotionTone | undefined = peakTokens !== prev.peakTokens
+      ? ((peakTokens ?? 0) > (prev.peakTokens ?? 0) ? "active" : "attention")
+      : undefined;
+
+    if (total || activeDays || totalCost || peak) {
+      setSummaryPulses({ id: ++summaryPulseSeqRef.current, total, activeDays, totalCost, peak });
+    }
+  }, [animate, currency, exchangeRate?.rate, filterKey, summary, windowMode]);
+
+  useEffect(() => {
+    if (!summaryPulses) return;
+    const id = summaryPulses.id;
+    const timer = window.setTimeout(() => {
+      setSummaryPulses((current) => (current?.id === id ? null : current));
+    }, CALENDAR_CONFIG.highlightDurationMs);
+    return () => window.clearTimeout(timer);
+  }, [summaryPulses]);
 
   const tokenFormatter = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const tokenFormatterRef = useRef(tokenFormatter);
@@ -462,9 +595,10 @@ export function ContributionCalendarChart({
       chartType,
       windowMode,
       hovered: seriesHovered,
+      highlightedDates,
       tokenFormatter,
     });
-  }, [chartType, hasData, series, seriesHovered, tokenFormatter, windowMode]);
+  }, [chartType, hasData, highlightedDates, series, seriesHovered, tokenFormatter, windowMode]);
 
   useLayoutEffect(() => {
     const body = bodyRef.current;
@@ -573,9 +707,12 @@ export function ContributionCalendarChart({
     }
 
     const cornerRadius = WINDOW_GEOMETRY_CONFIG[layout.window].cornerRadius(geometry.cellSize);
+    const maxColumn = Math.max(1, layout.columnCount - 1);
     for (const cell of layout.cells) {
       const x = cellOffset(cell.column, geometry.cellSize, geometry.cellGap);
       const y = cellOffset(cell.row, geometry.cellSize, geometry.cellGap);
+      const originX = x + geometry.cellSize / 2;
+      const originY = y + geometry.cellSize / 2;
       const shape = {
         x,
         y,
@@ -592,9 +729,12 @@ export function ContributionCalendarChart({
         height: geometry.cellSize,
       } satisfies CellExtra;
       const current = cellRects.get(cell.date);
+      const fill = CONTRIBUTION_LEVEL_COLORS[cell.level];
 
       if (current) {
-        const levelChanged = (current.extra as CellExtra).level !== cell.level;
+        const prevExtra = current.extra as CellExtra;
+        const levelChanged = prevExtra.level !== cell.level;
+        const tokensIncreased = cell.tokens > prevExtra.tokens;
         current.extra = extra;
         if (
           current.shape.width !== shape.width
@@ -604,32 +744,85 @@ export function ContributionCalendarChart({
           || current.shape.r !== shape.r
         ) {
           current.stopAnimation();
-          current.attr({ shape, style: { fill: CONTRIBUTION_LEVEL_COLORS[cell.level] } });
+          current.attr({
+            originX,
+            originY,
+            scaleX: 1,
+            scaleY: 1,
+            z2: 0,
+            shape,
+            style: { fill, opacity: 1, shadowBlur: 0 },
+          });
         } else if (!animate) {
           current.stopAnimation();
-          current.attr({ style: { fill: CONTRIBUTION_LEVEL_COLORS[cell.level] } });
+          current.attr({
+            originX,
+            originY,
+            scaleX: 1,
+            scaleY: 1,
+            z2: 0,
+            style: { fill, opacity: 1, shadowBlur: 0 },
+          });
+        } else if (tokensIncreased) {
+          current.stopAnimation();
+          current.attr({ originX, originY, z2: 2 });
+          current.animateTo(
+            {
+              scaleX: 1.15,
+              scaleY: 1.15,
+              style: { fill, shadowBlur: 10, shadowColor: "rgba(64, 196, 99, 0.55)" },
+            },
+            {
+              duration: 200,
+              easing: "cubicOut",
+              done: () => {
+                current.animateTo(
+                  { scaleX: 1, scaleY: 1, style: { shadowBlur: 0 } },
+                  {
+                    duration: 380,
+                    easing: "cubicInOut",
+                    done: () => {
+                      current.attr({ z2: 0 });
+                    },
+                  },
+                );
+              },
+            },
+          );
         } else if (levelChanged) {
           current.stopAnimation();
           current.animateTo(
-            { style: { fill: CONTRIBUTION_LEVEL_COLORS[cell.level] } },
-            { duration: CALENDAR_CONFIG.resizeTransitionMs, easing: "cubicOut" },
+            { style: { fill } },
+            { duration: CALENDAR_CONFIG.colorTransitionMs, easing: "cubicOut" },
           );
         }
         continue;
       }
 
       const rect = new Rect({
+        originX,
+        originY,
+        scaleX: animate ? 0.72 : 1,
+        scaleY: animate ? 0.72 : 1,
         shape,
         style: {
-          fill: CONTRIBUTION_LEVEL_COLORS[cell.level],
+          fill,
           stroke: "rgba(139, 148, 158, 0.10)",
           lineWidth: 1,
+          opacity: animate ? 0 : 1,
         },
         cursor: "default",
         extra,
       });
       cellRects.set(cell.date, rect);
       chart.add(rect);
+      if (animate) {
+        const delay = Math.round((cell.column / maxColumn) * 200 + cell.row * 10);
+        rect.animateTo(
+          { scaleX: 1, scaleY: 1, style: { opacity: 1 } },
+          { duration: 280, delay, easing: "cubicOut" },
+        );
+      }
     }
     hideTooltip();
   }, [animate, geometry, hideTooltip, isHeatmap, layout]);
@@ -808,7 +1001,7 @@ export function ContributionCalendarChart({
               <div className={styles.seriesFrame} role="img" aria-label={chartAriaLabel}>
                 <EChart
                   option={seriesOption}
-                  transition={{ viewKey: JSON.stringify([filterKey, chartType, windowMode]), data, enabled: animate }}
+                  transition={{ viewKey: JSON.stringify([filterKey, windowMode]), morphKey: chartType, data, enabled: animate }}
                   className={styles.echart}
                   onMouseEnter={() => setSeriesHovered(true)}
                   onMouseLeave={() => setSeriesHovered(false)}
@@ -822,10 +1015,19 @@ export function ContributionCalendarChart({
       {isWide && (
         <div className={styles.summaryPane}>
           <Card as="article" className={styles.summaryCell}>
+            {animate && summaryPulses?.total && <span key={summaryPulses.id} className={styles.summaryPulse} data-tone={summaryPulses.total} aria-hidden="true" />}
             <h3 className={styles.summaryLabel}>{summaryTotalLabel}</h3>
             <div className={styles.summaryBody}>
               <div className={styles.summaryValue} title={formatInteger(summary.totalTokens)}>
-                {formatCompactInteger(summary.totalTokens)}
+                <RollingNumber
+                  value={formatCompactInteger(summary.totalTokens)}
+                  numericValue={summary.totalTokens}
+                  animate={animate}
+                  resetKey={`${filterKey}|${windowMode}`}
+                  polarity="activity"
+                  rollOnMount
+                  mountDelayMs={40}
+                />
               </div>
               <div className={styles.summarySub} title={summary.dateRangeLabel}>
                 {summary.dateRangeLabel}
@@ -834,10 +1036,19 @@ export function ContributionCalendarChart({
           </Card>
 
           <Card as="article" className={styles.summaryCell}>
+            {animate && summaryPulses?.activeDays && <span key={summaryPulses.id} className={styles.summaryPulse} data-tone={summaryPulses.activeDays} aria-hidden="true" />}
             <h3 className={styles.summaryLabel}>{t("活跃天数")}</h3>
             <div className={styles.summaryBody}>
               <div className={styles.summaryValue}>
-                {t("{count} 天", { count: formatInteger(summary.activeDays) })}
+                <RollingNumber
+                  value={t("{count} 天", { count: formatInteger(summary.activeDays) })}
+                  numericValue={summary.activeDays}
+                  animate={animate}
+                  resetKey={`${filterKey}|${windowMode}`}
+                  polarity="activity"
+                  rollOnMount
+                  mountDelayMs={70}
+                />
               </div>
               <div className={styles.summarySub}>
                 {summary.activeDays > 0
@@ -848,13 +1059,22 @@ export function ContributionCalendarChart({
           </Card>
 
           <Card as="article" className={styles.summaryCell}>
+            {animate && summaryPulses?.totalCost && <span key={summaryPulses.id} className={styles.summaryPulse} data-tone={summaryPulses.totalCost} aria-hidden="true" />}
             <h3 className={styles.summaryLabel}>{t("总费用")}</h3>
             <div className={styles.summaryBody}>
               <div
                 className={styles.summaryValue}
                 title={formatDisplayCostExact(summary.totalCost, currency, exchangeRate)}
               >
-                {formatDisplayCost(summary.totalCost, currency, exchangeRate)}
+                <RollingNumber
+                  value={formatDisplayCost(summary.totalCost, currency, exchangeRate)}
+                  numericValue={convertUsdToDisplayNumber(summary.totalCost, currency, exchangeRate)}
+                  animate={animate}
+                  resetKey={`${filterKey}|${windowMode}|${currency}|${exchangeRate?.rate ?? ""}`}
+                  polarity="cost"
+                  rollOnMount
+                  mountDelayMs={100}
+                />
               </div>
               <div className={styles.summarySub}>
                 {summary.longestStreak > 0
@@ -865,13 +1085,22 @@ export function ContributionCalendarChart({
           </Card>
 
           <Card as="article" className={styles.summaryCell}>
+            {animate && summaryPulses?.peak && <span key={summaryPulses.id} className={styles.summaryPulse} data-tone={summaryPulses.peak} aria-hidden="true" />}
             <h3 className={styles.summaryLabel}>{t("单日峰值")}</h3>
             <div className={styles.summaryBody}>
               <div
                 className={styles.summaryValue}
                 title={summary.peakDay ? formatInteger(summary.peakDay.tokens) : undefined}
               >
-                {summary.peakDay ? formatCompactInteger(summary.peakDay.tokens) : "—"}
+                <RollingNumber
+                  value={summary.peakDay ? formatCompactInteger(summary.peakDay.tokens) : "—"}
+                  numericValue={summary.peakDay?.tokens ?? null}
+                  animate={animate}
+                  resetKey={`${filterKey}|${windowMode}`}
+                  polarity="activity"
+                  rollOnMount
+                  mountDelayMs={130}
+                />
               </div>
               <div className={styles.summarySub}>
                 {summary.peakDay ? summary.peakDay.date : t("暂无用量记录")}

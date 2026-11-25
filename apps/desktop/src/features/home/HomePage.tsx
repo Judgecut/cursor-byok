@@ -622,10 +622,12 @@ export function HomePage() {
   useEffect(() => abortAllQueries, [abortAllQueries]);
 
   const hasMatchingOverview = rangeState?.filterKey === filterKey;
-  const filteredOverview = hasMatchingOverview ? rangeState.overview : null;
   const effectiveOverviewError = !hasMatchingOverview && overviewErrorState?.filterKey === filterKey
     ? overviewErrorState.message
     : null;
+  const keepPreviousOverview = rangeState !== null && !hasMatchingOverview && !effectiveOverviewError;
+  const filteredOverview = hasMatchingOverview || keepPreviousOverview ? rangeState.overview : null;
+  const activeFilterKey = rangeState?.filterKey ?? filterKey;
 
   const hasMatchingCallsFilter = callsState?.filterKey === filterKey;
   const hasMatchingCallsPage = hasMatchingCallsFilter
@@ -682,9 +684,9 @@ export function HomePage() {
     [activitySeries],
   );
 
-  const metricSample = useMemo(() => hasMatchingOverview
-    ? { filterKey, day: rangeState.day, metrics: rangeState.overview.metrics }
-    : null, [filterKey, hasMatchingOverview, rangeState]);
+  const metricSample = useMemo(() => rangeState && !effectiveOverviewError
+    ? { filterKey: rangeState.filterKey, day: rangeState.day, metrics: rangeState.overview.metrics }
+    : null, [effectiveOverviewError, rangeState]);
   const metricChanges = useMetricChanges(metricSample, isHomeActive, `${currency}:${exchangeRate?.rate ?? ""}`, rangeState?.resetChanges ?? false);
   const metrics = filteredOverview ? {
     llmCalls: filteredOverview.metrics.llm_calls,
@@ -800,6 +802,8 @@ export function HomePage() {
         data={effectiveOverviewError ? null : metrics}
         changes={metricChanges}
         animate={animate}
+        resetKey={activeFilterKey}
+        suppressFlash={!isHomeActive || Boolean(rangeState?.resetChanges)}
         currency={currency}
         exchangeRate={exchangeRate}
         loading={rangeBusy && !hasMatchingOverview}
@@ -813,13 +817,13 @@ export function HomePage() {
         data={dailyTokenUsage}
         breakdown={trendGroup === "total" ? null : filteredOverview?.trend_breakdown?.[trendGroup] ?? EMPTY_TREND_SERIES}
         animate={animate}
-        filterKey={JSON.stringify([filterKey, trendGroup])}
+        filterKey={JSON.stringify([activeFilterKey, trendGroup])}
         granularity={filteredOverview?.token_usage_granularity ?? "day"}
         mode={overviewChartMode}
         chartType={overviewChartType}
         currency={currency}
         exchangeRate={exchangeRate}
-        loading={!hasMatchingOverview && !effectiveOverviewError}
+        loading={!filteredOverview && !effectiveOverviewError}
         error={effectiveOverviewError}
       />,
     },
@@ -829,14 +833,14 @@ export function HomePage() {
       content: <ContributionCalendarChart
         data={contribution}
         animate={animate}
-        filterKey={filterKey}
+        filterKey={activeFilterKey}
         windowMode={overviewCalendarWindow}
         onWindowModeChange={(value) => appStore.selectOverviewCalendarWindow(value)}
         chartType={overviewCalendarChartType}
         onChartTypeChange={(value) => appStore.selectOverviewCalendarChartType(value)}
         currency={currency}
         exchangeRate={exchangeRate}
-        quotaProgress={Object.values(costQuotas).some(Boolean) && <CostQuotaProgress quotas={costQuotas} usage={quotaUsage} error={quotaError} customRates={customExchangeRates} exchangeRateSync={exchangeRateSync} locale={locale} />}
+        quotaProgress={Object.values(costQuotas).some(Boolean) && <CostQuotaProgress quotas={costQuotas} usage={quotaUsage} error={quotaError} customRates={customExchangeRates} exchangeRateSync={exchangeRateSync} locale={locale} animate={animate} />}
         loading={rangeBusy && !hasMatchingOverview}
         error={effectiveOverviewError}
       />,
@@ -849,6 +853,7 @@ export function HomePage() {
         onTabChange={setActiveTab}
         calls={callsItems}
         animate={animate}
+        filterKey={activeFilterKey}
         callsTotal={callsTotal}
         callsReady={hasMatchingCallsFilter && !effectiveCallsError}
         callsQueryKey={callsQueryKey}
@@ -870,12 +875,12 @@ export function HomePage() {
         suppliers={filteredOverview?.suppliers ?? []}
         providerIcons={providerIcons}
         models={filteredOverview?.models ?? []}
-        overviewReady={hasMatchingOverview && !effectiveOverviewError}
+        overviewReady={Boolean(filteredOverview) && !effectiveOverviewError}
         plugins={plugins}
         overallTokenUsage={filteredOverview?.metrics.token_usage ?? 0}
         currency={currency}
         exchangeRate={exchangeRate}
-        overviewLoading={!hasMatchingOverview && !effectiveOverviewError}
+        overviewLoading={!filteredOverview && !effectiveOverviewError}
         overviewError={effectiveOverviewError}
       />,
     },

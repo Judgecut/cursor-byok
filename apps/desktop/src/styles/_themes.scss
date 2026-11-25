@@ -24,6 +24,10 @@
   --oa-accent-selection: color-mix(in srgb, var(--oa-accent) 14%, transparent);
   --oa-tooltip-shadow: 0 12px 32px rgb(0 0 0 / 30%);
   --oa-dropdown-shadow: 0 12px 28px rgb(0 0 0 / 38%);
+  --oa-motion-positive: #40c463;
+  --oa-motion-attention: #f0b429;
+  --oa-motion-active: #49b0ff;
+  --oa-motion-negative: #ff6b6b;
 
   @include vscode-theme((
     foreground: #ffffffe6,
@@ -83,6 +87,10 @@
   --oa-accent-selection: color-mix(in srgb, var(--oa-accent) 10%, transparent);
   --oa-tooltip-shadow: 0 8px 22px rgb(0 0 0 / 12%);
   --oa-dropdown-shadow: 0 8px 20px rgb(0 0 0 / 14%);
+  --oa-motion-positive: #1f7a3d;
+  --oa-motion-attention: #b87400;
+  --oa-motion-active: #1f6feb;
+  --oa-motion-negative: #d1242f;
 
   @include vscode-theme((
     foreground: #191919,

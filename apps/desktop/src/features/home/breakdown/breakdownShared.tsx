@@ -1,6 +1,8 @@
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PricingSource, SpeedAggregate } from "../../../shared/api";
 import {
   compareUsdStrings,
+  convertUsdToDisplayNumber,
   formatConversionNote,
   formatDisplayCost,
   formatDisplayCostExact,
@@ -9,7 +11,10 @@ import {
   type DisplayExchangeRate,
 } from "../../../shared/utils/costFormat";
 import { formatCompactInteger, formatInteger } from "../../../shared/utils/numberFormat";
+import { RollingNumber } from "../motion/RollingNumber";
 import styles from "./BreakdownTable.module.scss";
+
+const HIGHLIGHT_DURATION_MS = 1_200;
 
 export type BreakdownSortKey =
   | "token_usage"
@@ -234,15 +239,71 @@ export function breakdownCacheTitle(row: BreakdownRowBase): string {
   return lines.join("\n");
 }
 
+export function useBreakdownHighlights<T extends BreakdownRowBase>(
+  rows: T[],
+  getId: (row: T) => string,
+  filterKey: string,
+  animate: boolean,
+): ReadonlySet<string> {
+  const [highlightedIds, setHighlightedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const prevRef = useRef<{ filterKey: string; rows: T[]; snapshots: Map<string, string> } | null>(null);
+
+  useLayoutEffect(() => {
+    const snapshots = new Map<string, string>();
+    for (const row of rows) {
+      snapshots.set(getId(row), `${row.token_usage}|${row.llm_calls}|${row.total_cost}`);
+    }
+    const prev = prevRef.current;
+    prevRef.current = { filterKey, rows, snapshots };
+
+    if (!animate || !prev || prev.filterKey !== filterKey) {
+      setHighlightedIds((current) => (current.size > 0 ? new Set() : current));
+      return;
+    }
+
+    if (prev.rows === rows) return;
+
+    const changed = new Set<string>();
+    for (const [id, signature] of snapshots) {
+      if (prev.snapshots.get(id) !== signature) {
+        changed.add(id);
+      }
+    }
+    if (changed.size > 0) {
+      setHighlightedIds(changed);
+    }
+  }, [animate, filterKey, getId, rows]);
+
+  useEffect(() => {
+    if (highlightedIds.size === 0) return;
+    const timer = window.setTimeout(() => setHighlightedIds(new Set()), HIGHLIGHT_DURATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [highlightedIds]);
+
+  return highlightedIds;
+}
+
 export function renderBreakdownCostCell(
   row: BreakdownRowBase,
   currency: DisplayCurrency,
   exchangeRate: DisplayExchangeRate | null,
+  motion?: { animate: boolean; resetKey: string },
 ) {
   const main = formatDisplayCost(row.total_cost, currency, exchangeRate);
-  if (row.assumed_cache_calls <= 0) return main;
+  const costNode = motion ? (
+    <RollingNumber
+      value={main}
+      numericValue={convertUsdToDisplayNumber(row.total_cost, currency, exchangeRate)}
+      animate={motion.animate}
+      resetKey={motion.resetKey}
+      polarity="cost"
+    />
+  ) : (
+    main
+  );
+  if (row.assumed_cache_calls <= 0) return costNode;
   return <>
-    <div>{main}</div>
+    <div>{costNode}</div>
     <div className={styles.subValue}>
       {row.assumed_cache_calls === row.llm_calls
         ? t("含估算缓存")

@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { OverviewModelSummary } from "../../../shared/api";
 import { Card } from "../../../shared/ui/Card";
 import { formatDisplayCost, type DisplayCurrency, type DisplayExchangeRate } from "../../../shared/utils/costFormat";
 import { formatCompactInteger, formatInteger } from "../../../shared/utils/numberFormat";
 import { aggregateTooltip, formatFirstOutput, formatSpeed } from "../../../shared/utils/speedFormat";
 import { ScrollableContent } from "../../../shared/virtual/ScrollableContent";
+import { RollingNumber } from "../motion/RollingNumber";
 import {
   ariaSortValue,
   averageCostTitle,
@@ -19,6 +20,7 @@ import {
   successRateText,
   tokenShareInfo,
   totalTokensTooltip,
+  useBreakdownHighlights,
   type BreakdownSort,
   type BreakdownSortKey,
 } from "../breakdown/breakdownShared";
@@ -29,6 +31,8 @@ export function HomeModelBreakdown({
   overallTokenUsage,
   currency,
   exchangeRate,
+  animate = true,
+  filterKey = "",
   loading = false,
   error = null,
 }: {
@@ -36,11 +40,16 @@ export function HomeModelBreakdown({
   overallTokenUsage: number;
   currency: DisplayCurrency;
   exchangeRate: DisplayExchangeRate | null;
+  animate?: boolean;
+  filterKey?: string;
   loading?: boolean;
   error?: string | null;
 }) {
   const [sort, setSort] = useState<BreakdownSort>({ key: "token_usage", dir: "desc" });
   const sortedModels = useMemo(() => sortBreakdownRows(models, sort), [models, sort]);
+  const getModelId = useCallback((model: OverviewModelSummary) => model.model_id, []);
+  const highlightedIds = useBreakdownHighlights(models, getModelId, filterKey, animate);
+  const costResetKey = `${filterKey}|${currency}|${exchangeRate?.rate ?? ""}`;
   const toggleSort = (key: BreakdownSortKey) => setSort((current) => nextBreakdownSort(current, key));
 
   if (error) {
@@ -138,7 +147,8 @@ export function HomeModelBreakdown({
         <tbody>
           {sortedModels.map((model) => {
             const share = tokenShareInfo(model.token_usage, overallTokenUsage);
-            return <tr key={model.model_id}>
+            const updated = highlightedIds.has(model.model_id);
+            return <tr key={model.model_id} className={updated ? styles.updatedRow : undefined} data-animate={animate}>
               <td className={styles.stickyName}>
                 <div className={styles.entityCell}>
                   <div className={styles.entityMain}>
@@ -153,11 +163,27 @@ export function HomeModelBreakdown({
               <td className={styles.stickyTotal} title={totalTokensTooltip(model, overallTokenUsage)}>
                 <div className={styles.totalCell}>
                   <div className={styles.totalTop}>
-                    <span className={styles.totalValue}>{formatCompactInteger(model.token_usage)}</span>
-                    <span className={styles.shareValue}>{share.label}</span>
+                    <span className={styles.totalValue}>
+                      <RollingNumber
+                        value={formatCompactInteger(model.token_usage)}
+                        numericValue={model.token_usage}
+                        animate={animate}
+                        resetKey={filterKey}
+                        polarity="activity"
+                      />
+                    </span>
+                    <span className={styles.shareValue}>
+                      <RollingNumber
+                        value={share.label}
+                        numericValue={share.exactPercent !== null ? Number(share.exactPercent) : null}
+                        animate={animate}
+                        resetKey={filterKey}
+                        polarity="neutral"
+                      />
+                    </span>
                   </div>
                   <div className={styles.shareTrack} aria-hidden="true">
-                    <div className={styles.shareFill} style={{ width: share.barWidth }} />
+                    <div className={styles.shareFill} data-animate={animate} data-updated={updated ? "true" : undefined} style={{ width: share.barWidth }} />
                   </div>
                 </div>
               </td>
@@ -206,7 +232,7 @@ export function HomeModelBreakdown({
                   : "—"}
               </td>
               <td className={styles.monoNum} title={breakdownCostTitle(model, currency, exchangeRate)}>
-                {renderBreakdownCostCell(model, currency, exchangeRate)}
+                {renderBreakdownCostCell(model, currency, exchangeRate, { animate, resetKey: costResetKey })}
               </td>
             </tr>;
           })}

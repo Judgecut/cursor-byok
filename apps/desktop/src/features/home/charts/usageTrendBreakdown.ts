@@ -32,7 +32,7 @@ export function buildUsageTrendBreakdown(
   const series = groups.map((group): BarSeriesOption | LineSeriesOption =>
   {
     const data = buckets.map(({ bucketStartMs }, index) => ({ id: String(bucketStartMs), value: group.values[index] }));
-    const common = { id: group.id, name: group.label, data, itemStyle: { color: group.color }, emphasis: { focus: "series" as const } };
+    const common = { id: group.id, name: group.label, data, itemStyle: { color: group.color }, emphasis: { focus: "series" as const }, universalTransition: true };
     return chartType === "bar"
       ? { ...common, type: "bar", stack: "usage", barWidth: "95%" }
       : { ...common, type: "line", smooth: 0.35, smoothMonotone: "x", showSymbol: buckets.length <= 1, symbolSize: 6, lineStyle: { color: group.color, width: 2 } };

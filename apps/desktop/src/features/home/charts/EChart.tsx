@@ -1,11 +1,12 @@
 import { BarChart, LineChart } from "echarts/charts";
 import { GridComponent, LegendComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
 import { getInstanceByDom, init, use, type EChartsCoreOption } from "echarts/core";
+import { UniversalTransition } from "echarts/features";
 import { CanvasRenderer } from "echarts/renderers";
 import { useEffect, useRef, useSyncExternalStore, type MouseEventHandler } from "react";
 import styles from "./EChart.module.scss";
 
-use([BarChart, LineChart, GridComponent, LegendComponent, MarkLineComponent, TooltipComponent, CanvasRenderer]);
+use([BarChart, LineChart, GridComponent, LegendComponent, MarkLineComponent, TooltipComponent, CanvasRenderer, UniversalTransition]);
 
 type TooltipSize = {
   contentSize: [number, number];
@@ -103,7 +104,7 @@ function resolveChartOption(option: EChartsCoreOption, node: HTMLDivElement): EC
 
 type EChartProps = {
   option: EChartsCoreOption;
-  transition?: { viewKey: string; data: unknown; enabled: boolean };
+  transition?: { viewKey: string; morphKey?: string; data: unknown; enabled: boolean };
   className?: string;
   onMouseEnter?: MouseEventHandler<HTMLDivElement>;
   onMouseLeave?: MouseEventHandler<HTMLDivElement>;
@@ -111,8 +112,15 @@ type EChartProps = {
 
 export function EChart({ option, transition, className = styles.root, onMouseEnter, onMouseLeave }: EChartProps) {
   const theme = useSyncExternalStore(subscribeTheme, getTheme);
-  const previous = useRef<EChartProps["transition"]>(undefined);
+  const previous = useRef<{
+    viewKey: string;
+    morphKey?: string;
+    data: unknown;
+    enabled: boolean;
+    theme: string | undefined;
+  } | undefined>(undefined);
   const viewKey = transition?.viewKey;
+  const morphKey = transition?.morphKey;
   const data = transition?.data;
   const enabled = transition?.enabled;
   const element = useRef<HTMLDivElement>(null);
@@ -154,17 +162,68 @@ export function EChart({ option, transition, className = styles.root, onMouseEnt
     }
 
     const last = previous.current;
-    const sameView = last?.viewKey === viewKey && last.enabled === enabled;
-    const animateUpdate = Boolean(enabled && sameView && last.data !== data);
-    chart?.setOption({
-      ...resolved,
-      animation: Boolean(enabled),
-      animationDuration: 0,
-      animationDurationUpdate: animateUpdate ? 300 : 0,
-      animationEasingUpdate: "cubicOut",
-    }, sameView ? { replaceMerge: ["series"] } : { notMerge: true });
-    previous.current = { viewKey, data, enabled: Boolean(enabled) };
-  }, [data, enabled, option, theme, viewKey]);
+    const isEnabled = Boolean(enabled);
+    const sameView = Boolean(last && last.viewKey === viewKey && last.enabled === isEnabled);
+    const sameMorph = sameView && last?.morphKey === morphKey;
+    const dataChanged = last?.data !== data;
+    const themeChanged = last?.theme !== theme;
+
+    let animOption: EChartsCoreOption;
+    if (!isEnabled)
+    {
+      animOption = {
+        ...resolved,
+        animation: false,
+        animationDuration: 0,
+        animationDurationUpdate: 0,
+      };
+    }
+    else if (!sameView)
+    {
+      animOption = {
+        ...resolved,
+        animation: true,
+        animationDuration: 520,
+        animationEasing: "cubicOut",
+        animationDelay: (idx: number) => Math.min(idx * 14, 180),
+        animationDurationUpdate: 520,
+        animationEasingUpdate: "cubicOut",
+      };
+    }
+    else if (!sameMorph || dataChanged)
+    {
+      animOption = {
+        ...resolved,
+        animation: true,
+        animationDuration: 460,
+        animationEasing: "cubicOut",
+        animationDurationUpdate: 540,
+        animationEasingUpdate: "cubicOut",
+      };
+    }
+    else if (themeChanged)
+    {
+      animOption = {
+        ...resolved,
+        animation: false,
+        animationDuration: 0,
+        animationDurationUpdate: 0,
+      };
+    }
+    else
+    {
+      animOption = {
+        ...resolved,
+        animation: true,
+        animationDuration: 0,
+        animationDurationUpdate: 220,
+        animationEasingUpdate: "cubicOut",
+      };
+    }
+
+    chart?.setOption(animOption, sameView ? { replaceMerge: ["series"] } : { notMerge: true });
+    previous.current = { viewKey, morphKey, data, enabled: isEnabled, theme };
+  }, [data, enabled, morphKey, option, theme, viewKey]);
 
   return <div ref={element} className={className} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
 }

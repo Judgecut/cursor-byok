@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useI18n } from "../../../i18n/store";
 import type { OverviewSupplierBreakdown, PluginDescriptor } from "../../../shared/api";
 import { Card } from "../../../shared/ui/Card";
@@ -9,6 +9,7 @@ import { historicalSupplierBrand, resolveSupplierIcon } from "../../../shared/ut
 import { aggregateTooltip, formatFirstOutput, formatSpeed } from "../../../shared/utils/speedFormat";
 import { buildPluginLabelMap } from "../../../shared/utils/supplierOptions";
 import { ScrollableContent } from "../../../shared/virtual/ScrollableContent";
+import { RollingNumber } from "../motion/RollingNumber";
 import {
   ariaSortValue,
   averageCostTitle,
@@ -23,6 +24,7 @@ import {
   successRateText,
   tokenShareInfo,
   totalTokensTooltip,
+  useBreakdownHighlights,
   type BreakdownSort,
   type BreakdownSortKey,
 } from "../breakdown/breakdownShared";
@@ -35,6 +37,8 @@ export function HomeSupplierBreakdown({
   overallTokenUsage,
   currency,
   exchangeRate,
+  animate = true,
+  filterKey = "",
   loading = false,
   error = null,
 }: {
@@ -44,6 +48,8 @@ export function HomeSupplierBreakdown({
   overallTokenUsage: number;
   currency: DisplayCurrency;
   exchangeRate: DisplayExchangeRate | null;
+  animate?: boolean;
+  filterKey?: string;
   loading?: boolean;
   error?: string | null;
 }) {
@@ -51,6 +57,9 @@ export function HomeSupplierBreakdown({
   const [sort, setSort] = useState<BreakdownSort>({ key: "token_usage", dir: "desc" });
   const pluginLabels = useMemo(() => buildPluginLabelMap(plugins, locale), [locale, plugins]);
   const sortedSuppliers = useMemo(() => sortBreakdownRows(suppliers, sort), [sort, suppliers]);
+  const getSupplierId = useCallback((supplier: OverviewSupplierBreakdown) => supplier.supplier_id, []);
+  const highlightedIds = useBreakdownHighlights(suppliers, getSupplierId, filterKey, animate);
+  const costResetKey = `${filterKey}|${currency}|${exchangeRate?.rate ?? ""}`;
   const toggleSort = (key: BreakdownSortKey) => setSort((current) => nextBreakdownSort(current, key));
 
   if (error) {
@@ -152,7 +161,8 @@ export function HomeSupplierBreakdown({
               || historicalBrand
               || supplier.label;
             const share = tokenShareInfo(supplier.token_usage, overallTokenUsage);
-            return <tr key={supplier.supplier_id}>
+            const updated = highlightedIds.has(supplier.supplier_id);
+            return <tr key={supplier.supplier_id} className={updated ? styles.updatedRow : undefined} data-animate={animate}>
               <td className={styles.stickyName}>
                 <div className={styles.entityCell}>
                   <div className={styles.entityMain}>
@@ -170,11 +180,27 @@ export function HomeSupplierBreakdown({
               <td className={styles.stickyTotal} title={totalTokensTooltip(supplier, overallTokenUsage)}>
                 <div className={styles.totalCell}>
                   <div className={styles.totalTop}>
-                    <span className={styles.totalValue}>{formatCompactInteger(supplier.token_usage)}</span>
-                    <span className={styles.shareValue}>{share.label}</span>
+                    <span className={styles.totalValue}>
+                      <RollingNumber
+                        value={formatCompactInteger(supplier.token_usage)}
+                        numericValue={supplier.token_usage}
+                        animate={animate}
+                        resetKey={filterKey}
+                        polarity="activity"
+                      />
+                    </span>
+                    <span className={styles.shareValue}>
+                      <RollingNumber
+                        value={share.label}
+                        numericValue={share.exactPercent !== null ? Number(share.exactPercent) : null}
+                        animate={animate}
+                        resetKey={filterKey}
+                        polarity="neutral"
+                      />
+                    </span>
                   </div>
                   <div className={styles.shareTrack} aria-hidden="true">
-                    <div className={styles.shareFill} style={{ width: share.barWidth }} />
+                    <div className={styles.shareFill} data-animate={animate} data-updated={updated ? "true" : undefined} style={{ width: share.barWidth }} />
                   </div>
                 </div>
               </td>
@@ -223,7 +249,7 @@ export function HomeSupplierBreakdown({
                   : "—"}
               </td>
               <td className={styles.monoNum} title={breakdownCostTitle(supplier, currency, exchangeRate)}>
-                {renderBreakdownCostCell(supplier, currency, exchangeRate)}
+                {renderBreakdownCostCell(supplier, currency, exchangeRate, { animate, resetKey: costResetKey })}
               </td>
             </tr>;
           })}

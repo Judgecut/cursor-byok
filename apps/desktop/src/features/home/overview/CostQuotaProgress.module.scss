@@ -25,6 +25,8 @@
 }
 
 .fill {
+  position: relative;
+  overflow: hidden;
   height: 100%;
   border-radius: inherit;
   background: #2f81f7;
@@ -35,6 +37,48 @@
 
   &[data-level="critical"] {
     background: #e5484d;
+  }
+
+  &[data-animate="true"] {
+    transform-origin: left center;
+    animation: quota-fill-enter 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    transition:
+      width 560ms cubic-bezier(0.16, 1, 0.3, 1),
+      background-color 450ms ease,
+      box-shadow 450ms ease;
+  }
+
+  &[data-animate="false"] {
+    animation: none;
+    transition: none;
+  }
+}
+
+.fillShimmer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.45) 50%, transparent 100%);
+  animation: quota-shimmer 850ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes quota-fill-enter {
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes quota-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(100%);
   }
 }
 
@@ -47,6 +91,22 @@
 .percent {
   max-width: 12em;
   overflow-wrap: anywhere;
+
+  &[data-level="warning"] {
+    color: #d7a500;
+  }
+
+  &[data-level="critical"] {
+    color: #e5484d;
+  }
+
+  &[data-animate="true"] {
+    transition: color 350ms ease;
+  }
+
+  &[data-animate="false"] {
+    transition: none;
+  }
 }
 
 .amounts {

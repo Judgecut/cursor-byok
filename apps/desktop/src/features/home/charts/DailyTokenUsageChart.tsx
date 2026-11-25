@@ -1,5 +1,5 @@
 import { format, type EChartsCoreOption } from "echarts/core";
-import { useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { OverviewTrendSeries, TokenUsageGranularity } from "../../../shared/api";
 import type { OverviewChartMode, OverviewChartType } from "../../../shared/store/appStore";
 import {
@@ -48,6 +48,14 @@ const seriesColors = {
   output: "#E7B40B",
   line: "#49b0ff",
 } as const;
+const seriesGlowColors = {
+  input: "rgba(0, 145, 255, 0.55)",
+  cacheRead: "rgba(64, 196, 99, 0.55)",
+  cacheWrite: "rgba(58, 98, 186, 0.55)",
+  output: "rgba(231, 180, 11, 0.55)",
+  line: "rgba(73, 176, 255, 0.7)",
+} as const;
+const BUCKET_HIGHLIGHT_DURATION_MS = 1_200;
 const levelLineColor = "#E7B40B";
 
 const seriesFocus = {
@@ -114,6 +122,8 @@ export function DailyTokenUsageChart({
   error?: string | null;
 }) {
   const [hovered, setHovered] = useState(false);
+  const [highlightedBuckets, setHighlightedBuckets] = useState<ReadonlySet<number>>(() => new Set());
+  const prevSnapshotRef = useRef<{ filterKey: string; mode: OverviewChartMode; data: DailyTokenUsage[]; totals: Map<number, number> } | null>(null);
   const conversionNote = mode === "cost" ? formatConversionNote(currency, exchangeRate) : null;
   const grouped = useMemo(() => breakdown === null ? null : buildUsageTrendBreakdown(breakdown, data, mode, chartType, currency, exchangeRate), [breakdown, data, mode, chartType, currency, exchangeRate]);
 
@@ -123,6 +133,38 @@ export function DailyTokenUsageChart({
       : convertUsdToDisplayNumber(day.totalCost, currency, exchangeRate))),
     [exchangeRate, currency, data, mode],
   );
+
+  useLayoutEffect(() => {
+    const totalsMap = new Map<number, number>();
+    for (let i = 0; i < data.length; i += 1) {
+      totalsMap.set(data[i].bucketStartMs, totals[i] ?? 0);
+    }
+    const prev = prevSnapshotRef.current;
+    prevSnapshotRef.current = { filterKey, mode, data, totals: totalsMap };
+
+    if (!animate || !prev || prev.filterKey !== filterKey || prev.mode !== mode) {
+      setHighlightedBuckets((current) => (current.size > 0 ? new Set() : current));
+      return;
+    }
+
+    if (prev.data === data) return;
+
+    const increased = new Set<number>();
+    for (const [bucketStartMs, nextTotal] of totalsMap) {
+      if (nextTotal > (prev.totals.get(bucketStartMs) ?? 0)) {
+        increased.add(bucketStartMs);
+      }
+    }
+    if (increased.size > 0) {
+      setHighlightedBuckets(increased);
+    }
+  }, [animate, data, filterKey, mode, totals]);
+
+  useEffect(() => {
+    if (highlightedBuckets.size === 0) return;
+    const timer = window.setTimeout(() => setHighlightedBuckets(new Set()), BUCKET_HIGHLIGHT_DURATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [highlightedBuckets]);
   const maximumTotal = grouped?.maximum ?? totals.reduce((maximum, total) => Math.max(maximum, total), 0);
   const axisMaximum = mode === "tokens"
     ? Math.max(1, maximumTotal)
@@ -151,16 +193,46 @@ export function DailyTokenUsageChart({
       data: [{ yAxis: averageLevel }],
     };
 
-    const byBucket = (values: number[]) => data.map((bucket, index) => ({ id: String(bucket.bucketStartMs), value: values[index] }));
+    const byBarBucket = (values: number[], color: string, glowColor: string) =>
+      data.map((bucket, index) => {
+        const isHighlighted = highlightedBuckets.has(bucket.bucketStartMs);
+        return {
+          id: String(bucket.bucketStartMs),
+          value: values[index],
+          itemStyle: isHighlighted
+            ? { color, shadowBlur: 12, shadowColor: glowColor }
+            : { color, shadowBlur: 0 },
+        };
+      });
+    const byLineBucket = (values: number[]) =>
+      data.map((bucket, index) => {
+        const isHighlighted = highlightedBuckets.has(bucket.bucketStartMs);
+        return {
+          id: String(bucket.bucketStartMs),
+          value: values[index],
+          ...(totals.length > 1
+            ? { symbolSize: isHighlighted ? 9 : 0 }
+            : isHighlighted
+              ? { symbolSize: 9 }
+              : {}),
+          ...(isHighlighted
+            ? { itemStyle: { color: seriesColors.line, shadowBlur: 12, shadowColor: seriesGlowColors.line } }
+            : {}),
+        };
+      });
     const barSeries: EChartsCoreOption[] = [
       {
         id: "input",
         name: t("输入（非缓存）"),
         type: "bar",
         stack: "usage",
-        data: byBucket(data.map((day) => mode === "tokens"
-          ? day.inputTokens
-          : convertUsdToDisplayNumber(day.inputCost, currency, exchangeRate))),
+        data: byBarBucket(
+          data.map((day) => mode === "tokens"
+            ? day.inputTokens
+            : convertUsdToDisplayNumber(day.inputCost, currency, exchangeRate)),
+          seriesColors.input,
+          seriesGlowColors.input,
+        ),
         barWidth: "95%",
         itemStyle: { color: seriesColors.input },
         ...seriesFocus,
@@ -170,9 +242,13 @@ export function DailyTokenUsageChart({
         name: t("缓存输入"),
         type: "bar",
         stack: "usage",
-        data: byBucket(data.map((day) => mode === "tokens"
-          ? day.cacheReadTokens
-          : convertUsdToDisplayNumber(day.cacheReadCost, currency, exchangeRate))),
+        data: byBarBucket(
+          data.map((day) => mode === "tokens"
+            ? day.cacheReadTokens
+            : convertUsdToDisplayNumber(day.cacheReadCost, currency, exchangeRate)),
+          seriesColors.cacheRead,
+          seriesGlowColors.cacheRead,
+        ),
         barWidth: "95%",
         itemStyle: { color: seriesColors.cacheRead },
         ...seriesFocus,
@@ -182,9 +258,13 @@ export function DailyTokenUsageChart({
         name: t("缓存写入"),
         type: "bar",
         stack: "usage",
-        data: byBucket(data.map((day) => mode === "tokens"
-          ? day.cacheWriteTokens
-          : convertUsdToDisplayNumber(day.cacheWriteCost, currency, exchangeRate))),
+        data: byBarBucket(
+          data.map((day) => mode === "tokens"
+            ? day.cacheWriteTokens
+            : convertUsdToDisplayNumber(day.cacheWriteCost, currency, exchangeRate)),
+          seriesColors.cacheWrite,
+          seriesGlowColors.cacheWrite,
+        ),
         barWidth: "95%",
         itemStyle: { color: seriesColors.cacheWrite },
         ...seriesFocus,
@@ -194,9 +274,13 @@ export function DailyTokenUsageChart({
         name: t("模型输出"),
         type: "bar",
         stack: "usage",
-        data: byBucket(data.map((day) => mode === "tokens"
-          ? day.outputTokens
-          : convertUsdToDisplayNumber(day.outputCost, currency, exchangeRate))),
+        data: byBarBucket(
+          data.map((day) => mode === "tokens"
+            ? day.outputTokens
+            : convertUsdToDisplayNumber(day.outputCost, currency, exchangeRate)),
+          seriesColors.output,
+          seriesGlowColors.output,
+        ),
         barWidth: "95%",
         itemStyle: { color: seriesColors.output },
         markLine,
@@ -209,13 +293,13 @@ export function DailyTokenUsageChart({
         id: "total",
         name: mode === "tokens" ? t("总 Token") : t("总费用"),
         type: "line",
-        data: byBucket(totals),
+        data: byLineBucket(totals),
         smooth: 0.35,
         smoothMonotone: "x",
         clip: true,
         symbol: "circle",
         symbolSize: 6,
-        showSymbol: totals.length <= 1,
+        showSymbol: totals.length <= 1 || highlightedBuckets.size > 0,
         lineStyle: { color: seriesColors.line, width: 2 },
         itemStyle: { color: seriesColors.line },
         areaStyle: {
@@ -337,7 +421,7 @@ export function DailyTokenUsageChart({
       },
       series: grouped?.series ?? (chartType === "line" ? lineSeries : barSeries),
     };
-  }, [averageLevel, axisMaximum, chartType, exchangeRate, conversionNote, currency, data, granularity, grouped, hovered, mode, totals]);
+  }, [averageLevel, axisMaximum, chartType, exchangeRate, conversionNote, currency, data, granularity, grouped, highlightedBuckets, hovered, mode, totals]);
 
   return <div className={styles.container}>
     <div className={styles.metaBar}>
@@ -356,7 +440,12 @@ export function DailyTokenUsageChart({
         ? <div className={styles.state}>{loading ? t("正在加载趋势数据…") : t("当前筛选范围内暂无趋势数据")}</div>
         : <EChart
             option={option}
-            transition={{ viewKey: JSON.stringify([filterKey, chartType, mode, granularity, mode === "cost" && currency, mode === "cost" && exchangeRate?.rate]), data: breakdown ?? data, enabled: animate }}
+            transition={{
+              viewKey: JSON.stringify([filterKey, granularity]),
+              morphKey: JSON.stringify([chartType, mode, mode === "cost" && currency, mode === "cost" && exchangeRate?.rate]),
+              data: breakdown ?? data,
+              enabled: animate,
+            }}
             className={styles.root}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
