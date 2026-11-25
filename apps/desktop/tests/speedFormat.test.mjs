@@ -96,6 +96,13 @@ test("demo api evaluates and pools generation speed with hidden reasoning deduct
         this.setExport("MAX_CALLS_REFRESH_INTERVAL_SECONDS", 60);
       }, { context: demoContext });
     }
+    if (specifier === "../shared/utils/costQuota")
+    {
+      return new SyntheticModule(["COST_QUOTA_PERIODS"], function ()
+      {
+        this.setExport("COST_QUOTA_PERIODS", ["week", "month", "year"]);
+      }, { context: demoContext });
+    }
     assert.equal(specifier, "../shared/utils/costFormat");
     const source = stripTypeScriptTypes(await readFile(new URL("../src/shared/utils/costFormat.ts", import.meta.url), "utf8"));
     return new SourceTextModule(source, { context: demoContext });

@@ -35,7 +35,8 @@ import type {
   TabSettings,
 } from "../shared/api";
 import { DEFAULT_CALLS_REFRESH_INTERVAL_SECONDS, MAX_CALLS_REFRESH_INTERVAL_SECONDS, MIN_CALLS_REFRESH_INTERVAL_SECONDS } from "../shared/api";
-import { CURRENCY_SYMBOLS, exchangeRateKey, normalizeExchangeRate, type DisplayCurrency } from "../shared/utils/costFormat";
+import { CURRENCY_SYMBOLS, exchangeRateKey, normalizeCostQuotaAmount, normalizeExchangeRate, type DisplayCurrency } from "../shared/utils/costFormat";
+import { COST_QUOTA_PERIODS } from "../shared/utils/costQuota";
 
 const API_ROOT = "/__byok-api__/api";
 const DEMO_NOW = Date.now();
@@ -323,6 +324,7 @@ let proxySettings: ProxySettings = {
 let tabSettings: TabSettings = { mode: "public", address: "" };
 let storage: StatisticsStorage = { call_count: calls.length, trace_count: calls.length };
 let interfaceSettings: InterfaceSettings = {
+  cost_quotas: { week: null, month: null, year: null },
   sidebar_collapsed: false,
   locale: "system",
   theme: "default-dark",
@@ -451,6 +453,18 @@ export function installDemoApi(initialInterface?: Partial<Pick<InterfaceSettings
       return method === "DELETE" ? empty() : json(models[0]);
     }
     if (path === "/overview") return json(createOverview(url.searchParams));
+    if (path === "/overview/cost-quota-usage")
+    {
+      const end = Number(url.searchParams.get("end_ms"));
+      const usage = { week: "0", month: "0", year: "0" };
+      for (const period of COST_QUOTA_PERIODS)
+      {
+        const start = Number(url.searchParams.get(`${period}_start_ms`));
+        const nano = calls.reduce((sum, call) => call.created_at_ms >= start && call.created_at_ms < end && call.status !== "running" && call.cost_status === "priced" ? sum + toNano(call.total_cost) : sum, 0);
+        usage[period] = formatNano(nano);
+      }
+      return json(usage);
+    }
     if (path === "/llm-calls") return json(listCalls(url.searchParams));
     if (path.startsWith("/llm-calls/")) return json(createCallDetail(path.slice("/llm-calls/".length)));
     if (path === "/pricing/catalog" && method === "GET") return json(searchCatalog(url.searchParams));
@@ -1271,6 +1285,23 @@ function applyDemoInterfacePatch(
     return { settings: interfaceSettings };
   }
   const next: InterfaceSettings = { ...interfaceSettings };
+  if (patch.cost_quotas !== undefined)
+  {
+    next.cost_quotas = { ...next.cost_quotas };
+    for (const period of COST_QUOTA_PERIODS)
+    {
+      const quota = patch.cost_quotas[period];
+      if (quota === undefined) continue;
+      if (quota === null)
+      {
+        next.cost_quotas[period] = null;
+        continue;
+      }
+      const amount = typeof quota.amount === "string" ? normalizeCostQuotaAmount(quota.amount) : null;
+      if (amount === null || !Object.hasOwn(CURRENCY_SYMBOLS, quota.currency)) return { error: "invalid cost quota" };
+      next.cost_quotas[period] = { amount, currency: quota.currency };
+    }
+  }
   if (patch.sidebar_collapsed !== undefined)
   {
     if (typeof patch.sidebar_collapsed !== "boolean")

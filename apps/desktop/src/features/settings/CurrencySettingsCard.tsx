@@ -11,8 +11,8 @@ import styles from "./SettingsPage.module.scss";
 
 export function CurrencySettingsCard()
 {
-  const { customExchangeRate, exchangeRateSync, exchangeRateSyncUpdating } = useAppStore();
-  const { currency, exchangeRate } = useCurrencyDisplay();
+  const { exchangeRateSync, exchangeRateSyncUpdating } = useAppStore();
+  const { currency, exchangeRate, customExchangeRate } = useCurrencyDisplay();
   const { locale } = useI18n();
   const message = useMessage();
   const inputRef = useRef<HTMLInputElement>(null);

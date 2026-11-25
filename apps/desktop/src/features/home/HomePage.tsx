@@ -30,6 +30,8 @@ import { HomeMetrics } from "./metrics/HomeMetrics";
 import { useMetricChanges } from "./metrics/useMetricChanges";
 import { OverviewTabs, type OverviewTabId } from "./overview/OverviewTabs";
 import { OverviewTimeRangeFilter } from "./overview/OverviewTimeRangeFilter";
+import { CostQuotaProgress } from "./overview/CostQuotaProgress";
+import { useCostQuotaUsage } from "./overview/useCostQuotaUsage";
 import styles from "./HomePage.module.scss";
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
@@ -53,6 +55,9 @@ export function HomePage() {
     overviewChartType,
     overviewCalendarWindow,
     overviewCalendarChartType,
+    costQuotas,
+    customExchangeRates,
+    exchangeRateSync,
     homeMotionMode,
     homeAutoRefreshEnabled,
     homeRefreshIntervalSeconds,
@@ -116,6 +121,7 @@ export function HomePage() {
 
   const isHomeRoute = (keepAlive._cacheKey ? keepAlive.active : true) && location.pathname === "/";
   const isHomeActive = isHomeRoute && isDocumentVisible;
+  const { usage: quotaUsage, error: quotaError, refresh: refreshQuotaUsage } = useCostQuotaUsage(costQuotas, isHomeActive, refreshTick);
 
   const filterKey = useMemo(
     () => JSON.stringify({
@@ -584,6 +590,7 @@ export function HomePage() {
         }
         if (document.visibilityState === "visible") {
           void refreshHomeData({ notifyOnRefreshError: true });
+          void refreshQuotaUsage();
         }
         scheduleAfter(intervalMs);
       }, stepMs);
@@ -594,7 +601,7 @@ export function HomePage() {
       disposed = true;
       if (timerId !== null) window.clearTimeout(timerId);
     };
-  }, [homeAutoRefreshEnabled, homeRefreshIntervalSeconds, isHomeActive, refreshHomeData]);
+  }, [homeAutoRefreshEnabled, homeRefreshIntervalSeconds, isHomeActive, refreshHomeData, refreshQuotaUsage]);
 
   // Propagate external store refreshes (e.g. model pricing changes or storage clear).
   useEffect(() => {
@@ -748,7 +755,7 @@ export function HomePage() {
   const refresh = async () => {
     setManualRefreshing(true);
     try {
-      await refreshHomeData({ notifyOnRefreshError: true });
+      await Promise.all([refreshHomeData({ notifyOnRefreshError: true }), refreshQuotaUsage()]);
     } finally {
       setManualRefreshing(false);
     }
@@ -829,6 +836,7 @@ export function HomePage() {
         onChartTypeChange={(value) => appStore.selectOverviewCalendarChartType(value)}
         currency={currency}
         exchangeRate={exchangeRate}
+        quotaProgress={Object.values(costQuotas).some(Boolean) && <CostQuotaProgress quotas={costQuotas} usage={quotaUsage} error={quotaError} customRates={customExchangeRates} exchangeRateSync={exchangeRateSync} locale={locale} />}
         loading={rangeBusy && !hasMatchingOverview}
         error={effectiveOverviewError}
       />,

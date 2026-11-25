@@ -225,6 +225,32 @@ pub enum DisplayCurrency {
     Krw,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct CostQuota
+{
+    pub amount: String,
+    pub currency: DisplayCurrency,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub struct CostQuotas
+{
+    pub week: Option<CostQuota>,
+    pub month: Option<CostQuota>,
+    pub year: Option<CostQuota>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+pub struct CostQuotasPatch
+{
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub week: Option<Option<CostQuota>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub month: Option<Option<CostQuota>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub year: Option<Option<CostQuota>>,
+}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 pub enum OverviewRangePreset {
     #[serde(rename = "ten-minutes")]
@@ -290,6 +316,8 @@ fn default_home_auto_refresh_enabled() -> bool {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct InterfaceSettings {
     #[serde(default)]
+    pub cost_quotas: CostQuotas,
+    #[serde(default)]
     pub home_motion_mode: HomeMotionMode,
     #[serde(default = "default_home_auto_refresh_enabled")]
     pub home_auto_refresh_enabled: bool,
@@ -332,6 +360,7 @@ pub struct InterfaceSettings {
 impl Default for InterfaceSettings {
     fn default() -> Self {
         Self {
+            cost_quotas: CostQuotas::default(),
             sidebar_collapsed: false,
             locale: InterfaceLocale::default(),
             theme: InterfaceTheme::default(),
@@ -358,6 +387,8 @@ impl Default for InterfaceSettings {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 pub struct InterfaceSettingsPatch {
     #[serde(default)]
+    pub cost_quotas: CostQuotasPatch,
+    #[serde(default)]
     pub sidebar_collapsed: Option<bool>,
     #[serde(default)]
     pub locale: Option<InterfaceLocale>,
@@ -365,17 +396,17 @@ pub struct InterfaceSettingsPatch {
     pub theme: Option<InterfaceTheme>,
     #[serde(default)]
     pub currency: Option<DisplayCurrency>,
-    #[serde(default, deserialize_with = "deserialize_optional_nullable_string")]
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub cny_rate: Option<Option<String>>,
-    #[serde(default, deserialize_with = "deserialize_optional_nullable_string")]
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub eur_rate: Option<Option<String>>,
-    #[serde(default, deserialize_with = "deserialize_optional_nullable_string")]
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub jpy_rate: Option<Option<String>>,
-    #[serde(default, deserialize_with = "deserialize_optional_nullable_string")]
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub twd_rate: Option<Option<String>>,
-    #[serde(default, deserialize_with = "deserialize_optional_nullable_string")]
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub try_rate: Option<Option<String>>,
-    #[serde(default, deserialize_with = "deserialize_optional_nullable_string")]
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub krw_rate: Option<Option<String>>,
     #[serde(default)]
     pub overview_range_preset: Option<OverviewRangePreset>,
@@ -405,26 +436,32 @@ fn default_calls_refresh_interval_seconds() -> u64 {
     MIN_CALLS_REFRESH_INTERVAL_SECONDS
 }
 
-fn deserialize_optional_nullable_string<'de, D>(
+fn deserialize_optional_nullable<'de, D, T>(
     deserializer: D,
-) -> std::result::Result<Option<Option<String>>, D::Error>
+) -> std::result::Result<Option<Option<T>>, D::Error>
 where
     D: Deserializer<'de>,
+    T: Deserialize<'de>,
 {
-    Option::<String>::deserialize(deserializer).map(Some)
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 pub(crate) fn normalize_exchange_rate(raw: &str) -> Result<Option<String>> {
+    normalize_positive_decimal(raw, "exchange rate")
+}
+
+fn normalize_positive_decimal(raw: &str, field: &str) -> Result<Option<String>>
+{
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return Ok(None);
     }
     if trimmed.len() > 64 {
-        return Err(crate::Error::Config("exchange rate is too long".into()));
+        return Err(crate::Error::Config(format!("{field} is too long")));
     }
     if trimmed.starts_with('-') {
         return Err(crate::Error::Config(
-            "exchange rate must be greater than 0".into(),
+            format!("{field} must be greater than 0"),
         ));
     }
     let unsigned = trimmed.strip_prefix('+').unwrap_or(trimmed);
@@ -437,7 +474,7 @@ pub(crate) fn normalize_exchange_rate(raw: &str) -> Result<Option<String>> {
         || !raw_frac.bytes().all(|byte| byte.is_ascii_digit())
     {
         return Err(crate::Error::Config(format!(
-            "invalid exchange rate: {raw}"
+            "invalid {field}: {raw}"
         )));
     }
     let trimmed_int = raw_int.trim_start_matches('0');
@@ -449,7 +486,7 @@ pub(crate) fn normalize_exchange_rate(raw: &str) -> Result<Option<String>> {
     let frac_part = raw_frac.trim_end_matches('0');
     if int_part == "0" && frac_part.is_empty() {
         return Err(crate::Error::Config(
-            "exchange rate must be greater than 0".into(),
+            format!("{field} must be greater than 0"),
         ));
     }
     Ok(Some(if frac_part.is_empty() {
@@ -810,6 +847,21 @@ impl Store {
     ) -> Result<InterfaceSettings> {
         let _write = self.writes.lock().await;
         let mut settings = read_interface_settings(&self.pool).await?;
+        for (quota, change) in [(&mut settings.cost_quotas.week, patch.cost_quotas.week), (&mut settings.cost_quotas.month, patch.cost_quotas.month), (&mut settings.cost_quotas.year, patch.cost_quotas.year)]
+        {
+            if let Some(change) = change
+            {
+                *quota = match change
+                {
+                    Some(mut value) =>
+                    {
+                        value.amount = normalize_positive_decimal(&value.amount, "quota amount")?.ok_or_else(|| crate::Error::Config("quota amount is required".into()))?;
+                        Some(value)
+                    }
+                    None => None,
+                };
+            }
+        }
         if let Some(sidebar_collapsed) = patch.sidebar_collapsed {
             settings.sidebar_collapsed = sidebar_collapsed;
         }
@@ -1100,6 +1152,7 @@ mod tests {
         assert_eq!(
             store.interface_settings().await.unwrap(),
             InterfaceSettings {
+                cost_quotas: super::CostQuotas::default(),
                 sidebar_collapsed: false,
                 locale: InterfaceLocale::System,
                 theme: InterfaceTheme::DefaultDark,

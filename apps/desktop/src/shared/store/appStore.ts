@@ -9,6 +9,9 @@ import {
   DEFAULT_CALLS_REFRESH_INTERVAL_SECONDS,
   MAX_CALLS_REFRESH_INTERVAL_SECONDS,
   MIN_CALLS_REFRESH_INTERVAL_SECONDS,
+  type CostQuota,
+  type CostQuotaPeriod,
+  type CostQuotas,
   type CursorHarnessStatus,
   type ExchangeRateSyncState,
   type InterfaceSettings,
@@ -34,7 +37,7 @@ import {
   type SupplierPricingView,
 } from "../api";
 import { applyTheme, type ThemeId } from "../theme/theme";
-import { exchangeRateKey, resolveExchangeRate, type DisplayCurrency, type ForeignCurrency } from "../utils/costFormat";
+import { exchangeRateKey, resolveExchangeRate, type DisplayCurrency, type ExchangeRates, type ForeignCurrency } from "../utils/costFormat";
 import type { CustomRange } from "../utils/timeRange";
 
 export type {
@@ -50,6 +53,7 @@ export type OverviewQuickPresetValue = "four-hours" | "twenty-four-hours";
 export const DEFAULT_HOME_REFRESH_INTERVAL_SECONDS = 30;
 
 const DEFAULT_INTERFACE_SETTINGS: InterfaceSettings = {
+  cost_quotas: { week: null, month: null, year: null },
   sidebar_collapsed: false,
   locale: "system",
   theme: "default-dark",
@@ -104,7 +108,8 @@ export type AppSnapshot = {
   error: string | null;
   theme: ThemeId;
   currency: DisplayCurrency;
-  customExchangeRate: string | null;
+  customExchangeRates: ExchangeRates;
+  costQuotas: CostQuotas;
   exchangeRateSync: ExchangeRateSyncState | null;
   exchangeRateSyncUpdating: boolean;
   overviewRangePreset: OverviewRangePresetOption;
@@ -191,7 +196,8 @@ let snapshot: AppSnapshot = {
   error: null,
   theme: DEFAULT_INTERFACE_SETTINGS.theme,
   currency: DEFAULT_INTERFACE_SETTINGS.currency,
-  customExchangeRate: null,
+  customExchangeRates: DEFAULT_INTERFACE_SETTINGS,
+  costQuotas: DEFAULT_INTERFACE_SETTINGS.cost_quotas,
   exchangeRateSync: null,
   exchangeRateSyncUpdating: false,
   overviewRangePreset: DEFAULT_INTERFACE_SETTINGS.overview_range_preset,
@@ -231,7 +237,8 @@ function applyInterfaceSettings(
     sidebarCollapsed: next.sidebar_collapsed,
     theme: next.theme,
     currency: next.currency,
-    customExchangeRate: next.currency === "USD" ? null : next[exchangeRateKey(next.currency)],
+    customExchangeRates: next,
+    costQuotas: next.cost_quotas,
     overviewRangePreset: next.overview_range_preset,
     overviewChartMode: next.overview_chart_mode,
     overviewChartType: next.overview_chart_type,
@@ -278,7 +285,6 @@ async function persistInterfacePatch(
     if (patch.currency !== undefined)
     {
       optimisticPatch.currency = patch.currency;
-      optimisticPatch.customExchangeRate = patch.currency === "USD" ? null : persistedInterface[exchangeRateKey(patch.currency)];
     }
     if (patch.overview_range_preset !== undefined) {
       optimisticPatch.overviewRangePreset = patch.overview_range_preset;
@@ -797,6 +803,10 @@ export const appStore = {
   {
     return persistInterfacePatch({ [exchangeRateKey(currency)]: rate }, { optimistic: false });
   },
+  saveCostQuota(period: CostQuotaPeriod, quota: CostQuota | null)
+  {
+    return persistInterfacePatch({ cost_quotas: { [period]: quota } }, { optimistic: false });
+  },
   async loadExchangeRateSync()
   {
     if (exchangeRateSyncReading || snapshot.exchangeRateSyncUpdating)
@@ -912,9 +922,10 @@ export function useAppStore() {
 
 export function useCurrencyDisplay()
 {
-  const { currency, customExchangeRate, exchangeRateSync } = useAppStore();
+  const { currency, customExchangeRates, exchangeRateSync } = useAppStore();
+  const customExchangeRate = currency === "USD" ? null : customExchangeRates[exchangeRateKey(currency)];
   const synced = exchangeRateSync?.snapshot;
   const manualRate = exchangeRateSync?.auto_sync_enabled === false ? customExchangeRate : null;
   const exchangeRate = useMemo(() => resolveExchangeRate(currency, manualRate, synced), [currency, manualRate, synced]);
-  return { currency, exchangeRate };
+  return { currency, exchangeRate, customExchangeRate };
 }

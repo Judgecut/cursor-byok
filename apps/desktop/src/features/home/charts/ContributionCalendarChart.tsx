@@ -1,5 +1,5 @@
 import type { EChartsCoreOption } from "echarts/core";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { init, Rect, type ElementEvent, type ZRenderType } from "zrender";
 import { useI18n } from "../../../i18n/store";
 import type { OverviewCalendarChartType } from "../../../shared/store/appStore";
@@ -32,6 +32,7 @@ type ContributionCalendarChartProps = {
   onChartTypeChange: (value: OverviewCalendarChartType) => void;
   currency: DisplayCurrency;
   exchangeRate: DisplayExchangeRate | null;
+  quotaProgress?: ReactNode;
   loading?: boolean;
   error?: string | null;
 };
@@ -436,6 +437,7 @@ export function ContributionCalendarChart({
   onChartTypeChange,
   currency,
   exchangeRate,
+  quotaProgress,
   loading = false,
   error = null,
 }: ContributionCalendarChartProps) {
@@ -704,6 +706,8 @@ export function ContributionCalendarChart({
     </div>
   );
 
+  const quotaFooter = quotaProgress && <div className={styles.quotaFooter}>{quotaProgress}</div>;
+
   if (error) {
     return (
       <section className={styles.root} aria-label={sectionAriaLabel}>
@@ -719,6 +723,7 @@ export function ContributionCalendarChart({
             ? t("日历数据加载失败：{error}", { error })
             : t("活动数据加载失败：{error}", { error })}
         </div>
+        {quotaFooter}
       </section>
     );
   }
@@ -738,6 +743,7 @@ export function ContributionCalendarChart({
             ? (chartType === "heatmap" ? t("正在加载日历数据…") : t("正在加载活动数据…"))
             : t("暂无活动数据")}
         </div>
+        {quotaFooter}
       </section>
     );
   }
@@ -927,9 +933,11 @@ export function ContributionCalendarChart({
                 </div>
               </div>
             </div>
+            {quotaProgress && <div className={styles.summaryQuota}>{quotaProgress}</div>}
           </div>
         )}
       </div>
+      {!isWide && quotaFooter}
     </section>
   );
 }

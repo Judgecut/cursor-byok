@@ -1,5 +1,5 @@
 import { test as base, expect } from "@playwright/test";
-import type { CallDetail, ExchangeRateSyncState, InterfaceSettings, Model, ModelInput, Overview, PricingSettings, Provider, ProviderInput } from "../../src/shared/api";
+import type { CallDetail, CostQuotaUsage, ExchangeRateSyncState, InterfaceSettings, Model, ModelInput, Overview, PricingSettings, Provider, ProviderInput } from "../../src/shared/api";
 
 type ManagementState = {
   providers: Provider[];
@@ -9,6 +9,8 @@ type ManagementState = {
   exchangeRateSync: ExchangeRateSyncState;
   nextExchangeRateSnapshot: ExchangeRateSyncState["snapshot"];
   overview: Overview;
+  costQuotaUsage: CostQuotaUsage;
+  costQuotaQueries: URLSearchParams[];
   call: CallDetail;
   writes: Array<{ path: string; body: unknown }>;
   openedUrls: string[];
@@ -37,7 +39,7 @@ const overview: Overview = {
 export const test = base.extend<{ management: ManagementState }>({
   management: [async ({ context }, use) =>
   {
-    const settings = { sidebar_collapsed: false, locale: "system", theme: "default-dark", currency: "USD", cny_rate: null, eur_rate: null, jpy_rate: null, twd_rate: null, try_rate: null, krw_rate: null, overview_range_preset: "today", overview_chart_mode: "tokens", overview_chart_type: "bar", overview_calendar_window: "year", overview_calendar_chart_type: "heatmap", home_motion_mode: "system", home_auto_refresh_enabled: true, home_refresh_interval_seconds: 30, calls_refresh_interval_seconds: 5 } as const;
+    const settings: InterfaceSettings = { cost_quotas: { week: null, month: null, year: null }, sidebar_collapsed: false, locale: "system", theme: "default-dark", currency: "USD", cny_rate: null, eur_rate: null, jpy_rate: null, twd_rate: null, try_rate: null, krw_rate: null, overview_range_preset: "today", overview_chart_mode: "tokens", overview_chart_type: "bar", overview_calendar_window: "year", overview_calendar_chart_type: "heatmap", home_motion_mode: "system", home_auto_refresh_enabled: true, home_refresh_interval_seconds: 30, calls_refresh_interval_seconds: 5 };
     const state: ManagementState = {
       providers: [],
       models: [],
@@ -46,6 +48,8 @@ export const test = base.extend<{ management: ManagementState }>({
       exchangeRateSync: { auto_sync_enabled: true, snapshot: null, last_attempted_at_ms: null, last_synced_at_ms: null, last_error: null, syncing: false },
       nextExchangeRateSnapshot: null,
       overview: structuredClone(overview),
+      costQuotaUsage: { week: "0", month: "0", year: "0" },
+      costQuotaQueries: [],
       call: structuredClone(call),
       writes: [],
       openedUrls: [],
@@ -107,8 +111,15 @@ export const test = base.extend<{ management: ManagementState }>({
       }
       else if (path === "/settings/interface" && method === "PUT")
       {
-        Object.assign(state.settings, body);
+        const { cost_quotas, ...patch } = body;
+        Object.assign(state.settings, patch);
+        Object.assign(state.settings.cost_quotas, cost_quotas);
         response = state.settings;
+      }
+      else if (path === "/overview/cost-quota-usage")
+      {
+        state.costQuotaQueries.push(new URL(route.request().url()).searchParams);
+        response = state.costQuotaUsage;
       }
       else if (path === "/settings/exchange-rates")
       {

@@ -99,6 +99,23 @@ export function normalizeExchangeRate(raw: string): string | null {
   return trimDecimalString(raw);
 }
 
+export function normalizeCostQuotaAmount(raw: string): string | null
+{
+  return raw.trim().length <= 64 ? normalizeExchangeRate(raw) : null;
+}
+
+export function costQuotaProgress(used: string, limit: string)
+{
+  const amount = toScaledBigInt(normalizeDecimalParts(used)!);
+  const quota = toScaledBigInt(normalizeDecimalParts(limit)!);
+  const numerator = amount.scaled * 10n ** BigInt(quota.scale);
+  const denominator = quota.scaled * 10n ** BigInt(amount.scale);
+  const percentTenths = numerator * 1_000n / denominator;
+  const fill = percentTenths >= 1_000n ? 100 : Number(percentTenths) / 10;
+  const level = percentTenths >= 900n ? "critical" : percentTenths >= 700n ? "warning" : "normal";
+  return { percentTenths, fill, level };
+}
+
 export function resolveExchangeRate(currency: DisplayCurrency, customRate: string | null | undefined, synced?: ExchangeRateSnapshot | null): DisplayExchangeRate | null
 {
   if (currency === "USD")
@@ -234,6 +251,11 @@ export function formatUsd(value: string | null | undefined): string {
 
 export function formatUsdExact(value: string | null | undefined): string {
   return formatDecimalExactWithSymbol(value, "$");
+}
+
+export function formatCurrencyAmountExact(value: string, currency: DisplayCurrency): string
+{
+  return formatDecimalExactWithSymbol(value, CURRENCY_SYMBOLS[currency]);
 }
 
 export function formatDisplayCost(

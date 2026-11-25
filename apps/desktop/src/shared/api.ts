@@ -223,7 +223,13 @@ export const MIN_CALLS_REFRESH_INTERVAL_SECONDS = 5;
 export const MAX_CALLS_REFRESH_INTERVAL_SECONDS = 60;
 export const DEFAULT_CALLS_REFRESH_INTERVAL_SECONDS = MIN_CALLS_REFRESH_INTERVAL_SECONDS;
 
+export type CostQuotaPeriod = "week" | "month" | "year";
+export type CostQuota = { amount: string; currency: DisplayCurrency };
+export type CostQuotas = Record<CostQuotaPeriod, CostQuota | null>;
+export type CostQuotaUsage = Record<CostQuotaPeriod, string>;
+
 export interface InterfaceSettings extends ExchangeRates {
+  cost_quotas: CostQuotas;
   sidebar_collapsed: boolean;
   locale: LocalePreference;
   theme: ThemeId;
@@ -240,6 +246,7 @@ export interface InterfaceSettings extends ExchangeRates {
 }
 
 export interface InterfaceSettingsPatch extends Partial<ExchangeRates> {
+  cost_quotas?: Partial<CostQuotas>;
   sidebar_collapsed?: boolean;
   locale?: LocalePreference;
   theme?: ThemeId;
@@ -877,6 +884,10 @@ export const api = {
     if (filter?.bucketMs) params.set("bucket_ms", String(filter.bucketMs));
     const query = params.toString();
     return request<Overview>(`/overview${query ? `?${query}` : ""}`, init);
+  },
+  costQuotaUsage: (starts: Record<CostQuotaPeriod, number>, endMs: number, signal: AbortSignal) => {
+    const params = new URLSearchParams({ week_start_ms: String(starts.week), month_start_ms: String(starts.month), year_start_ms: String(starts.year), end_ms: String(endMs) });
+    return request<CostQuotaUsage>(`/overview/cost-quota-usage?${params}`, { signal });
   },
   cursorHarness: () => request<CursorHarnessStatus>("/harness/cursor/status"),
   initializeCursorCa: () => request<CursorHarnessStatus>("/harness/cursor/ca/initialize", { method: "POST" }),

@@ -3,6 +3,9 @@
 //! and complete filter candidate lists.
 
 mod trend;
+mod cost_quota;
+
+pub use cost_quota::{CostQuotaRange, CostQuotaUsage};
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -1417,6 +1420,31 @@ mod tests {
             )
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn quota_usage_sums_priced_finished_calls_across_overlapping_periods()
+    {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::connect(&format!("sqlite://{}", directory.path().join("test.db").display())).await.unwrap();
+        for (id, time, cost, status, pricing) in [
+            ("before", 99, 9_000_000_000i64, "completed", "priced"),
+            ("week", 100, 1_000_000_000, "completed", "priced"),
+            ("year", 200, 2_000_000_000, "failed", "priced"),
+            ("month", 300, 3_000_000_000, "completed", "priced"),
+            ("running", 310, 9_000_000_000, "running", "priced"),
+            ("unpriced", 320, 9_000_000_000, "completed", "unpriced"),
+            ("after", 400, 9_000_000_000, "completed", "priced"),
+        ]
+        {
+            record_endpoint(&store, id, "https://example.com", ProviderType::OpenAiChat, "mh", "model", 1, 1).await;
+            sqlx::query("UPDATE llm_calls SET created_at_ms = ?, total_cost_nano = ?, status = ?, cost_status = ? WHERE call_id = ?").bind(time).bind(cost).bind(status).bind(pricing).bind(id).execute(&store.pool).await.unwrap();
+        }
+        let range = CostQuotaRange { week_start_ms: 100, month_start_ms: 300, year_start_ms: 200, end_ms: 400 };
+        let usage = store.cost_quota_usage(range).await.unwrap();
+        assert_eq!(usage, CostQuotaUsage { week: "6".into(), month: "3".into(), year: "5".into() });
+        let usage = store.cost_quota_usage(CostQuotaRange { week_start_ms: 500, month_start_ms: 500, year_start_ms: 500, end_ms: 500 }).await.unwrap();
+        assert_eq!(usage, CostQuotaUsage { week: "0".into(), month: "0".into(), year: "0".into() });
     }
 
     /// Model tests must not pollute business speed samples, eligible streamed run

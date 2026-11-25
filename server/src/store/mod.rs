@@ -27,6 +27,7 @@ pub(crate) use overview::normalize_string_array_filter;
 pub use pricing::{
     CatalogProviderOption, CatalogSearchResult, SaveSupplierPricingInput, SupplierPricingView,
 };
+pub use overview::{CostQuotaRange, CostQuotaUsage};
 pub use runs::*;
 pub use settings::*;
 pub(crate) use sqlite::now_ms;

@@ -20,14 +20,26 @@ await module.evaluate();
 const {
   convertUsdToDisplayDecimal,
   convertUsdToDisplayNumber,
+  costQuotaProgress,
   formatAxisCost,
   formatConversionNote,
   formatDisplayCost,
   formatDisplayCostExact,
   formatHitRatePercent,
   normalizeExchangeRate,
+  normalizeCostQuotaAmount,
   resolveExchangeRate,
 } = module.namespace;
+
+test("cost quota thresholds use exact decimal ratios and fill is capped", () =>
+{
+  for (const [amount, percentTenths, fill, level] of [["0", 0n, 0, "normal"], ["69.99999999999999", 699n, 69.9, "normal"], ["70", 700n, 70, "warning"], ["89.99999999999999", 899n, 89.9, "warning"], ["90", 900n, 90, "critical"], ["150", 1500n, 100, "critical"]])
+  {
+    assert.deepEqual({ ...costQuotaProgress(amount, "100") }, { percentTenths, fill, level });
+  }
+  assert.equal(normalizeCostQuotaAmount("001.2500"), "1.25");
+  for (const invalid of ["", "0", "-1", "1e3", "Infinity", "1".repeat(65)]) assert.equal(normalizeCostQuotaAmount(invalid), null);
+});
 
 test("resolveExchangeRate uses the reference rate without a valid override", () =>
 {

@@ -156,6 +156,7 @@ pub fn api_router(service: ControlService) -> Router {
             get(models::preview_v0049).post(models::import_v0049),
         )
         .route("/__byok-api__/api/overview", get(overview::get))
+        .route("/__byok-api__/api/overview/cost-quota-usage", get(overview::get_cost_quota_usage))
         .route(
             "/__byok-api__/api/models/{model_hash}",
             put(models::update).delete(models::remove),

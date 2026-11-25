@@ -7,6 +7,7 @@ import { createContext, SourceTextModule, SyntheticModule } from "node:vm";
 
 const source = stripTypeScriptTypes(await readFile(new URL("../src/shared/store/appStore.ts", import.meta.url), "utf8"));
 const defaults = {
+  cost_quotas: { week: null, month: null, year: null },
   locale: "system",
   theme: "default-dark",
   currency: "USD",
@@ -257,7 +258,7 @@ test("switches currencies using their own persisted rates and rolls back failed 
   app.store.selectCurrency("CNY");
   await setImmediate();
   assert.equal(app.store.getSnapshot().currency, "CNY");
-  assert.equal(app.store.getSnapshot().customExchangeRate, null);
+  assert.equal(app.store.getSnapshot().customExchangeRates.cny_rate, null);
   assert.deepEqual({ ...app.writes[0].patch }, { currency: "CNY" });
   app.writes[0].resolve({ ...app.saved(), currency: "CNY" });
   await setImmediate();
@@ -267,22 +268,23 @@ test("switches currencies using their own persisted rates and rolls back failed 
   assert.deepEqual({ ...app.writes[1].patch }, { cny_rate: "7.2" });
   app.writes[1].resolve({ ...app.saved(), cny_rate: "7.2" });
   await saveCny;
-  assert.equal(app.store.getSnapshot().customExchangeRate, "7.2");
+  assert.equal(app.store.getSnapshot().customExchangeRates.cny_rate, "7.2");
 
   const saveJpy = app.store.saveExchangeRate("JPY", "150");
   await setImmediate();
   assert.deepEqual({ ...app.writes[2].patch }, { jpy_rate: "150" });
   app.writes[2].resolve({ ...app.saved(), jpy_rate: "150" });
   await saveJpy;
-  assert.equal(app.store.getSnapshot().customExchangeRate, "7.2");
+  assert.equal(app.store.getSnapshot().currency, "CNY");
 
   app.store.selectCurrency("JPY");
-  assert.equal(app.store.getSnapshot().customExchangeRate, "150");
+  assert.equal(app.store.getSnapshot().currency, "JPY");
+  assert.equal(app.store.getSnapshot().customExchangeRates.jpy_rate, "150");
   await setImmediate();
   app.writes[3].reject(new Error("save failed"));
   await setImmediate();
   assert.equal(app.store.getSnapshot().currency, "CNY");
-  assert.equal(app.store.getSnapshot().customExchangeRate, "7.2");
+  assert.equal(app.store.getSnapshot().customExchangeRates.cny_rate, "7.2");
 });
 
 test("reorderProviders optimistically regroups models, fetches sequentially, and rolls back on failure", async () => {

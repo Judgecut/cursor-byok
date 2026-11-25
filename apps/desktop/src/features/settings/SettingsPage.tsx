@@ -5,6 +5,7 @@ import { LegacyModelImport } from "../models/LegacyModelImport";
 import { AppLifecycleSettingsCard } from "./AppLifecycleSettingsCard";
 import { CommitSettingsCard } from "./CommitSettingsCard";
 import { CurrencySettingsCard } from "./CurrencySettingsCard";
+import { CostQuotaSettingsCard } from "./CostQuotaSettingsCard";
 import { ExternalApiSettingsCard } from "./ExternalApiSettingsCard";
 import { ModelPricingCard } from "./ModelPricingCard";
 import { ProxySettingsCard } from "./ProxySettingsCard";
@@ -460,6 +461,7 @@ export function SettingsPage() {
         </div>
       </TitledCard>
       <CurrencySettingsCard />
+      <CostQuotaSettingsCard />
       <TitledCard title={t("存储管理")}>
         <div className={styles.storageRow}>
           <div>

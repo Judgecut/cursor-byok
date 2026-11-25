@@ -142,6 +142,7 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
     assert_eq!(
         initial,
         json!({
+            "cost_quotas": { "week": null, "month": null, "year": null },
             "locale": "system",
             "theme": "default-dark",
             "currency": "USD",
@@ -236,6 +237,7 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
             "home_motion_mode": "off",
             "home_auto_refresh_enabled": false,
             "home_refresh_interval_seconds": 45,
+            "cost_quotas": { "week": { "amount": "01500.50", "currency": "CNY" }, "month": { "amount": "500", "currency": "USD" }, "year": { "amount": "800000", "currency": "JPY" } },
             "calls_refresh_interval_seconds": 60
         })),
     )
@@ -244,6 +246,7 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
     assert_eq!(
         updated,
         json!({
+            "cost_quotas": { "week": { "amount": "1500.5", "currency": "CNY" }, "month": { "amount": "500", "currency": "USD" }, "year": { "amount": "800000", "currency": "JPY" } },
             "locale": "en-US",
             "theme": "default-light",
             "currency": "JPY",
@@ -279,18 +282,26 @@ async fn interface_settings_round_trip_and_survive_store_restart() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(loaded, updated);
 
+    let (status, usage) = send(reopened_router.clone(), "GET", "/__byok-api__/api/overview/cost-quota-usage?week_start_ms=0&month_start_ms=1&year_start_ms=2&end_ms=3", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(usage, json!({ "week": "0", "month": "0", "year": "0" }));
+
+    let (status, _) = send(reopened_router.clone(), "PUT", "/__byok-api__/api/settings/interface", Some(json!({ "cost_quotas": { "month": null, "year": { "amount": "0", "currency": "USD" } } }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
     // Clearing CNY preserves the selected currency and its independent rate.
     let (status, cleared) = send(
         reopened_router,
         "PUT",
         "/__byok-api__/api/settings/interface",
-        Some(json!({ "cny_rate": null })),
+        Some(json!({ "cny_rate": null, "cost_quotas": { "week": null } })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         cleared,
         json!({
+            "cost_quotas": { "week": null, "month": { "amount": "500", "currency": "USD" }, "year": { "amount": "800000", "currency": "JPY" } },
             "locale": "en-US",
             "theme": "default-light",
             "currency": "JPY",

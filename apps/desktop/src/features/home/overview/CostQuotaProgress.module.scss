@@ -1,0 +1,60 @@
+@use "../../../styles/typography" as type;
+
+.quotas {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 15px;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-xs;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: auto minmax(24px, 1fr) minmax(3em, auto);
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.track {
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--vscode-foreground) 15%, transparent);
+}
+
+.fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #2f81f7;
+
+  &[data-level="warning"] {
+    background: #d7a500;
+  }
+
+  &[data-level="critical"] {
+    background: #e5484d;
+  }
+}
+
+.percent,
+.amounts {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.percent {
+  max-width: 12em;
+  overflow-wrap: anywhere;
+}
+
+.amounts {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+
+  strong {
+    color: var(--vscode-foreground);
+  }
+}

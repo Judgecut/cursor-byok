@@ -204,6 +204,15 @@
   font-family: var(--oa-metrics-font);
 }
 
+.summaryQuota {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.quotaFooter {
+  border-top: 1px solid var(--vscode-sideBar-border);
+}
+
 .summaryCell {
   min-width: 0;
   display: flex;

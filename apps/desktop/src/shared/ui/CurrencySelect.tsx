@@ -1,7 +1,7 @@
 import { Select } from "./Select";
 import { formatExchangeRateHint, type DisplayCurrency } from "../utils/costFormat";
 
-export function CurrencySelect({ value, disabled, codeOnly, rate, onChange }: { value: DisplayCurrency; disabled?: boolean; codeOnly?: boolean; rate?: string | null; onChange: (currency: DisplayCurrency) => void })
+export function CurrencySelect({ value, disabled, codeOnly, rate, ariaLabel, onChange }: { value: DisplayCurrency; disabled?: boolean; codeOnly?: boolean; rate?: string | null; ariaLabel?: string; onChange: (currency: DisplayCurrency) => void })
 {
   const options = [
     { value: "USD", label: `USD · ${t("美元")}` },
@@ -13,5 +13,5 @@ export function CurrencySelect({ value, disabled, codeOnly, rate, onChange }: { 
     { value: "KRW", label: `KRW · ${t("韩元")}` },
   ] satisfies { value: DisplayCurrency; label: string }[];
 
-  return <Select value={value} options={options} ariaLabel={t("显示币种")} disabled={disabled} triggerLabel={codeOnly ? value : undefined} hint={formatExchangeRateHint(rate)} onChange={(value) => onChange(value as DisplayCurrency)} />;
+  return <Select value={value} options={options} ariaLabel={ariaLabel ?? t("显示币种")} disabled={disabled} triggerLabel={codeOnly ? value : undefined} hint={formatExchangeRateHint(rate)} onChange={(value) => onChange(value as DisplayCurrency)} />;
 }
