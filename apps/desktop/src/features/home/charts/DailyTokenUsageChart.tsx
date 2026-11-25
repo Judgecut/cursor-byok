@@ -49,7 +49,6 @@ const seriesColors = {
   line: "#49b0ff",
 } as const;
 const levelLineColor = "#E7B40B";
-const emptyBarColor = "rgba(139, 148, 158, 0.20)";
 
 const seriesFocus = {
   emphasis: { focus: "series" },
@@ -138,16 +137,6 @@ export function DailyTokenUsageChart({
     : t("单位：{currency} ({symbol})", { currency, symbol: CURRENCY_SYMBOLS[currency] });
 
   const option = useMemo<EChartsCoreOption>(() => {
-    const commonAxisPointer = chartType === "line"
-      ? {
-          type: "line" as const,
-          lineStyle: { color: "rgba(139, 148, 158, 0.35)", width: 1, type: "dashed" as const },
-        }
-      : {
-          type: "shadow" as const,
-          shadowStyle: { color: "rgba(139, 148, 158, 0.14)" },
-        };
-
     const markLine = {
       silent: true,
       symbol: "none",
@@ -165,18 +154,6 @@ export function DailyTokenUsageChart({
     const byBucket = (values: number[]) => data.map((bucket, index) => ({ id: String(bucket.bucketStartMs), value: values[index] }));
     const barSeries: EChartsCoreOption[] = [
       {
-        id: "empty",
-        name: mode === "tokens" ? t("无用量") : t("无费用"),
-        type: "bar",
-        stack: "empty-placeholder",
-        data: byBucket(totals.map((total) => total === 0 ? axisMaximum : 0)),
-        barMaxWidth: 18,
-        silent: true,
-        z: 0,
-        itemStyle: { color: emptyBarColor, borderRadius: [2, 2, 0, 0] },
-        emphasis: { disabled: true },
-      },
-      {
         id: "input",
         name: t("输入（非缓存）"),
         type: "bar",
@@ -184,7 +161,7 @@ export function DailyTokenUsageChart({
         data: byBucket(data.map((day) => mode === "tokens"
           ? day.inputTokens
           : convertUsdToDisplayNumber(day.inputCost, currency, exchangeRate))),
-        barMaxWidth: 18,
+        barWidth: "95%",
         itemStyle: { color: seriesColors.input },
         ...seriesFocus,
       },
@@ -196,7 +173,7 @@ export function DailyTokenUsageChart({
         data: byBucket(data.map((day) => mode === "tokens"
           ? day.cacheReadTokens
           : convertUsdToDisplayNumber(day.cacheReadCost, currency, exchangeRate))),
-        barMaxWidth: 18,
+        barWidth: "95%",
         itemStyle: { color: seriesColors.cacheRead },
         ...seriesFocus,
       },
@@ -208,7 +185,7 @@ export function DailyTokenUsageChart({
         data: byBucket(data.map((day) => mode === "tokens"
           ? day.cacheWriteTokens
           : convertUsdToDisplayNumber(day.cacheWriteCost, currency, exchangeRate))),
-        barMaxWidth: 18,
+        barWidth: "95%",
         itemStyle: { color: seriesColors.cacheWrite },
         ...seriesFocus,
       },
@@ -220,9 +197,8 @@ export function DailyTokenUsageChart({
         data: byBucket(data.map((day) => mode === "tokens"
           ? day.outputTokens
           : convertUsdToDisplayNumber(day.outputCost, currency, exchangeRate))),
-        barMaxWidth: 18,
-        barGap: "-100%",
-        itemStyle: { color: seriesColors.output, borderRadius: [2, 2, 0, 0] },
+        barWidth: "95%",
+        itemStyle: { color: seriesColors.output },
         markLine,
         ...seriesFocus,
       },
@@ -268,7 +244,7 @@ export function DailyTokenUsageChart({
         borderColor: "var(--vscode-editorHoverWidget-border)",
         textStyle: { color: "var(--vscode-foreground)", fontFamily: "PingFang-Medium" },
         extraCssText: "border-radius: 8px; box-shadow: 0 12px 32px rgb(0 0 0 / 30%); font-size: var(--daily-token-tooltip-font-size); line-height: 1.5;",
-        axisPointer: commonAxisPointer,
+        axisPointer: { type: "line", lineStyle: { color: "rgba(139, 148, 158, 0.35)", width: 1, type: "dashed" } },
         formatter: (params: unknown) => {
           const first = (params as TooltipItem[])[0];
           const day = first ? data[first.dataIndex] : undefined;

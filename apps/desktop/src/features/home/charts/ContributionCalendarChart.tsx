@@ -232,16 +232,6 @@ function buildSeriesChartOption({
   tokenFormatter: Intl.NumberFormat;
 }): EChartsCoreOption {
   const axisMaximum = Math.max(1, series.maxTokens);
-  const commonAxisPointer = chartType === "line"
-    ? {
-        type: "line" as const,
-        lineStyle: { color: "rgba(139, 148, 158, 0.35)", width: 1, type: "dashed" as const },
-      }
-    : {
-        type: "shadow" as const,
-        shadowStyle: { color: "rgba(139, 148, 158, 0.14)" },
-      };
-
   const markLine = series.averageActiveTokens !== null && series.averageActiveTokens > 0
     ? {
         silent: true,
@@ -259,32 +249,16 @@ function buildSeriesChartOption({
     : { data: [] };
 
   const barSeries: EChartsCoreOption[] = [
-    ...(series.maxTokens > 0
-      ? [{
-          id: "empty",
-          name: t("无用量"),
-          type: "bar",
-          stack: "empty-placeholder",
-          data: series.points.map((point) => ({ id: point.date, value: point.tokens === 0 ? axisMaximum : 0 })),
-          barMaxWidth: 18,
-          silent: true,
-          z: 0,
-          itemStyle: { color: CONTRIBUTION_LEVEL_COLORS[0], borderRadius: [2, 2, 0, 0] },
-          emphasis: { disabled: true },
-        }]
-      : []),
     {
       id: "tokens-bar",
       name: t("Token 用量"),
       type: "bar",
-      barMaxWidth: 18,
-      barGap: "-100%",
+      barWidth: "95%",
       data: series.points.map((point) => ({
         id: point.date,
         value: point.tokens,
         itemStyle: {
           color: CONTRIBUTION_LEVEL_COLORS[point.level],
-          borderRadius: [2, 2, 0, 0],
         },
       })),
       markLine,
@@ -331,7 +305,7 @@ function buildSeriesChartOption({
       borderColor: "var(--vscode-editorHoverWidget-border)",
       textStyle: { color: "var(--vscode-foreground)", fontFamily: "PingFang-Medium" },
       extraCssText: "border-radius: 8px; box-shadow: 0 12px 32px rgb(0 0 0 / 30%); font-size: var(--contribution-tooltip-font-size); line-height: 1.5;",
-      axisPointer: commonAxisPointer,
+      axisPointer: { type: "line", lineStyle: { color: "rgba(139, 148, 158, 0.35)", width: 1, type: "dashed" } },
       formatter: (params: unknown) => {
         const first = Array.isArray(params) ? (params[0] as TooltipItem | undefined) : undefined;
         const point = first ? series.points[first.dataIndex] : undefined;
