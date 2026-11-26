@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import type { IconifyIcon } from "@iconify/react/offline";
 import KeepAliveRouteOutlet from "keepalive-for-react-router";
 import { NavLink, useLocation } from "react-router-dom";
-import cursorIconUrl from "../shared/assets/icons/cursor.svg";
 import { api } from "../shared/api";
 import { AdMenu } from "./ads/AdMenu";
 import { FloatingAd } from "./ads/FloatingAd";
@@ -14,7 +13,7 @@ import { ConfirmDialog } from "../shared/ui/ConfirmDialog";
 import controls from "../shared/ui/Controls.module.scss";
 import { Icon } from "../shared/ui/Icon";
 import { TooltipTrigger } from "../shared/ui/TooltipTrigger";
-import { chevronDoubleLeftIcon, chevronDoubleRightIcon, flatColorAboutIcon, flatColorAreaChartIcon, flatColorCrystalOscillatorIcon, flatColorSalesPerformanceIcon, flatColorSettingsIcon, refreshIcon } from "../shared/ui/icons";
+import { chevronDoubleLeftIcon, chevronDoubleRightIcon, flatColorAboutIcon, flatColorAreaChartIcon, flatColorCrystalOscillatorIcon, flatColorSalesPerformanceIcon, flatColorSettingsIcon, providerIcon, refreshIcon } from "../shared/ui/icons";
 import { useMessage } from "../shared/ui/message";
 import { VirtualList } from "../shared/virtual/VirtualList";
 import { useI18n } from "../i18n/store";
@@ -78,7 +77,7 @@ export function AppLayout() {
     { kind: "page", path: "/", label: t("数据概览"), icon: flatColorAreaChartIcon },
     { kind: "page", path: "/calls", label: t("调用详细"), icon: flatColorSalesPerformanceIcon },
     { kind: "group", label: t("模型配置") },
-    { kind: "page", path: "/harness/cursor", label: "Cursor", icon: cursorIconUrl },
+    { kind: "page", path: "/harness/cursor", label: "Cursor", icon: providerIcon },
     { kind: "group", label: t("设置") },
     { kind: "page", path: "/plugins", label: t("插件配置"), icon: flatColorCrystalOscillatorIcon },
     { kind: "page", path: "/settings", label: t("系统设置"), icon: flatColorSettingsIcon },

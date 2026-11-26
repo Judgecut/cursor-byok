@@ -66,14 +66,15 @@ function getTheme()
 
 function resolveChartOption(option: EChartsCoreOption, node: HTMLDivElement): EChartsCoreOption
 {
-  const color = getComputedStyle(node).getPropertyValue("--vscode-descriptionForeground").trim();
+  const style = getComputedStyle(node);
+  const color = style.getPropertyValue("--vscode-descriptionForeground").trim();
   const styleAxis = (axis: unknown) =>
   {
     if (!isOptionObject(axis)) return axis;
     const axisLabel = isOptionObject(axis.axisLabel) ? axis.axisLabel : {};
     return { ...axis, axisLabel: { color, ...axisLabel } };
   };
-  const styled = { ...option, xAxis: Array.isArray(option.xAxis) ? option.xAxis.map(styleAxis) : styleAxis(option.xAxis), yAxis: Array.isArray(option.yAxis) ? option.yAxis.map(styleAxis) : styleAxis(option.yAxis) };
+  const styled = { ...option, textStyle: { fontFamily: style.fontFamily, ...option.textStyle }, xAxis: Array.isArray(option.xAxis) ? option.xAxis.map(styleAxis) : styleAxis(option.xAxis), yAxis: Array.isArray(option.yAxis) ? option.yAxis.map(styleAxis) : styleAxis(option.yAxis) };
   const rawTooltip = (option as { tooltip?: unknown }).tooltip;
   if (!isOptionObject(rawTooltip) || rawTooltip.show === false) {
     return styled;

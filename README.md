@@ -56,4 +56,4 @@ With Make installed, `make build-desktop` builds the Windows NSIS installer unde
 
 Forked from [hainuoli/cursor-byok](https://github.com/hainuoli/cursor-byok), based on the original [leookun/cursor-byok](https://github.com/leookun/cursor-byok). This project is unofficial and independent of Cursor.
 
-[MIT License](./LICENSE) · [Third-party licenses](./THIRD-PARTY-LICENSES.md)
+The project code is released under the [MIT License](./LICENSE). Third-party components and assets remain subject to their [own licenses and notices](./THIRD-PARTY-LICENSES.md).

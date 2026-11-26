@@ -56,4 +56,4 @@ npm --prefix apps/desktop run tauri:dev
 
 本项目 fork 自 [hainuoli/cursor-byok](https://github.com/hainuoli/cursor-byok)，源自 [leookun/cursor-byok](https://github.com/leookun/cursor-byok)。这是非官方项目，由个人独立维护。
 
-[MIT 许可证](./LICENSE) · [第三方许可](./THIRD-PARTY-LICENSES.md)
+本项目代码按 [MIT 许可证](./LICENSE) 发布。第三方组件和素材适用[各自的许可与声明](./THIRD-PARTY-LICENSES.md)。

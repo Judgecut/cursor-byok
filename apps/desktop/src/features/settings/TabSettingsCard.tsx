@@ -1,8 +1,8 @@
-import cursorIconUrl from "../../shared/assets/icons/cursor.svg";
 import type { TabMode, TabSettings } from "../../shared/api";
 import { Button } from "../../shared/ui/Button";
 import { TextInput } from "../../shared/ui/FormControls";
 import { Icon } from "../../shared/ui/Icon";
+import { settingsIcon } from "../../shared/ui/icons";
 import { Select } from "../../shared/ui/Select";
 import { TitledCard } from "../../shared/ui/TitledCard";
 import styles from "./TabSettingsCard.module.scss";
@@ -41,7 +41,7 @@ export function TabSettingsCard({
   );
 
   return <TitledCard
-    title={<div className={styles.title}><Icon src={cursorIconUrl} size="1.1em" /><span>{t("TAB 设置")}</span></div>}
+    title={<div className={styles.title}><Icon icon={settingsIcon} size="1.1em" /><span>{t("TAB 设置")}</span></div>}
     action={action}
   >
     <div className={styles.content}>

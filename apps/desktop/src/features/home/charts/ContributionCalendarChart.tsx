@@ -334,7 +334,7 @@ function buildSeriesChartOption({
       className: styles.tooltip,
       backgroundColor: "var(--vscode-editorHoverWidget-background)",
       borderColor: "var(--vscode-editorHoverWidget-border)",
-      textStyle: { color: "var(--vscode-foreground)", fontFamily: "PingFang-Medium" },
+      textStyle: { color: "var(--vscode-foreground)" },
       extraCssText: "border-radius: 8px; box-shadow: 0 12px 32px rgb(0 0 0 / 30%); font-size: var(--contribution-tooltip-font-size); line-height: 1.5;",
       axisPointer: { type: "line", lineStyle: { color: "rgba(139, 148, 158, 0.35)", width: 1, type: "dashed" } },
       formatter: (params: unknown) => {
@@ -356,7 +356,6 @@ function buildSeriesChartOption({
       axisLabel: {
         interval: windowMode === "week" ? 0 : "auto",
         hideOverlap: true,
-        fontFamily: "HFKos",
         margin: 10,
       },
     },
@@ -370,7 +369,6 @@ function buildSeriesChartOption({
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
-        fontFamily: "HFKos",
         formatter: (value: number) => formatCompactInteger(value),
       },
     },

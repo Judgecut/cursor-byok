@@ -1,29 +1,13 @@
 @use "./typography" as type;
 @use "./themes";
 
-@font-face {
-  font-family: "PingFang-Medium";
-  src: url("../shared/assets/fonts/PingFang-Medium.ttf") format("truetype");
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "HFKos";
-  src: url("../shared/assets/fonts/HFKos-R.ttf") format("truetype");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
 :root {
   --window-header-height: 30px;
   --app-page-padding: 16px;
   --oa-ui-font: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --oa-code-font: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
-  --oa-metrics-font: "PingFang-Medium", var(--oa-ui-font);
-  --oa-number-font: "HFKos", "PingFang-Medium", var(--oa-ui-font);
+  --oa-metrics-font: var(--oa-ui-font);
+  --oa-number-font: "Segoe UI Variable Text", var(--oa-ui-font);
   font-family: var(--oa-ui-font);
   font-size: type.$font-size-base;
   color: var(--vscode-foreground);

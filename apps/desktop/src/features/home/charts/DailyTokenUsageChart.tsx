@@ -326,7 +326,7 @@ export function DailyTokenUsageChart({
         className: styles.tooltip,
         backgroundColor: "var(--vscode-editorHoverWidget-background)",
         borderColor: "var(--vscode-editorHoverWidget-border)",
-        textStyle: { color: "var(--vscode-foreground)", fontFamily: "PingFang-Medium" },
+        textStyle: { color: "var(--vscode-foreground)" },
         extraCssText: "border-radius: 8px; box-shadow: 0 12px 32px rgb(0 0 0 / 30%); font-size: var(--daily-token-tooltip-font-size); line-height: 1.5;",
         axisPointer: { type: "line", lineStyle: { color: "rgba(139, 148, 158, 0.35)", width: 1, type: "dashed" } },
         formatter: (params: unknown) => {
@@ -399,7 +399,6 @@ export function DailyTokenUsageChart({
             const bucket = data[index];
             return bucket ? formatAxisLabel(bucket.bucketStartMs, granularity) : "";
           },
-          fontFamily: "HFKos",
           margin: 12,
         },
       },
@@ -413,7 +412,6 @@ export function DailyTokenUsageChart({
         axisLine: { show: false },
         axisTick: { show: false },
         axisLabel: {
-          fontFamily: "HFKos",
           formatter: (value: number) => mode === "tokens"
             ? formatCompactInteger(value)
             : formatAxisCost(value, currency),
