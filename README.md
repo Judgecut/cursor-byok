@@ -1,90 +1,59 @@
-<div align="center">
+# Cursor BYOK
 
-# cursor-byok
+Bring your own model APIs to Cursor. This personal Windows fork maintains its own Cursor protocol adapter and adds a desktop console for model configuration, usage, and costs.
 
-Bring your own model APIs to Cursor — a personal, heavily modified fork.
+**[Download for Windows x64](https://github.com/Judgecut/cursor-byok/releases/latest)** · [Release history](https://github.com/Judgecut/cursor-byok/releases) · [简体中文](./README-CN.md)
 
-[Download](https://github.com/Judgecut/cursor-byok/releases) · [Upstream](https://github.com/leehainuo/cursor-byok) · [Original project](https://github.com/leookun/cursor-byok) · [中文说明](./README-CN.md)
+![Dark desktop overview with latency, cache hit rate, estimated cost, and token usage grouped by provider](./images/overview-en.jpg)
 
-[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
-![Platforms](https://img.shields.io/badge/platform-Windows%20tested-lightgrey?style=flat-square)
-![Status](https://img.shields.io/badge/status-personal%20fork-orange?style=flat-square)
+*Screenshots show the current desktop UI with simulated data.*
 
-</div>
+## Get started
 
-![Connect cursor-byok to a wide range of model APIs](./images/en-brand-1.png)
+1. Open the [latest release](https://github.com/Judgecut/cursor-byok/releases/latest) and choose the Windows x64 installer (`.exe`) or portable archive (`.zip`). Extract the portable archive before launching the app.
+2. On the app's **Cursor** page, add a provider and a model. Choose the request format, enter the provider's endpoint and API key, and test the model.
+3. Enable **Cursor takeover** on the same page and follow the app's setup prompts. Check **Call history** after your first request.
 
-![cursor-byok dashboard](./images/en-home-1.png)
+## What this fork adds
 
-## About This Repository
+- **Usage and cost overview.** Compare token and cost trends by model or provider, inspect cache hit rates and generation speed, and track weekly, monthly, and yearly spending against your quotas.
+- **Per-model configuration.** Mix OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, and native Gemini under the same provider. Set a request URL and additional parameters for individual models.
+- **Call history.** Filter calls by model, provider, and time. Inspect failures, token usage, cache reporting, and how estimated costs were calculated.
 
-This is a personal fork of [leehainuo/cursor-byok](https://github.com/leehainuo/cursor-byok), which in turn builds on [leookun/cursor-byok](https://github.com/leookun/cursor-byok).
+### Model management
 
-Cursor keeps changing its client protocol. When upstream trails behind those changes, this local build simply stops working. Rather than wait for a fix, I patch the protocol adaptation here myself so the setup I actually use keeps running.
+![Dark desktop model management showing provider groups, configured models, and model test controls](./images/models-en.jpg)
 
-## Current Status
+### Call history
 
-| Item | Notes |
-| --- | --- |
-| Maintenance | Personal fork, flying solo. No longer follows upstream's pace and makes no promise to merge upstream changes |
-| Platform | Windows only, and only tested on Windows |
-| Distribution | Mainly Windows installers (NSIS), which are convenient for my own use. None published yet — build from source for now, releases will follow |
-| Roadmap | May gradually add features that suit my own habits. Ad hoc, no guarantee of being general-purpose |
+![Dark desktop call history with filters, request status, estimated costs, and timing](./images/calls-en.jpg)
 
-## Differences From Upstream
-
-- **Cursor protocol adaptation is maintained here.** When the upstream implementation stops working, this repo is patched directly against Cursor's current protocol — which may in turn diverge further from upstream.
-- **The feature set will drift toward personal use.** Later additions target what I find convenient, not what covers every use case.
-
-Beyond that, the product itself is still the upstream one: local protocol adaptation, model request forwarding, tool-call coordination, and conversation state on your machine, with tool calling, Skills, MCP, and multi-turn conversations intact.
-
-## How It Works
+## How it works
 
 ```text
-Cursor client
-    │
-    │ Agent requests and tool results
-    ▼
-cursor-byok local service
-    │
-    │ OpenAI- / Anthropic-compatible requests
-    ▼
-Your model API
+Cursor client ── Agent requests and tool results ──► Cursor BYOK on your PC
+                                                     │
+                                                     ▼
+                                              Configured model API
 ```
 
-API keys and application settings are stored locally; requests are still sent to the model provider you configure.
+Cursor BYOK adapts Cursor's protocol and manages conversation state, tool calls, Skills, and MCP locally. Provider credentials and app settings are stored on your machine. Model requests are sent to the provider you configure.
 
-## Build and Run
+This is an independently maintained personal fork. Cursor client updates can require changes to the protocol adapter. Windows x64 is the supported release platform.
 
-Requires Rust stable, Node.js 22 or newer, and the [Tauri 2 prerequisites for Windows](https://v2.tauri.app/start/prerequisites/) (MSVC build tools, WebView2).
+## Build from source
+
+Requires Rust stable, Node.js 22 or newer, and the [Tauri prerequisites for Windows](https://v2.tauri.app/start/prerequisites/).
 
 ```powershell
 npm --prefix apps/desktop ci
 npm --prefix apps/desktop run tauri:dev
 ```
 
-Build an NSIS installer:
+With Make installed, `make build-desktop` builds the Windows NSIS installer under `target/release/bundle/nsis/`. See [Testing](./TESTING.md) for the check commands.
 
-```powershell
-npm --prefix apps/desktop run tauri:build -- --bundles nsis
-```
+## Credits and license
 
-The output lands in `apps/desktop/src-tauri/target/release/bundle/nsis/`. With `make` installed, `make dev-desktop` and `make build-desktop` do the same two things.
+Forked from [hainuoli/cursor-byok](https://github.com/hainuoli/cursor-byok), based on the original [leookun/cursor-byok](https://github.com/leookun/cursor-byok). This project is unofficial and independent of Cursor.
 
-If you would rather not compile it yourself, built installers go to [Releases](https://github.com/Judgecut/cursor-byok/releases) — currently empty.
-
-For the complete check commands, browser setup, and the dedicated embedding-model check, see [Testing](./TESTING.md).
-
-## Caveats
-
-- Only Windows is tested; macOS and Linux are unverified.
-- When Cursor changes its protocol again, I may need to catch up, and this may be unusable in the meantime.
-- Divergence from upstream will keep growing, so upstream docs and issues may not match what you see here.
-
-## Acknowledgements
-
-Thanks to [leookun](https://github.com/leookun/cursor-byok) for the original project, to [leehainuo](https://github.com/leehainuo/cursor-byok) for the upstream version, and to everyone in the community who contributed code and feedback. This fork would not exist without that work.
-
-Released under the [MIT License](./LICENSE). Upstream copyright and license notices are preserved in [Third-Party Licenses](./THIRD-PARTY-LICENSES.md).
-
-If this modified build is useful to you, take it and adapt it however you like — the MIT License is all it asks.
+[MIT License](./LICENSE) · [Third-party licenses](./THIRD-PARTY-LICENSES.md)

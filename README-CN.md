@@ -1,90 +1,59 @@
-<div align="center">
+# Cursor BYOK
 
-# cursor-byok
+在 Cursor 中使用你自己的模型 API。这个 Windows 个人魔改版独立维护 Cursor 协议适配，并提供桌面界面来配置模型、查看调用和管理费用。
 
-在 Cursor 中使用你自己的模型 API，个人魔改版。
+**[下载 Windows x64 版](https://github.com/Judgecut/cursor-byok/releases/latest)** · [版本记录](https://github.com/Judgecut/cursor-byok/releases) · [English](./README.md)
 
-[下载](https://github.com/Judgecut/cursor-byok/releases) · [上游仓库](https://github.com/leehainuo/cursor-byok) · [原始项目](https://github.com/leookun/cursor-byok) · [English](./README.md)
+![暗色总览界面，展示响应延迟、缓存命中率、预估费用和按供应商分组的 Token 趋势](./images/overview-zh.jpg)
 
-[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
-![Platforms](https://img.shields.io/badge/platform-Windows%20tested-lightgrey?style=flat-square)
-![Status](https://img.shields.io/badge/status-personal%20fork-orange?style=flat-square)
+*截图来自当前桌面界面，使用虚拟数据。*
 
-</div>
+## 开始使用
 
-![将 cursor-byok 连接到多种模型 API](./images/en-brand-1.png)
+1. 在[最新发布](https://github.com/Judgecut/cursor-byok/releases/latest)下载 Windows x64 安装包（`.exe`）或便携包（`.zip`）。便携包解压后即可运行。
+2. 在应用的 **Cursor** 页面添加供应商和模型，选择请求格式，填写服务地址和 API Key，再测试模型连通性。
+3. 在同一页面开启 **Cursor 接管**，按应用提示完成配置。发出首个请求后，可在 **调用详细** 中查看结果。
 
-![cursor-byok 控制面板](./images/en-home-1.png)
+## 魔改版功能
 
-## 关于这个仓库
+- **用量和费用总览。** 按模型或供应商查看 Token 和费用趋势，查看缓存命中率、生成速度，并跟踪周、月、年费用额度。
+- **按模型配置请求。** 同一供应商下可混用 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 和 Gemini 原生格式。每个模型可单独设置请求 URL 和额外参数。
+- **调用记录。** 按模型、供应商和时间筛选，查看失败详情、Token 用量、缓存上报情况和估算费用的计算依据。
 
-这是 [leehainuo/cursor-byok](https://github.com/leehainuo/cursor-byok) 的个人 fork，而它又源自 [leookun/cursor-byok](https://github.com/leookun/cursor-byok)。
+### 模型管理
 
-Cursor 客户端协议一直在变。上游版本跟着协议调整时，本地这份经常就直接用不了了；与其等上游修，我干脆在自己这份 fork 里改协议适配，先保证手上的环境能跑。
+![暗色模型管理界面，展示供应商分组、已配置模型和模型测试入口](./images/models-zh.jpg)
 
-## 当前状态
+### 调用记录
 
-| 项目 | 说明 |
-| --- | --- |
-| 维护方式 | 个人单飞，不再跟随上游节奏，也不承诺合并上游改动 |
-| 平台 | 只有 Windows，也只在 Windows 上测试 |
-| 发布 | 以 Windows 安装包（NSIS）为主，自己装着方便；暂时还没发，可以先从源码构建，之后会陆续放出来 |
-| 后续 | 可能会陆续补一些自己使用习惯相关的功能，不成体系，也不保证通用 |
-
-## 与上游的差异
-
-- **Cursor 协议适配由本仓库自行维护。** 上游实现跑不起来时，这里会直接按 Cursor 当前协议改；改完可能又和上游对不上。
-- **功能上会慢慢偏个人化。** 后续加的多是自己用着顺手的东西，不追求覆盖通用需求。
-
-除此之外，产品本身的能力仍是上游那一套：在本机做协议适配、模型请求转发、工具调用协调和会话状态，继续使用工具调用、Skills、MCP 和多轮对话。
+![暗色调用记录界面，展示筛选项、请求状态、Token 用量和耗时](./images/calls-zh.jpg)
 
 ## 工作原理
 
 ```text
-Cursor 客户端
-    │
-    │ Agent 请求与工具结果
-    ▼
-cursor-byok 本地服务
-    │
-    │ OpenAI / Anthropic 兼容请求
-    ▼
-你配置的模型 API
+Cursor 客户端 ── Agent 请求与工具结果 ──► 本机 Cursor BYOK
+                                              │
+                                              ▼
+                                          已配置的模型 API
 ```
 
-API Key 与应用设置保存在本地；模型请求仍会发送到你配置的服务商。
+Cursor BYOK 在本机适配 Cursor 协议，并处理会话状态、工具调用、Skills 和 MCP。供应商凭据和应用设置保存在本机，模型请求会发送到你配置的供应商。
 
-## 构建与运行
+这是独立维护的个人 fork。Cursor 客户端更新后，协议适配可能需要跟进调整。目前发布 Windows x64 安装包和便携包。
 
-前置：Rust stable、Node.js 22 或更新版本，以及 [Tauri 2 的 Windows 前置条件](https://v2.tauri.app/start/prerequisites/)（MSVC 生成工具、WebView2）。
+## 从源码构建
+
+需要 Rust stable、Node.js 22 或更新版本，以及 [Tauri 的 Windows 前置依赖](https://v2.tauri.app/start/prerequisites/)。
 
 ```powershell
 npm --prefix apps/desktop ci
 npm --prefix apps/desktop run tauri:dev
 ```
 
-打包 NSIS 安装包：
+安装 Make 后，可以用 `make build-desktop` 构建 Windows NSIS 安装包，产物位于 `target/release/bundle/nsis/`。检查命令见[测试说明](./TESTING.md)。
 
-```powershell
-npm --prefix apps/desktop run tauri:build -- --bundles nsis
-```
+## 致谢与许可
 
-产物在 `apps/desktop/src-tauri/target/release/bundle/nsis/`。安装了 `make` 的话，`make dev-desktop` 和 `make build-desktop` 是同样的两件事。
+本项目 fork 自 [hainuoli/cursor-byok](https://github.com/hainuoli/cursor-byok)，源自 [leookun/cursor-byok](https://github.com/leookun/cursor-byok)。这是非官方项目，由个人独立维护。
 
-不想自己编译的，等装好的包放到 [Releases](https://github.com/Judgecut/cursor-byok/releases) 再下也行，目前还是空的。
-
-完整检查命令、浏览器测试准备和独立嵌入模型检查见[测试说明](./TESTING.md)。
-
-## 需要注意
-
-- 只有 Windows 经过测试，macOS 和 Linux 没验证过。
-- Cursor 再次改动协议时，可能要我自己跟进；这段时间里可能出现无法使用的情况。
-- 与上游的差异会越来越大，出问题时按上游的文档和 Issue 排查不一定对得上。
-
-## 致谢
-
-感谢 [leookun](https://github.com/leookun/cursor-byok) 写下的原始项目，感谢 [leehainuo](https://github.com/leehainuo/cursor-byok) 维护的上游版本，也感谢社区里所有贡献代码、提交反馈的人。没有这些工作，这份 fork 无从谈起。
-
-项目采用 [MIT License](./LICENSE)。原作者版权声明和完整许可文本见[第三方许可](./THIRD-PARTY-LICENSES.md)。
-
-对这份魔改版感兴趣的话，按自己的喜好拿去改、拿去用就行，遵循 MIT 即可。
+[MIT 许可证](./LICENSE) · [第三方许可](./THIRD-PARTY-LICENSES.md)
