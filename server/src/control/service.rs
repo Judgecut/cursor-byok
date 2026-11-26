@@ -414,8 +414,10 @@ impl ControlService {
             .await
     }
 
-    pub async fn cost_quota_usage(&self, range: crate::store::CostQuotaRange) -> Result<crate::store::CostQuotaUsage>
-    {
+    pub async fn cost_quota_usage(
+        &self,
+        range: crate::store::CostQuotaRange,
+    ) -> Result<crate::store::CostQuotaUsage> {
         self.store.cost_quota_usage(range).await
     }
 

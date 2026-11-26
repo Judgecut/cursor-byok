@@ -5,8 +5,7 @@ use crate::{pricing::format_nano_usd, Error, Result};
 use super::Store;
 
 #[derive(Clone, Copy, Debug, Deserialize)]
-pub struct CostQuotaRange
-{
+pub struct CostQuotaRange {
     pub week_start_ms: i64,
     pub month_start_ms: i64,
     pub year_start_ms: i64,
@@ -14,21 +13,24 @@ pub struct CostQuotaRange
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
-pub struct CostQuotaUsage
-{
+pub struct CostQuotaUsage {
     pub week: String,
     pub month: String,
     pub year: String,
 }
 
-impl Store
-{
-    pub async fn cost_quota_usage(&self, range: CostQuotaRange) -> Result<CostQuotaUsage>
-    {
-        let CostQuotaRange { week_start_ms, month_start_ms, year_start_ms, end_ms } = range;
-        if week_start_ms.max(month_start_ms).max(year_start_ms) > end_ms
-        {
-            return Err(Error::Config("quota period start must be at or before end_ms".into()));
+impl Store {
+    pub async fn cost_quota_usage(&self, range: CostQuotaRange) -> Result<CostQuotaUsage> {
+        let CostQuotaRange {
+            week_start_ms,
+            month_start_ms,
+            year_start_ms,
+            end_ms,
+        } = range;
+        if week_start_ms.max(month_start_ms).max(year_start_ms) > end_ms {
+            return Err(Error::Config(
+                "quota period start must be at or before end_ms".into(),
+            ));
         }
 
         let (week, month, year) = sqlx::query_as::<_, (i64, i64, i64)>(
@@ -48,6 +50,10 @@ impl Store
         .fetch_one(&self.pool)
         .await?;
 
-        Ok(CostQuotaUsage { week: format_nano_usd(week.max(0)), month: format_nano_usd(month.max(0)), year: format_nano_usd(year.max(0)) })
+        Ok(CostQuotaUsage {
+            week: format_nano_usd(week.max(0)),
+            month: format_nano_usd(month.max(0)),
+            year: format_nano_usd(year.max(0)),
+        })
     }
 }

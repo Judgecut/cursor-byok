@@ -7,7 +7,11 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::{model::Overview, store::{CostQuotaRange, CostQuotaUsage}, Result};
+use crate::{
+    model::Overview,
+    store::{CostQuotaRange, CostQuotaUsage},
+    Result,
+};
 
 use super::ControlService;
 
@@ -37,7 +41,9 @@ pub async fn get(
     ))
 }
 
-pub async fn get_cost_quota_usage(State(service): State<ControlService>, Query(range): Query<CostQuotaRange>) -> Result<Json<CostQuotaUsage>>
-{
+pub async fn get_cost_quota_usage(
+    State(service): State<ControlService>,
+    Query(range): Query<CostQuotaRange>,
+) -> Result<Json<CostQuotaUsage>> {
     Ok(Json(service.cost_quota_usage(range).await?))
 }

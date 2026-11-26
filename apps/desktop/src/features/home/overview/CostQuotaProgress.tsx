@@ -33,7 +33,7 @@ export function CostQuotaProgress({
     const quota = quotas[period];
     if (!quota) return null;
     const usd = usage[period];
-    if (usd === null) return { period, quota, usd: null as string | null };
+    if (usd === null) return { period, quota, usd };
     const customRate = quota.currency !== "USD" && exchangeRateSync?.auto_sync_enabled === false ? customRates[exchangeRateKey(quota.currency)] : null;
     const rate = resolveExchangeRate(quota.currency, customRate, exchangeRateSync?.snapshot);
     const used = convertUsdToDisplayDecimal(usd, quota.currency, rate).amount;

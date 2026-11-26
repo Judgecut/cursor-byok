@@ -226,23 +226,20 @@ pub enum DisplayCurrency {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub struct CostQuota
-{
+pub struct CostQuota {
     pub amount: String,
     pub currency: DisplayCurrency,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
-pub struct CostQuotas
-{
+pub struct CostQuotas {
     pub week: Option<CostQuota>,
     pub month: Option<CostQuota>,
     pub year: Option<CostQuota>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
-pub struct CostQuotasPatch
-{
+pub struct CostQuotasPatch {
     #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub week: Option<Option<CostQuota>>,
     #[serde(default, deserialize_with = "deserialize_optional_nullable")]
@@ -450,8 +447,7 @@ pub(crate) fn normalize_exchange_rate(raw: &str) -> Result<Option<String>> {
     normalize_positive_decimal(raw, "exchange rate")
 }
 
-fn normalize_positive_decimal(raw: &str, field: &str) -> Result<Option<String>>
-{
+fn normalize_positive_decimal(raw: &str, field: &str) -> Result<Option<String>> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return Ok(None);
@@ -460,9 +456,9 @@ fn normalize_positive_decimal(raw: &str, field: &str) -> Result<Option<String>>
         return Err(crate::Error::Config(format!("{field} is too long")));
     }
     if trimmed.starts_with('-') {
-        return Err(crate::Error::Config(
-            format!("{field} must be greater than 0"),
-        ));
+        return Err(crate::Error::Config(format!(
+            "{field} must be greater than 0"
+        )));
     }
     let unsigned = trimmed.strip_prefix('+').unwrap_or(trimmed);
     let (raw_int, raw_frac) = match unsigned.split_once('.') {
@@ -473,9 +469,7 @@ fn normalize_positive_decimal(raw: &str, field: &str) -> Result<Option<String>>
         || !raw_int.bytes().all(|byte| byte.is_ascii_digit())
         || !raw_frac.bytes().all(|byte| byte.is_ascii_digit())
     {
-        return Err(crate::Error::Config(format!(
-            "invalid {field}: {raw}"
-        )));
+        return Err(crate::Error::Config(format!("invalid {field}: {raw}")));
     }
     let trimmed_int = raw_int.trim_start_matches('0');
     let int_part = if trimmed_int.is_empty() {
@@ -485,9 +479,9 @@ fn normalize_positive_decimal(raw: &str, field: &str) -> Result<Option<String>>
     };
     let frac_part = raw_frac.trim_end_matches('0');
     if int_part == "0" && frac_part.is_empty() {
-        return Err(crate::Error::Config(
-            format!("{field} must be greater than 0"),
-        ));
+        return Err(crate::Error::Config(format!(
+            "{field} must be greater than 0"
+        )));
     }
     Ok(Some(if frac_part.is_empty() {
         int_part.to_owned()
@@ -847,15 +841,18 @@ impl Store {
     ) -> Result<InterfaceSettings> {
         let _write = self.writes.lock().await;
         let mut settings = read_interface_settings(&self.pool).await?;
-        for (quota, change) in [(&mut settings.cost_quotas.week, patch.cost_quotas.week), (&mut settings.cost_quotas.month, patch.cost_quotas.month), (&mut settings.cost_quotas.year, patch.cost_quotas.year)]
-        {
-            if let Some(change) = change
-            {
-                *quota = match change
-                {
-                    Some(mut value) =>
-                    {
-                        value.amount = normalize_positive_decimal(&value.amount, "quota amount")?.ok_or_else(|| crate::Error::Config("quota amount is required".into()))?;
+        for (quota, change) in [
+            (&mut settings.cost_quotas.week, patch.cost_quotas.week),
+            (&mut settings.cost_quotas.month, patch.cost_quotas.month),
+            (&mut settings.cost_quotas.year, patch.cost_quotas.year),
+        ] {
+            if let Some(change) = change {
+                *quota = match change {
+                    Some(mut value) => {
+                        value.amount = normalize_positive_decimal(&value.amount, "quota amount")?
+                            .ok_or_else(|| {
+                            crate::Error::Config("quota amount is required".into())
+                        })?;
                         Some(value)
                     }
                     None => None,
